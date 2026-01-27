@@ -3,7 +3,7 @@ package libraries
 import (
 	"fmt"
 	"path/filepath"
-
+	"os"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/apps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
@@ -14,7 +14,7 @@ func FindGlobalLib(fs afero.Fs, root string, name string) (bool, string, error) 
 	libPath := filepath.Join(root, "repos", "libs", name)
 	info, err := fs.Stat(libPath)
 	if err != nil {
-		if afero.IsNotExist(err) {
+		if os.IsNotExist(err) {
 			return false, "", nil
 		}
 		return false, "", err

@@ -3,7 +3,7 @@ package projects
 import (
 	"fmt"
 	"path/filepath"
-
+	"os"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
 	"github.com/spf13/afero"
@@ -13,7 +13,7 @@ func FindProjectLanguage(fs afero.Fs, root string, name string) (bool, string, e
 	projectPath := filepath.Join(root, "repos", "projects", name)
 	info, err := fs.Stat(projectPath)
 	if err != nil {
-		if afero.IsNotExist(err) {
+		if os.IsNotExist(err) {
 			return false, "", nil
 		}
 		return false, "", err

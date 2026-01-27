@@ -434,6 +434,10 @@ func TestFindGlobalLibraryByName(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected match")
 		}
+		if lib.Name != "lib-a" {
+			t.Fatalf("unexpected library: %#v", lib)
+		}
+		if len(lib.Deps) != 0 {
 			t.Fatalf("unexpected library: %#v", lib)
 		}
 	})
@@ -497,6 +501,10 @@ func TestFindProjectByName(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected match")
 		}
+		if project.Name != "proj-a" {
+			t.Fatalf("unexpected project: %#v", project)
+		}
+		if len(project.Deps) != 0 {
 			t.Fatalf("unexpected project: %#v", project)
 		}
 	})

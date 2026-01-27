@@ -140,7 +140,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.config.json"), payload, 0o644); err != nil {
 			return err
 		}
-		return WireServiceToCompose(fs, appPath, appName, serviceName, dockerfile, "")
+		return WireServiceToCompose(fs, appPath, appName, serviceName, dockerfile)
 	}
 
 	templatePath := filepath.Join("repos", "templates", template)
