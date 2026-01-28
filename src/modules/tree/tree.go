@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 type Component struct {
@@ -101,8 +103,8 @@ func IsSandboxEmpty() (bool, error) {
 	return len(entries) == 0, nil
 }
 
-func DirExists(path string) bool {
-	info, err := os.Stat(path)
+func DirExists(fs afero.Fs, path string) bool {
+	info, err := fs.Stat(path)
 	if err != nil {
 		return false
 	}

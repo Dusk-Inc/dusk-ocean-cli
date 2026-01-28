@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/apps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/compose"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/services"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
@@ -236,7 +235,7 @@ func addAppToWorkspace(fs afero.Fs, name string) error {
 	if err != nil {
 		return err
 	}
-	if apps.FindAppIndex(config, name) != -1 {
+	if workspace.FindAppIndex(config, name) != -1 {
 		return nil
 	}
 	config.Apps = append(config.Apps, workspace.WorkspaceApp{
@@ -254,25 +253,23 @@ func removeAppFromWorkspace(fs afero.Fs, name string) error {
 		}
 		return err
 	}
-	config, err := workspace.ReadWorkspaceConfig(fs)
-	if err != nil {
-		return err
-	}
-	if len(config.Apps) == 0 {
-		return nil
-	}
-	updated := make([]workspace.WorkspaceApp, 0, len(config.Apps))
-	removed := false
-	for _, app := range config.Apps {
-		if app.Name == name {
-			removed = true
-			continue
+	return workspace.UpdateConfig(fs, func(config workspace.WorkspaceConfig) (workspace.WorkspaceConfig, error) {
+		if len(config.Apps) == 0 {
+			return config, nil
 		}
-		updated = append(updated, app)
-	}
-	if !removed {
-		return nil
-	}
-	config.Apps = updated
-	return workspace.WriteWorkspaceConfig(fs, config)
+		updated := make([]workspace.WorkspaceApp, 0, len(config.Apps))
+		removed := false
+		for _, app := range config.Apps {
+			if app.Name == name {
+				removed = true
+				continue
+			}
+			updated = append(updated, app)
+		}
+		if !removed {
+			return config, nil
+		}
+		config.Apps = updated
+		return config, nil
+	})
 }

@@ -81,6 +81,24 @@ type WorkspaceDep struct {
 
 const defaultImageTag = "dev"
 
+// TargetKind identifies a workspace target kind.
+type TargetKind string
+
+const (
+	TargetService   TargetKind = "service"
+	TargetAppLib    TargetKind = "app-lib"
+	TargetGlobalLib TargetKind = "global-lib"
+	TargetProject   TargetKind = "project"
+)
+
+// Target describes a workspace install target.
+type Target struct {
+	Kind TargetKind
+	App  string
+	Name string
+	Path string
+}
+
 type InitOptions struct {
 	Name     string
 	Registry string
@@ -326,6 +344,30 @@ func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 	return patterns, nil
 }
 
+// UpdateConfig reads the workspace config, applies a mutation, and writes it back if changed.
+func UpdateConfig(fs afero.Fs, update func(WorkspaceConfig) (WorkspaceConfig, error)) error {
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	original, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	updated, err := update(config)
+	if err != nil {
+		return err
+	}
+	normalized, err := json.Marshal(updated)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(original, normalized) {
+		return nil
+	}
+	return WriteWorkspaceConfig(fs, updated)
+}
+
 func WriteWorkspaceConfig(fs afero.Fs, config WorkspaceConfig) error {
 	normalized := normalizeWorkspaceConfig(config)
 	if err := ValidateWorkspaceConfig(normalized); err != nil {
@@ -393,6 +435,306 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 		}
 	}
 	return config
+}
+
+// FindAppIndex returns the index of an app name, or -1 if not found.
+func FindAppIndex(config WorkspaceConfig, appName string) int {
+	for i, app := range config.Apps {
+		if app.Name == appName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindServiceIndex returns the index of a service name within an app, or -1 if not found.
+func FindServiceIndex(app WorkspaceApp, serviceName string) int {
+	for i, service := range app.Services {
+		if service.Name == serviceName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindAppLibraryIndex returns the index of an app library name within an app, or -1 if not found.
+func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
+	for i, lib := range app.Libraries {
+		if lib.Name == libName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindGlobalLibraryIndex returns the index of a global library name, or -1 if not found.
+func FindGlobalLibraryIndex(config WorkspaceConfig, libName string) int {
+	for i, lib := range config.Libraries {
+		if lib.Name == libName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindProjectIndex returns the index of a project name, or -1 if not found.
+func FindProjectIndex(config WorkspaceConfig, projectName string) int {
+	for i, project := range config.Projects {
+		if project.Name == projectName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindAppLibraryByName returns an app library by name within an app.
+func FindAppLibraryByName(config WorkspaceConfig, appName string, name string) (WorkspaceLibrary, bool) {
+	appIndex := FindAppIndex(config, appName)
+	if appIndex == -1 {
+		return WorkspaceLibrary{}, false
+	}
+	for _, lib := range config.Apps[appIndex].Libraries {
+		if lib.Name == name {
+			return lib, true
+		}
+	}
+	return WorkspaceLibrary{}, false
+}
+
+// FindGlobalLibraryByName returns a global library by name and errors on ambiguity.
+func FindGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibrary, bool, error) {
+	var match *WorkspaceLibrary
+	for i, lib := range config.Libraries {
+		if lib.Name != name {
+			continue
+		}
+		if match != nil {
+			return WorkspaceLibrary{}, false, fmt.Errorf("global library name is ambiguous: %s", name)
+		}
+		match = &config.Libraries[i]
+	}
+	if match == nil {
+		return WorkspaceLibrary{}, false, nil
+	}
+	return *match, true, nil
+}
+
+// FindProjectByName returns a project by name and errors on ambiguity.
+func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, bool, error) {
+	var match *WorkspaceProject
+	for i, project := range config.Projects {
+		if project.Name != name {
+			continue
+		}
+		if match != nil {
+			return WorkspaceProject{}, false, fmt.Errorf("project name is ambiguous: %s", name)
+		}
+		match = &config.Projects[i]
+	}
+	if match == nil {
+		return WorkspaceProject{}, false, nil
+	}
+	return *match, true, nil
+}
+
+// FindRepoLanguage returns whether the repo exists and its language if configured.
+func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
+	info, err := fs.Stat(repoPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, "", nil
+		}
+		return false, "", err
+	}
+	if !info.IsDir() {
+		return false, "", nil
+	}
+	config, err := ReadRepoConfig(fs, repoPath)
+	if err != nil {
+		return true, "", nil
+	}
+	return true, config.Language, nil
+}
+
+// AppNamesWithLibraries returns app names that contain libraries.
+func AppNamesWithLibraries(config WorkspaceConfig) []string {
+	names := []string{}
+	for _, app := range config.Apps {
+		if len(app.Libraries) == 0 {
+			continue
+		}
+		names = append(names, app.Name)
+	}
+	return names
+}
+
+// AppNamesWithServices returns app names that contain services.
+func AppNamesWithServices(config WorkspaceConfig) []string {
+	names := []string{}
+	for _, app := range config.Apps {
+		if len(app.Services) == 0 {
+			continue
+		}
+		names = append(names, app.Name)
+	}
+	return names
+}
+
+// AppLibraryNames returns library names for a given app.
+func AppLibraryNames(config WorkspaceConfig, appName string) []string {
+	for _, app := range config.Apps {
+		if app.Name != appName {
+			continue
+		}
+		names := make([]string, 0, len(app.Libraries))
+		for _, lib := range app.Libraries {
+			names = append(names, lib.Name)
+		}
+		return names
+	}
+	return nil
+}
+
+// ServiceNames returns service names for a given app.
+func ServiceNames(config WorkspaceConfig, appName string) []string {
+	for _, app := range config.Apps {
+		if app.Name != appName {
+			continue
+		}
+		names := make([]string, 0, len(app.Services))
+		for _, service := range app.Services {
+			names = append(names, service.Name)
+		}
+		return names
+	}
+	return nil
+}
+
+// GlobalLibraryNames returns names of global libraries.
+func GlobalLibraryNames(config WorkspaceConfig) []string {
+	names := make([]string, 0, len(config.Libraries))
+	for _, lib := range config.Libraries {
+		names = append(names, lib.Name)
+	}
+	return names
+}
+
+// ProjectNames returns names of projects.
+func ProjectNames(config WorkspaceConfig) []string {
+	names := make([]string, 0, len(config.Projects))
+	for _, project := range config.Projects {
+		names = append(names, project.Name)
+	}
+	return names
+}
+
+// ResolveTargetFromCwd resolves a workspace target from the current working directory.
+func ResolveTargetFromCwd(fs afero.Fs, root string, cwd string) (Target, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return Target{}, err
+	}
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return Target{}, err
+	}
+	rel, err := filepath.Rel(absRoot, absCwd)
+	if err != nil {
+		return Target{}, err
+	}
+	parts := strings.Split(filepath.Clean(rel), string(filepath.Separator))
+	if len(parts) < 4 || parts[0] != "repos" {
+		return Target{}, fmt.Errorf("current directory is not a valid install target")
+	}
+
+	switch parts[1] {
+	case "apps":
+		if len(parts) >= 5 && parts[3] == "services" {
+			targetPath := filepath.Join(absRoot, "repos", "apps", parts[2], "services", parts[4])
+			if !tree.DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("service path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetService,
+				App:  parts[2],
+				Name: parts[4],
+				Path: targetPath,
+			}, nil
+		}
+		if len(parts) >= 5 && parts[3] == "libs" {
+			targetPath := filepath.Join(absRoot, "repos", "apps", parts[2], "libs", parts[4])
+			if !tree.DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("library path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetAppLib,
+				App:  parts[2],
+				Name: parts[4],
+				Path: targetPath,
+			}, nil
+		}
+	case "libs":
+		if len(parts) >= 3 {
+			targetPath := filepath.Join(absRoot, "repos", "libs", parts[2])
+			if !tree.DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("library path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetGlobalLib,
+				Name: parts[2],
+				Path: targetPath,
+			}, nil
+		}
+	case "projects":
+		if len(parts) >= 3 {
+			targetPath := filepath.Join(absRoot, "repos", "projects", parts[2])
+			if !tree.DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("project path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetProject,
+				Name: parts[2],
+				Path: targetPath,
+			}, nil
+		}
+	}
+
+	return Target{}, fmt.Errorf("current directory is not a supported install target")
+}
+
+// ValidateTargetRegistration ensures the target exists in the workspace config.
+func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
+	switch target.Kind {
+	case TargetService:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		if FindServiceIndex(config.Apps[appIndex], target.Name) == -1 {
+			return fmt.Errorf("service not registered in workspace: %s", target.Name)
+		}
+	case TargetAppLib:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		if FindAppLibraryIndex(config.Apps[appIndex], target.Name) == -1 {
+			return fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+	case TargetGlobalLib:
+		libIndex := FindGlobalLibraryIndex(config, target.Name)
+		if libIndex == -1 {
+			return fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+	case TargetProject:
+		projectIndex := FindProjectIndex(config, target.Name)
+		if projectIndex == -1 {
+			return fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+	default:
+		return fmt.Errorf("unsupported install target")
+	}
+	return nil
 }
 
 func ValidateWorkspaceConfig(config WorkspaceConfig) error {
@@ -628,19 +970,11 @@ func RunCheck(cmd *cobra.Command, label string, targetPath string, hashPath stri
 }
 
 func readBuildCommand(targetPath string) (string, error) {
-	config, err := ReadRepoConfig(afero.NewOsFs(), targetPath)
-	if err != nil {
-		return "", err
-	}
-	return RepoCommand(config, "build")
+	return ReadRepoCommand(afero.NewOsFs(), targetPath, "build")
 }
 
 func readTestCommand(targetPath string) (string, error) {
-	config, err := ReadRepoConfig(afero.NewOsFs(), targetPath)
-	if err != nil {
-		return "", err
-	}
-	return RepoCommand(config, "test")
+	return ReadRepoCommand(afero.NewOsFs(), targetPath, "test")
 }
 
 func buildTestCommand(base string, passThrough []string) string {

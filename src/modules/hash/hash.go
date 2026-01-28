@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/tree"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -243,7 +244,7 @@ func hashTargetExists(fs afero.Fs, root string, hashRoot string, hashPath string
 		}
 		appName := sub[0]
 		target := filepath.Join(root, "repos", "apps", appName, "services", name)
-		return dirExists(fs, target)
+		return tree.DirExists(fs, target)
 	case "libs":
 		if len(sub) < 2 {
 			return true
@@ -253,26 +254,18 @@ func hashTargetExists(fs afero.Fs, root string, hashRoot string, hashPath string
 				return true
 			}
 			target := filepath.Join(root, "repos", "libs", name)
-			return dirExists(fs, target)
+			return tree.DirExists(fs, target)
 		}
 		appName := sub[0]
 		target := filepath.Join(root, "repos", "apps", appName, "libs", name)
-		return dirExists(fs, target)
+		return tree.DirExists(fs, target)
 	case "projects":
 		if len(sub) < 1 {
 			return true
 		}
 		target := filepath.Join(root, "repos", "projects", name)
-		return dirExists(fs, target)
+		return tree.DirExists(fs, target)
 	default:
 		return true
 	}
-}
-
-func dirExists(fs afero.Fs, path string) bool {
-	info, err := fs.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }

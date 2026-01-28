@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/apps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
 	"github.com/spf13/afero"
@@ -100,7 +99,7 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 		image.Tag = imageDefaults.Tag
 	}
 
-	appIndex := apps.FindAppIndex(workspaceConfig, appName)
+	appIndex := workspace.FindAppIndex(workspaceConfig, appName)
 	if appIndex == -1 {
 		workspaceConfig.Apps = append(workspaceConfig.Apps, workspace.WorkspaceApp{
 			Name: appName,
@@ -118,7 +117,7 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 		return workspace.WriteWorkspaceConfig(fs, workspaceConfig)
 	}
 
-	serviceIndex := FindServiceIndex(workspaceConfig.Apps[appIndex], serviceName)
+	serviceIndex := workspace.FindServiceIndex(workspaceConfig.Apps[appIndex], serviceName)
 	if serviceIndex == -1 {
 		workspaceConfig.Apps[appIndex].Services = append(workspaceConfig.Apps[appIndex].Services, workspace.WorkspaceService{
 			Name:       serviceName,
@@ -147,30 +146,27 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 
 // RemoveServiceFromWorkspace removes a service entry from ocean.workspace.json.
 func RemoveServiceFromWorkspace(fs afero.Fs, appName string, serviceName string) error {
-	workspaceConfig, err := workspace.ReadWorkspaceConfig(fs)
-	if err != nil {
-		return err
-	}
-
-	appIndex := apps.FindAppIndex(workspaceConfig, appName)
-	if appIndex == -1 {
-		return nil
-	}
-	serviceIndex := FindServiceIndex(workspaceConfig.Apps[appIndex], serviceName)
-	if serviceIndex == -1 {
-		return nil
-	}
-	services := workspaceConfig.Apps[appIndex].Services
-	workspaceConfig.Apps[appIndex].Services = append(services[:serviceIndex], services[serviceIndex+1:]...)
-	return workspace.WriteWorkspaceConfig(fs, workspaceConfig)
+	return workspace.UpdateConfig(fs, func(config workspace.WorkspaceConfig) (workspace.WorkspaceConfig, error) {
+		appIndex := workspace.FindAppIndex(config, appName)
+		if appIndex == -1 {
+			return config, nil
+		}
+		serviceIndex := workspace.FindServiceIndex(config.Apps[appIndex], serviceName)
+		if serviceIndex == -1 {
+			return config, nil
+		}
+		services := config.Apps[appIndex].Services
+		config.Apps[appIndex].Services = append(services[:serviceIndex], services[serviceIndex+1:]...)
+		return config, nil
+	})
 }
 
 func MakeServiceNode(config workspace.WorkspaceConfig, appName string, name string) (deps.Node, error) {
-	appIndex := apps.FindAppIndex(config, appName)
+	appIndex := workspace.FindAppIndex(config, appName)
 	if appIndex == -1 {
 		return deps.Node{}, fmt.Errorf("app not registered in workspace: %s", appName)
 	}
-	serviceIndex := FindServiceIndex(config.Apps[appIndex], name)
+	serviceIndex := workspace.FindServiceIndex(config.Apps[appIndex], name)
 	if serviceIndex == -1 {
 		return deps.Node{}, fmt.Errorf("service not registered in workspace: %s", name)
 	}
@@ -181,15 +177,6 @@ func MakeServiceNode(config workspace.WorkspaceConfig, appName string, name stri
 		Name:     name,
 		Deps:     service.Deps,
 	}, nil
-}
-
-func FindServiceIndex(app workspace.WorkspaceApp, serviceName string) int {
-	for i, service := range app.Services {
-		if service.Name == serviceName {
-			return i
-		}
-	}
-	return -1
 }
 
 func formatImageReference(registry string, image workspace.WorkspaceImage) string {

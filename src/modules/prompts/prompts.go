@@ -20,15 +20,7 @@ func PromptForApp() (string, error) {
 	for _, app := range apps {
 		items = append(items, app.Name)
 	}
-	prompt := promptui.Select{
-		Label: "Select app",
-		Items: items,
-	}
-	_, name, err := prompt.Run()
-	if err != nil {
-		return "", err
-	}
-	return name, nil
+	return SelectFromList("Select app", items)
 }
 
 func PromptForService(appName string) (string, error) {
@@ -43,15 +35,7 @@ func PromptForService(appName string) (string, error) {
 	for _, service := range services {
 		items = append(items, service.Name)
 	}
-	prompt := promptui.Select{
-		Label: "Select service",
-		Items: items,
-	}
-	_, name, err := prompt.Run()
-	if err != nil {
-		return "", err
-	}
-	return name, nil
+	return SelectFromList("Select service", items)
 }
 
 func PromptForAppLib(appName string) (string, error) {
@@ -66,15 +50,7 @@ func PromptForAppLib(appName string) (string, error) {
 	for _, lib := range libs {
 		items = append(items, lib.Name)
 	}
-	prompt := promptui.Select{
-		Label: "Select library",
-		Items: items,
-	}
-	_, name, err := prompt.Run()
-	if err != nil {
-		return "", err
-	}
-	return name, nil
+	return SelectFromList("Select library", items)
 }
 
 func PromptForLanguage(rootPath string) (string, error) {
@@ -91,15 +67,7 @@ func PromptForLanguage(rootPath string) (string, error) {
 	if len(languages) == 0 {
 		return "", fmt.Errorf("no languages found in %s", rootPath)
 	}
-	prompt := promptui.Select{
-		Label: "Select language",
-		Items: languages,
-	}
-	_, language, err := prompt.Run()
-	if err != nil {
-		return "", err
-	}
-	return language, nil
+	return SelectFromList("Select language", languages)
 }
 
 func PromptForGlobalLib() (string, error) {
@@ -114,15 +82,7 @@ func PromptForGlobalLib() (string, error) {
 	for _, lib := range libs {
 		items = append(items, lib.Name)
 	}
-	prompt := promptui.Select{
-		Label: "Select library",
-		Items: items,
-	}
-	_, name, err := prompt.Run()
-	if err != nil {
-		return "", err
-	}
-	return name, nil
+	return SelectFromList("Select library", items)
 }
 
 func PromptForProject() (string, error) {
@@ -137,13 +97,21 @@ func PromptForProject() (string, error) {
 	for _, project := range projects {
 		items = append(items, project.Name)
 	}
+	return SelectFromList("Select project", items)
+}
+
+// SelectFromList displays a prompt selection for a list of items.
+func SelectFromList(label string, items []string) (string, error) {
+	if len(items) == 0 {
+		return "", fmt.Errorf("no options available")
+	}
 	prompt := promptui.Select{
-		Label: "Select project",
+		Label: label,
 		Items: items,
 	}
-	_, name, err := prompt.Run()
+	_, selected, err := prompt.Run()
 	if err != nil {
 		return "", err
 	}
-	return name, nil
+	return selected, nil
 }

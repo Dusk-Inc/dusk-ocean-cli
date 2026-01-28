@@ -59,3 +59,12 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 		return "", fmt.Errorf("unsupported command kind: %s", kind)
 	}
 }
+
+// ReadRepoCommand reads the repo config and returns a command for the given kind.
+func ReadRepoCommand(fs afero.Fs, root string, kind string) (string, error) {
+	config, err := ReadRepoConfig(fs, root)
+	if err != nil {
+		return "", err
+	}
+	return RepoCommand(config, kind)
+}
