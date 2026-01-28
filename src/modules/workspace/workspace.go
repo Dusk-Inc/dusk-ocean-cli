@@ -61,17 +61,22 @@ type WorkspaceService struct {
 	Port       string         `json:"port"`
 	Image      WorkspaceImage `json:"image"`
 	Dockerfile string         `json:"Dockerfile"`
-	Deps       []string       `json:"deps"`
+	Deps       []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceLibrary struct {
-	Name string   `json:"name"`
-	Deps []string `json:"deps"`
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceProject struct {
-	Name string   `json:"name"`
-	Deps []string `json:"deps"`
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceDep struct {
+	Lib  string `json:"lib"`
+	From string `json:"from"`
 }
 
 const defaultImageTag = "dev"
@@ -93,14 +98,14 @@ func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []Workspa
 func MakeLibrary(name string, deps ...string) WorkspaceLibrary {
 	return WorkspaceLibrary{
 		Name: name,
-		Deps: deps,
+		Deps: makeGlobalDeps(deps...),
 	}
 }
 
 func MakeProject(name string, deps ...string) WorkspaceProject {
 	return WorkspaceProject{
 		Name: name,
-		Deps: deps,
+		Deps: makeGlobalDeps(deps...),
 	}
 }
 
@@ -362,7 +367,7 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 		}
 		for j := range config.Apps[i].Services {
 			if config.Apps[i].Services[j].Deps == nil {
-				config.Apps[i].Services[j].Deps = []string{}
+				config.Apps[i].Services[j].Deps = []WorkspaceDep{}
 			}
 			if config.Apps[i].Services[j].Image.Name == "" {
 				config.Apps[i].Services[j].Image.Name = fmt.Sprintf("%s__%s", config.Apps[i].Name, config.Apps[i].Services[j].Name)
@@ -373,18 +378,18 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 		}
 		for j := range config.Apps[i].Libraries {
 			if config.Apps[i].Libraries[j].Deps == nil {
-				config.Apps[i].Libraries[j].Deps = []string{}
+				config.Apps[i].Libraries[j].Deps = []WorkspaceDep{}
 			}
 		}
 	}
 	for i := range config.Libraries {
 		if config.Libraries[i].Deps == nil {
-			config.Libraries[i].Deps = []string{}
+			config.Libraries[i].Deps = []WorkspaceDep{}
 		}
 	}
 	for i := range config.Projects {
 		if config.Projects[i].Deps == nil {
-			config.Projects[i].Deps = []string{}
+			config.Projects[i].Deps = []WorkspaceDep{}
 		}
 	}
 	return config
@@ -469,19 +474,38 @@ func validatePorts(ports WorkspacePorts) error {
 	return nil
 }
 
-func validateDeps(deps []string) error {
+func validateDeps(deps []WorkspaceDep) error {
 	seen := map[string]struct{}{}
 	for _, dep := range deps {
-		trimmed := strings.TrimSpace(dep)
-		if trimmed == "" {
+		lib := strings.TrimSpace(dep.Lib)
+		if lib == "" {
 			return fmt.Errorf("empty dependency")
 		}
-		if _, exists := seen[trimmed]; exists {
-			return fmt.Errorf("duplicate dependency %s", trimmed)
+		from := strings.TrimSpace(dep.From)
+		if from == "" {
+			return fmt.Errorf("dependency %s missing source", lib)
 		}
-		seen[trimmed] = struct{}{}
+		key := fmt.Sprintf("%s|%s", lib, from)
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate dependency %s from %s", lib, from)
+		}
+		seen[key] = struct{}{}
 	}
 	return nil
+}
+
+func makeGlobalDeps(deps ...string) []WorkspaceDep {
+	out := make([]WorkspaceDep, 0, len(deps))
+	for _, dep := range deps {
+		if strings.TrimSpace(dep) == "" {
+			continue
+		}
+		out = append(out, WorkspaceDep{
+			Lib:  dep,
+			From: "global",
+		})
+	}
+	return out
 }
 
 func isTemplateName(value string) bool {

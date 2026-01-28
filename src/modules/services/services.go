@@ -105,15 +105,15 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 		workspaceConfig.Apps = append(workspaceConfig.Apps, workspace.WorkspaceApp{
 			Name: appName,
 			Services: []workspace.WorkspaceService{
-				{
-					Name:       serviceName,
-					Port:       port,
-					Image:      image,
-					Dockerfile: dockerfile,
-					Deps:       []string{},
+					{
+						Name:       serviceName,
+						Port:       port,
+						Image:      image,
+						Dockerfile: dockerfile,
+						Deps:       []workspace.WorkspaceDep{},
+					},
 				},
-			},
-			Libraries: []workspace.WorkspaceLibrary{},
+				Libraries: []workspace.WorkspaceLibrary{},
 		})
 		return workspace.WriteWorkspaceConfig(fs, workspaceConfig)
 	}
@@ -125,7 +125,7 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 			Port:       port,
 			Image:      image,
 			Dockerfile: dockerfile,
-			Deps:       []string{},
+			Deps:       []workspace.WorkspaceDep{},
 		})
 	} else {
 		existingDeps := workspaceConfig.Apps[appIndex].Services[serviceIndex].Deps

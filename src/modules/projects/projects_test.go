@@ -25,7 +25,10 @@ func TestMakeProjectNode(t *testing.T) {
 			t.Fatalf("MakeProjectNode: %v", err)
 		}
 
-		assertProjectNode(t, node, "alpha", []string{"lib-a", "lib-b"})
+		assertProjectNode(t, node, "alpha", []workspace.WorkspaceDep{
+			{Lib: "lib-a", From: "global"},
+			{Lib: "lib-b", From: "global"},
+		})
 	})
 
 	t.Run("boundary__empty_deps__returns_node_with_empty_deps", func(t *testing.T) {
@@ -42,7 +45,7 @@ func TestMakeProjectNode(t *testing.T) {
 			t.Fatalf("MakeProjectNode: %v", err)
 		}
 
-		assertProjectNode(t, node, "beta", nil)
+		assertProjectNode(t, node, "beta", []workspace.WorkspaceDep{})
 		if len(node.Deps) != 0 {
 			t.Fatalf("expected no deps, got %d", len(node.Deps))
 		}
@@ -165,7 +168,7 @@ func TestRemoveProjectFromWorkspace(t *testing.T) {
 	})
 }
 
-func assertProjectNode(t *testing.T, node deps.Node, name string, depsList []string) {
+func assertProjectNode(t *testing.T, node deps.Node, name string, depsList []workspace.WorkspaceDep) {
 	t.Helper()
 	if node.Kind != deps.NodeProject {
 		t.Fatalf("expected kind %s, got %s", deps.NodeProject, node.Kind)

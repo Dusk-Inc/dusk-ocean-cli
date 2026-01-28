@@ -45,7 +45,6 @@ Which looks like this:
 ```json
 {
     "workspace": "workspace-name",
-    "version": "0.1.0",
     "docker_registry": "localhost:3000",
     "ports": {
         "allowed": {
@@ -118,19 +117,15 @@ Language requirements:
 
 #### Repositories
 Each repository (service, library, or project) contains an ocean.config.json at its root. This allows Dusk Ocean to remain language-agnostic and exposes `language` and `type` metadata.
-
-#### Migration
-Use `scripts/migrate-language-folders.py` to move language folders to the new flat layout. Run with `--dry-run` first, then re-run without it.
-
 ```json
 {
-    "name": "my-cool-library",
+    "name": "service-a",
     "language": "typescript",
-    "type": "library",
+    "type": "service",
     "tasks": {
-        "build": "npm run build",
-        "test": "npm run test",
-        "install": "npm install @dusk/library_name"
+        "build": "pnpm build",
+        "test": "pnpm test",
+        "install": "pnpm install"
     }
 }
 ```
@@ -153,10 +148,10 @@ Initializes the workspace and creates the ocean-workspace.json. This file tracks
 - Allowed and reserved ports for services.
 - A registry of all apps and their constituent services (including ports and image names).
 It also creates the base workspace structure and template files:
-- `ocean-workspace.json` (if missing) with workspace name, registry, and starter app/service placeholders.
+- `ocean.workspace.json` (if missing) with workspace name, registry, and starter app/service placeholders.
 - `.ocean/` with `results/` and `hashes/`.
 - `repos/` with `apps/`, `libs/`, `containers/`, and `templates/`.
-- `repos/templates/apps/` with subfolders `services/`, `libs/`, `clients/`, `jobs/`, and `testing/`.
+- `repos/templates/apps/` with subfolders `services/`, `libs/`, `jobs/`, and `testing/`.
 - `repos/templates/apps/docker-compose.yml` and `repos/templates/apps/docker-compose.dev.yml`.
 - `.gitkeep` files in newly created directories.
 - Updates `.gitignore` to include `.ocean` (creates `.gitignore` if needed; avoids duplicates).

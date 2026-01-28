@@ -240,16 +240,19 @@ func TestAddServiceToWorkspace(t *testing.T) {
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "app",
-					Services: []workspace.WorkspaceService{
-						{
-							Name:       "api",
-							Port:       "3000",
-							Image:      workspace.WorkspaceImage{Name: "custom-image", Tag: "old"},
-							Dockerfile: "Dockerfile.old",
-							Deps:       []string{"db", "cache"},
+				Services: []workspace.WorkspaceService{
+					{
+						Name:       "api",
+						Port:       "3000",
+						Image:      workspace.WorkspaceImage{Name: "custom-image", Tag: "old"},
+						Dockerfile: "Dockerfile.old",
+						Deps: []workspace.WorkspaceDep{
+							{Lib: "db", From: "global"},
+							{Lib: "cache", From: "global"},
 						},
 					},
 				},
+			},
 			},
 		}
 		writeWorkspaceConfig(t, fs, config)
@@ -264,15 +267,15 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		if service.Port != "3005" {
 			t.Fatalf("expected port 3005, got %s", service.Port)
 		}
-		if service.Dockerfile != "Dockerfile.old" {
-			t.Fatalf("expected Dockerfile Dockerfile.old, got %s", service.Dockerfile)
-		}
-		if len(service.Deps) != 2 || service.Deps[0] != "db" || service.Deps[1] != "cache" {
-			t.Fatalf("expected deps [db cache], got %v", service.Deps)
-		}
-		if service.Image.Name != "app__api" {
-			t.Fatalf("expected image name app__api, got %s", service.Image.Name)
-		}
+			if service.Dockerfile != "Dockerfile.old" {
+				t.Fatalf("expected Dockerfile Dockerfile.old, got %s", service.Dockerfile)
+			}
+			if len(service.Deps) != 2 || service.Deps[0].Lib != "db" || service.Deps[1].Lib != "cache" {
+				t.Fatalf("expected deps [db cache], got %v", service.Deps)
+			}
+			if service.Image.Name != "app__api" {
+				t.Fatalf("expected image name app__api, got %s", service.Image.Name)
+			}
 		if service.Image.Tag != "dev" {
 			t.Fatalf("expected image tag dev, got %s", service.Image.Tag)
 		}
@@ -428,13 +431,15 @@ func TestMakeServiceNode(t *testing.T) {
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "app",
-					Services: []workspace.WorkspaceService{
-						{
-							Name:     "api",
-							Deps:     []string{"db"},
+				Services: []workspace.WorkspaceService{
+					{
+						Name: "api",
+						Deps: []workspace.WorkspaceDep{
+							{Lib: "db", From: "global"},
 						},
 					},
 				},
+			},
 			},
 		}
 
@@ -448,14 +453,14 @@ func TestMakeServiceNode(t *testing.T) {
 		if node.App != "app" {
 			t.Fatalf("expected app app, got %s", node.App)
 		}
-		if node.Name != "api" {
-			t.Fatalf("expected name api, got %s", node.Name)
-		}
-		if len(node.Deps) != 1 || node.Deps[0] != "db" {
-			t.Fatalf("expected deps [db], got %v", node.Deps)
-		}
-	})
-}
+			if node.Name != "api" {
+				t.Fatalf("expected name api, got %s", node.Name)
+			}
+			if len(node.Deps) != 1 || node.Deps[0].Lib != "db" {
+				t.Fatalf("expected deps [db], got %v", node.Deps)
+			}
+		})
+	}
 
 func TestRemoveServiceFromWorkspace(t *testing.T) {
 	t.Run("domain__existing_service__removes_entry", func(t *testing.T) {

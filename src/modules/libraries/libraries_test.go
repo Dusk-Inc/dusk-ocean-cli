@@ -86,7 +86,9 @@ func TestMakeAppLibNode(t *testing.T) {
 			t.Fatalf("MakeAppLibNode: %v", err)
 		}
 
-		assertAppLibNode(t, node, "alpha", "lib-a", []string{"dep-1"})
+		assertAppLibNode(t, node, "alpha", "lib-a", []workspace.WorkspaceDep{
+			{Lib: "dep-1", From: "global"},
+		})
 	})
 
 	t.Run("boundary__empty_deps__returns_node_with_empty_deps", func(t *testing.T) {
@@ -105,7 +107,7 @@ func TestMakeAppLibNode(t *testing.T) {
 			t.Fatalf("MakeAppLibNode: %v", err)
 		}
 
-		assertAppLibNode(t, node, "beta", "lib-b", nil)
+		assertAppLibNode(t, node, "beta", "lib-b", []workspace.WorkspaceDep{})
 		if len(node.Deps) != 0 {
 			t.Fatalf("expected no deps, got %d", len(node.Deps))
 		}
@@ -161,7 +163,9 @@ func TestMakeGlobalLibNode(t *testing.T) {
 			t.Fatalf("MakeGlobalLibNode: %v", err)
 		}
 
-		assertGlobalLibNode(t, node, "lib-a", []string{"dep-1"})
+		assertGlobalLibNode(t, node, "lib-a", []workspace.WorkspaceDep{
+			{Lib: "dep-1", From: "global"},
+		})
 	})
 
 	t.Run("boundary__empty_deps__returns_node_with_empty_deps", func(t *testing.T) {
@@ -178,7 +182,7 @@ func TestMakeGlobalLibNode(t *testing.T) {
 			t.Fatalf("MakeGlobalLibNode: %v", err)
 		}
 
-		assertGlobalLibNode(t, node, "lib-b", nil)
+		assertGlobalLibNode(t, node, "lib-b", []workspace.WorkspaceDep{})
 		if len(node.Deps) != 0 {
 			t.Fatalf("expected no deps, got %d", len(node.Deps))
 		}
@@ -273,7 +277,7 @@ func TestRemoveAppLibraryFromWorkspace(t *testing.T) {
 	})
 }
 
-func assertAppLibNode(t *testing.T, node deps.Node, appName string, name string, depsList []string) {
+func assertAppLibNode(t *testing.T, node deps.Node, appName string, name string, depsList []workspace.WorkspaceDep) {
 	t.Helper()
 	if node.Kind != deps.NodeAppLib {
 		t.Fatalf("expected kind %s, got %s", deps.NodeAppLib, node.Kind)
@@ -289,7 +293,7 @@ func assertAppLibNode(t *testing.T, node deps.Node, appName string, name string,
 	}
 }
 
-func assertGlobalLibNode(t *testing.T, node deps.Node, name string, depsList []string) {
+func assertGlobalLibNode(t *testing.T, node deps.Node, name string, depsList []workspace.WorkspaceDep) {
 	t.Helper()
 	if node.Kind != deps.NodeGlobalLib {
 		t.Fatalf("expected kind %s, got %s", deps.NodeGlobalLib, node.Kind)

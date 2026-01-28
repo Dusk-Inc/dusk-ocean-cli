@@ -23,7 +23,7 @@ type Node struct {
 	Kind     NodeKind
 	App      string
 	Name     string
-	Deps     []string
+	Deps     []workspace.WorkspaceDep
 }
 
 func RunBuildWithDependencies(cmd *cobra.Command, root string, config workspace.WorkspaceConfig, target Node, built map[string]struct{}) error {
@@ -93,11 +93,11 @@ func CollectDependencyOrder(config workspace.WorkspaceConfig, target Node) ([]No
 			return nil
 		}
 		stack[key] = struct{}{}
-		for _, depName := range node.Deps {
-			depNode, err := resolveDependencyNode(config, node, depName)
-			if err != nil {
-				return err
-			}
+	for _, dep := range node.Deps {
+		depNode, err := resolveDependencyNode(config, node, dep)
+		if err != nil {
+			return err
+		}
 			if err := visit(depNode); err != nil {
 				return err
 			}
@@ -154,19 +154,31 @@ func BuildDependencyGraph(config workspace.WorkspaceConfig) (map[string][]string
 
 	for _, lib := range config.Libraries {
 		key := GlobalLibKey(lib.Name)
-		graph[key] = append([]string{}, resolveGlobalDeps(lib.Deps, globalLibs)...)
+		resolved, err := resolveGlobalDeps(lib.Deps, globalLibs)
+		if err != nil {
+			return nil, err
+		}
+		graph[key] = append([]string{}, resolved...)
 	}
 
 	for _, app := range config.Apps {
 		for _, lib := range app.Libraries {
 			key := AppLibKey(app.Name, lib.Name)
-			graph[key] = append([]string{}, resolveAppDeps(app.Name, lib.Deps, appLibs, globalLibs, projects)...)
+			resolved, err := resolveAppDeps(app.Name, lib.Deps, appLibs, globalLibs, projects)
+			if err != nil {
+				return nil, err
+			}
+			graph[key] = append([]string{}, resolved...)
 		}
 	}
 
 	for _, project := range config.Projects {
 		key := ProjectKey(project.Name)
-		graph[key] = append([]string{}, resolveGlobalDeps(project.Deps, globalLibs)...)
+		resolved, err := resolveGlobalDeps(project.Deps, globalLibs)
+		if err != nil {
+			return nil, err
+		}
+		graph[key] = append([]string{}, resolved...)
 	}
 
 	return graph, nil
@@ -228,13 +240,20 @@ func nodeKey(node Node) string {
 	}
 }
 
-func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, depName string) (Node, error) {
-	depName = strings.TrimSpace(depName)
+func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep workspace.WorkspaceDep) (Node, error) {
+	depName := strings.TrimSpace(dep.Lib)
 	if depName == "" {
 		return Node{}, fmt.Errorf("dependency name is required")
 	}
+	depFrom := strings.TrimSpace(dep.From)
+	if depFrom == "" {
+		return Node{}, fmt.Errorf("dependency %s missing source", depName)
+	}
 
 	if target.Kind == NodeGlobalLib || target.Kind == NodeProject {
+		if depFrom != "global" {
+			return Node{}, fmt.Errorf("invalid dependency source for %s: %s", depName, depFrom)
+		}
 		lib, ok, err := findGlobalLibraryByName(config, depName)
 		if err != nil {
 			return Node{}, err
@@ -251,7 +270,7 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, depNam
 
 	var candidates []Node
 
-	if target.App != "" {
+	if target.App != "" && depFrom == target.App {
 		if lib, ok := findAppLibraryByName(config, target.App, depName); ok {
 			candidates = append(candidates, Node{
 				Kind:     NodeAppLib,
@@ -262,24 +281,28 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, depNam
 		}
 	}
 
-	if lib, ok, err := findGlobalLibraryByName(config, depName); err != nil {
-		return Node{}, err
-	} else if ok {
-		candidates = append(candidates, Node{
-			Kind:     NodeGlobalLib,
-			Name:     lib.Name,
-			Deps:     lib.Deps,
-		})
+	if depFrom == "global" {
+		if lib, ok, err := findGlobalLibraryByName(config, depName); err != nil {
+			return Node{}, err
+		} else if ok {
+			candidates = append(candidates, Node{
+				Kind:     NodeGlobalLib,
+				Name:     lib.Name,
+				Deps:     lib.Deps,
+			})
+		}
 	}
 
-	if project, ok, err := findProjectByName(config, depName); err != nil {
-		return Node{}, err
-	} else if ok {
-		candidates = append(candidates, Node{
-			Kind:     NodeProject,
-			Name:     project.Name,
-			Deps:     project.Deps,
-		})
+	if depFrom == "project" {
+		if project, ok, err := findProjectByName(config, depName); err != nil {
+			return Node{}, err
+		} else if ok {
+			candidates = append(candidates, Node{
+				Kind:     NodeProject,
+				Name:     project.Name,
+				Deps:     project.Deps,
+			})
+		}
 	}
 
 	if len(candidates) == 0 {
@@ -345,35 +368,51 @@ func nodeCheckInfo(root string, node Node) (string, string, string, error) {
 	}
 }
 
-func resolveGlobalDeps(deps []string, globals map[string]string) []string {
+func resolveGlobalDeps(deps []workspace.WorkspaceDep, globals map[string]string) ([]string, error) {
 	resolved := make([]string, 0, len(deps))
 	for _, dep := range deps {
-		if key, ok := globals[dep]; ok {
+		if strings.TrimSpace(dep.From) != "global" {
+			return nil, fmt.Errorf("invalid dependency source for %s: %s", dep.Lib, dep.From)
+		}
+		if key, ok := globals[dep.Lib]; ok {
 			resolved = append(resolved, key)
+		} else {
+			return nil, fmt.Errorf("dependency not found: %s", dep.Lib)
 		}
 	}
-	return resolved
+	return resolved, nil
 }
 
-func resolveAppDeps(appName string, deps []string, appLibs map[string]map[string]string, globals map[string]string, projects map[string]string) []string {
+func resolveAppDeps(appName string, deps []workspace.WorkspaceDep, appLibs map[string]map[string]string, globals map[string]string, projects map[string]string) ([]string, error) {
 	resolved := make([]string, 0, len(deps))
 	appEntries := appLibs[appName]
 	for _, dep := range deps {
-		if appEntries != nil {
-			if key, ok := appEntries[dep]; ok {
+		switch strings.TrimSpace(dep.From) {
+		case appName:
+			if appEntries != nil {
+				if key, ok := appEntries[dep.Lib]; ok {
+					resolved = append(resolved, key)
+					continue
+				}
+			}
+			return nil, fmt.Errorf("dependency not found: %s", dep.Lib)
+		case "global":
+			if key, ok := globals[dep.Lib]; ok {
 				resolved = append(resolved, key)
 				continue
 			}
-		}
-		if key, ok := globals[dep]; ok {
-			resolved = append(resolved, key)
-			continue
-		}
-		if key, ok := projects[dep]; ok {
-			resolved = append(resolved, key)
+			return nil, fmt.Errorf("dependency not found: %s", dep.Lib)
+		case "project":
+			if key, ok := projects[dep.Lib]; ok {
+				resolved = append(resolved, key)
+				continue
+			}
+			return nil, fmt.Errorf("dependency not found: %s", dep.Lib)
+		default:
+			return nil, fmt.Errorf("invalid dependency source for %s: %s", dep.Lib, dep.From)
 		}
 	}
-	return resolved
+	return resolved, nil
 }
 
 func findGlobalLibraryByName(config workspace.WorkspaceConfig, name string) (workspace.WorkspaceLibrary, bool, error) {
@@ -424,7 +463,7 @@ func findAppLibraryByName(config workspace.WorkspaceConfig, appName string, name
 	return workspace.WorkspaceLibrary{}, false
 }
 
-func makeNode(kind NodeKind, app string, name string, deps ...string) Node {
+func makeNode(kind NodeKind, app string, name string, deps ...workspace.WorkspaceDep) Node {
 	return Node{
 		Kind:     kind,
 		App:      app,

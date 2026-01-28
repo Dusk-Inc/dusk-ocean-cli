@@ -4,7 +4,6 @@
     "type": "project",
     "tasks": {
         "build": "go build ./...",
-        "test": "go test ./...",
-        "install": "go get github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean"
+        "test": "go test ./..."
     }
 }

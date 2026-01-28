@@ -18,7 +18,11 @@ func TestCollectDependencyOrder(t *testing.T) {
 				workspace.MakeProject("project-x",  "lib-a"),
 			},
 		)
-		target := makeNode(NodeProject, "", "project-x", "lib-a")
+		dep := workspace.WorkspaceDep{
+			Lib:  "lib-a",
+			From: "global",
+		}
+		target := makeNode(NodeProject, "", "project-x", dep)
 
 		order, err := CollectDependencyOrder(config, target)
 		if err != nil {
@@ -61,7 +65,10 @@ func TestCollectDependencyOrder(t *testing.T) {
 
 	t.Run("complement__missing_dependency__returns_error", func(t *testing.T) {
 		config := workspace.MakeConfig(nil, nil, nil)
-		target := makeNode(NodeProject, "", "project-x", "missing-lib")
+		target := makeNode(NodeProject, "", "project-x", workspace.WorkspaceDep{
+			Lib:  "missing-lib",
+			From: "global",
+		})
 
 		if _, err := CollectDependencyOrder(config, target); err == nil {
 			t.Fatalf("expected error")
@@ -70,7 +77,10 @@ func TestCollectDependencyOrder(t *testing.T) {
 
 	t.Run("chaos__whitespace_dependency__returns_error", func(t *testing.T) {
 		config := workspace.MakeConfig(nil, nil, nil)
-		target := makeNode(NodeProject, "", "project-x", "  ")
+		target := makeNode(NodeProject, "", "project-x", workspace.WorkspaceDep{
+			Lib:  "  ",
+			From: "global",
+		})
 
 		if _, err := CollectDependencyOrder(config, target); err == nil {
 			t.Fatalf("expected error")
@@ -137,9 +147,13 @@ func TestResolveDependencyNode(t *testing.T) {
 			},
 			nil,
 		)
-		target := makeNode(NodeService, "app", "svc", "lib-a")
+		dep := workspace.WorkspaceDep{
+			Lib:  "lib-a",
+			From: "app",
+		}
+		target := makeNode(NodeService, "app", "svc", dep)
 
-		node, err := resolveDependencyNode(config, target, "lib-a")
+		node, err := resolveDependencyNode(config, target, dep)
 		if err != nil {
 			t.Fatalf("resolveDependencyNode: %v", err)
 		}
@@ -156,9 +170,13 @@ func TestResolveDependencyNode(t *testing.T) {
 			nil,
 			nil,
 		)
-		target := makeNode(NodeProject, "", "project-x", "lib-a")
+		dep := workspace.WorkspaceDep{
+			Lib:  " lib-a ",
+			From: "global",
+		}
+		target := makeNode(NodeProject, "", "project-x", dep)
 
-		node, err := resolveDependencyNode(config, target, " lib-a ")
+		node, err := resolveDependencyNode(config, target, dep)
 		if err != nil {
 			t.Fatalf("resolveDependencyNode: %v", err)
 		}
@@ -169,14 +187,18 @@ func TestResolveDependencyNode(t *testing.T) {
 
 	t.Run("complement__missing_dependency__returns_error", func(t *testing.T) {
 		config := workspace.MakeConfig(nil, nil, nil)
-		target := makeNode(NodeProject, "", "project-x", "missing")
+		dep := workspace.WorkspaceDep{
+			Lib:  "missing",
+			From: "global",
+		}
+		target := makeNode(NodeProject, "", "project-x", dep)
 
-		if _, err := resolveDependencyNode(config, target, "missing"); err == nil {
+		if _, err := resolveDependencyNode(config, target, dep); err == nil {
 			t.Fatalf("expected error")
 		}
 	})
 
-	t.Run("chaos__ambiguous_dependency__returns_error", func(t *testing.T) {
+	t.Run("chaos__ambiguous_dependency__resolves_with_source", func(t *testing.T) {
 		config := workspace.MakeConfig(
 			[]workspace.WorkspaceLibrary{
 				workspace.MakeLibrary("lib-a"),
@@ -186,14 +208,22 @@ func TestResolveDependencyNode(t *testing.T) {
 					workspace.MakeLibrary("lib-a"),
 				}),
 			},
-			[]workspace.WorkspaceProject{
-				workspace.MakeProject("lib-a"),
-			},
-		)
-		target := makeNode(NodeService, "app", "svc", "lib-a")
+				[]workspace.WorkspaceProject{
+					workspace.MakeProject("lib-a"),
+				},
+			)
+		dep := workspace.WorkspaceDep{
+			Lib:  "lib-a",
+			From: "app",
+		}
+		target := makeNode(NodeService, "app", "svc", dep)
 
-		if _, err := resolveDependencyNode(config, target, "lib-a"); err == nil {
-			t.Fatalf("expected error")
+		node, err := resolveDependencyNode(config, target, dep)
+		if err != nil {
+			t.Fatalf("resolveDependencyNode: %v", err)
+		}
+		if node.Kind != NodeAppLib || node.App != "app" || node.Name != "lib-a" {
+			t.Fatalf("unexpected node: %#v", node)
 		}
 	})
 }
@@ -205,15 +235,21 @@ func TestBuildDependencyGraph(t *testing.T) {
 				workspace.MakeLibrary("g-lib"),
 				workspace.MakeLibrary("g-dep"),
 			},
-			[]workspace.WorkspaceApp{
-				workspace.MakeApp("app", []workspace.WorkspaceLibrary{
-					workspace.MakeLibrary("a-lib",  "g-lib", "project-x"),
-					workspace.MakeLibrary("a-dep"),
-				}),
-			},
-			[]workspace.WorkspaceProject{
-				workspace.MakeProject("project-x",  "g-dep"),
-			},
+				[]workspace.WorkspaceApp{
+					workspace.MakeApp("app", []workspace.WorkspaceLibrary{
+						{
+							Name: "a-lib",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "g-lib", From: "global"},
+								{Lib: "project-x", From: "project"},
+							},
+						},
+						workspace.MakeLibrary("a-dep"),
+					}),
+				},
+				[]workspace.WorkspaceProject{
+					workspace.MakeProject("project-x",  "g-dep"),
+				},
 		)
 
 		graph, err := BuildDependencyGraph(config)
@@ -260,14 +296,21 @@ func TestBuildDependencyGraph(t *testing.T) {
 		}
 	})
 
-	t.Run("chaos__unknown_deps__ignored", func(t *testing.T) {
+	t.Run("chaos__unknown_deps__returns_error", func(t *testing.T) {
 		config := workspace.MakeConfig(
 			[]workspace.WorkspaceLibrary{
 				workspace.MakeLibrary("g-lib",  "missing"),
 			},
 			[]workspace.WorkspaceApp{
 				workspace.MakeApp("app", []workspace.WorkspaceLibrary{
-					workspace.MakeLibrary("a-lib",  "missing", "g-lib", "project-x"),
+					{
+						Name: "a-lib",
+						Deps: []workspace.WorkspaceDep{
+							{Lib: "missing", From: "global"},
+							{Lib: "g-lib", From: "global"},
+							{Lib: "project-x", From: "project"},
+						},
+					},
 				}),
 			},
 			[]workspace.WorkspaceProject{
@@ -275,17 +318,9 @@ func TestBuildDependencyGraph(t *testing.T) {
 			},
 		)
 
-		graph, err := BuildDependencyGraph(config)
-		if err != nil {
-			t.Fatalf("BuildDependencyGraph: %v", err)
+		if _, err := BuildDependencyGraph(config); err == nil {
+			t.Fatalf("expected error")
 		}
-
-		assertGraphEntry(t, graph, GlobalLibKey("g-lib"), []string{})
-		assertGraphEntry(t, graph, AppLibKey("app", "a-lib"), []string{
-			GlobalLibKey("g-lib"),
-			ProjectKey("project-x"),
-		})
-		assertGraphEntry(t, graph, ProjectKey("project-x"), []string{})
 	})
 }
 
