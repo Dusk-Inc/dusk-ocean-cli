@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/libraries"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/projects"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/scaffold"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/tree"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
@@ -291,7 +293,10 @@ var addLibCmd = &cobra.Command{
 			}
 		}
 
-		return nil
+		if location == "app" {
+			return libraries.AddAppLibraryToWorkspace(fs, appName, libName)
+		}
+		return libraries.AddGlobalLibraryToWorkspace(fs, libName)
 	},
 }
 
@@ -355,7 +360,10 @@ var addPkgCmd = &cobra.Command{
 			}
 			return err
 		}
-		return scaffold.CopyDir(fs, templatePath, destPath)
+		if err := scaffold.CopyDir(fs, templatePath, destPath); err != nil {
+			return err
+		}
+		return projects.AddProjectToWorkspace(fs, projectName)
 	},
 }
 

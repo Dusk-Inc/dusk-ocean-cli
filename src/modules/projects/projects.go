@@ -23,10 +23,25 @@ func MakeProjectNode(config workspace.WorkspaceConfig, name string) (deps.Node, 
 		return deps.Node{}, fmt.Errorf("project not registered in workspace: %s", name)
 	}
 	return deps.Node{
-		Kind:     deps.NodeProject,
-		Name:     project.Name,
-		Deps:     project.Deps,
+		Kind: deps.NodeProject,
+		Name: project.Name,
+		Deps: project.Deps,
 	}, nil
+}
+
+func AddProjectToWorkspace(fs afero.Fs, name string) error {
+	config, err := workspace.ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	if workspace.FindProjectIndex(config, name) != -1 {
+		return nil
+	}
+	config.Projects = append(config.Projects, workspace.WorkspaceProject{
+		Name: name,
+		Deps: []workspace.WorkspaceDep{},
+	})
+	return workspace.WriteWorkspaceConfig(fs, config)
 }
 
 // RemoveProjectFromWorkspace removes a project entry from ocean.workspace.json.

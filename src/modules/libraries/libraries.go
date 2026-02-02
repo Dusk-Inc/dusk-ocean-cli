@@ -20,10 +20,10 @@ func MakeAppLibNode(config workspace.WorkspaceConfig, appName string, name strin
 		return deps.Node{}, fmt.Errorf("library not registered in workspace: %s", name)
 	}
 	return deps.Node{
-		Kind:     deps.NodeAppLib,
-		App:      appName,
-		Name:     name,
-		Deps:     lib.Deps,
+		Kind: deps.NodeAppLib,
+		App:  appName,
+		Name: name,
+		Deps: lib.Deps,
 	}, nil
 }
 
@@ -36,10 +36,54 @@ func MakeGlobalLibNode(config workspace.WorkspaceConfig, name string) (deps.Node
 		return deps.Node{}, fmt.Errorf("library not registered in workspace: %s", name)
 	}
 	return deps.Node{
-		Kind:     deps.NodeGlobalLib,
-		Name:     lib.Name,
-		Deps:     lib.Deps,
+		Kind: deps.NodeGlobalLib,
+		Name: lib.Name,
+		Deps: lib.Deps,
 	}, nil
+}
+
+func AddAppLibraryToWorkspace(fs afero.Fs, appName string, name string) error {
+	config, err := workspace.ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	appIndex := workspace.FindAppIndex(config, appName)
+	if appIndex == -1 {
+		config.Apps = append(config.Apps, workspace.WorkspaceApp{
+			Name: appName,
+			Libraries: []workspace.WorkspaceLibrary{
+				{
+					Name: name,
+					Deps: []workspace.WorkspaceDep{},
+				},
+			},
+			Services: []workspace.WorkspaceService{},
+		})
+		return workspace.WriteWorkspaceConfig(fs, config)
+	}
+	if workspace.FindAppLibraryIndex(config.Apps[appIndex], name) != -1 {
+		return nil
+	}
+	config.Apps[appIndex].Libraries = append(config.Apps[appIndex].Libraries, workspace.WorkspaceLibrary{
+		Name: name,
+		Deps: []workspace.WorkspaceDep{},
+	})
+	return workspace.WriteWorkspaceConfig(fs, config)
+}
+
+func AddGlobalLibraryToWorkspace(fs afero.Fs, name string) error {
+	config, err := workspace.ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	if workspace.FindGlobalLibraryIndex(config, name) != -1 {
+		return nil
+	}
+	config.Libraries = append(config.Libraries, workspace.WorkspaceLibrary{
+		Name: name,
+		Deps: []workspace.WorkspaceDep{},
+	})
+	return workspace.WriteWorkspaceConfig(fs, config)
 }
 
 func RemoveAppLibraryFromWorkspace(fs afero.Fs, appName string, name string) error {

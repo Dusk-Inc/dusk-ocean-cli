@@ -16,7 +16,7 @@ func TestMakeProjectNode(t *testing.T) {
 			nil,
 			nil,
 			[]workspace.WorkspaceProject{
-				workspace.MakeProject("alpha",  "lib-a", "lib-b"),
+				workspace.MakeProject("alpha", "lib-a", "lib-b"),
 			},
 		)
 
@@ -164,6 +164,53 @@ func TestRemoveProjectFromWorkspace(t *testing.T) {
 		}
 		if len(config.Projects) != 1 || config.Projects[0].Name != "beta" {
 			t.Fatalf("expected remaining project to be beta")
+		}
+	})
+}
+
+func TestAddProjectToWorkspace(t *testing.T) {
+	t.Run("domain__new_project__adds_entry", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Projects: []workspace.WorkspaceProject{},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddProjectToWorkspace(fs, "alpha"); err != nil {
+			t.Fatalf("AddProjectToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Projects) != 1 || config.Projects[0].Name != "alpha" {
+			t.Fatalf("expected project alpha to be registered")
+		}
+	})
+
+	t.Run("boundary__existing_project__no_duplicate", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Projects: []workspace.WorkspaceProject{
+				workspace.MakeProject("alpha"),
+				workspace.MakeProject("beta"),
+			},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddProjectToWorkspace(fs, "alpha"); err != nil {
+			t.Fatalf("AddProjectToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Projects) != 2 {
+			t.Fatalf("expected no duplicate projects")
 		}
 	})
 }

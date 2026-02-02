@@ -75,7 +75,7 @@ func TestMakeAppLibNode(t *testing.T) {
 			nil,
 			[]workspace.WorkspaceApp{
 				workspace.MakeApp("alpha", []workspace.WorkspaceLibrary{
-					workspace.MakeLibrary("lib-a",  "dep-1"),
+					workspace.MakeLibrary("lib-a", "dep-1"),
 				}),
 			},
 			nil,
@@ -152,7 +152,7 @@ func TestMakeGlobalLibNode(t *testing.T) {
 	t.Run("domain__registered_library__returns_node", func(t *testing.T) {
 		config := workspace.MakeConfig(
 			[]workspace.WorkspaceLibrary{
-				workspace.MakeLibrary("lib-a",  "dep-1"),
+				workspace.MakeLibrary("lib-a", "dep-1"),
 			},
 			nil,
 			nil,
@@ -212,10 +212,136 @@ func TestMakeGlobalLibNode(t *testing.T) {
 			nil,
 			nil,
 		)
-		
+
 		_, err := MakeGlobalLibNode(config, "lib-e")
 		if err == nil {
 			t.Fatalf("expected error")
+		}
+	})
+}
+
+func TestAddAppLibraryToWorkspace(t *testing.T) {
+	t.Run("domain__new_app_library__adds_entry", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Apps: []workspace.WorkspaceApp{
+				{
+					Name:      "alpha",
+					Services:  []workspace.WorkspaceService{},
+					Libraries: []workspace.WorkspaceLibrary{},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddAppLibraryToWorkspace(fs, "alpha", "lib-a"); err != nil {
+			t.Fatalf("AddAppLibraryToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Apps) != 1 || len(config.Apps[0].Libraries) != 1 || config.Apps[0].Libraries[0].Name != "lib-a" {
+			t.Fatalf("expected app library lib-a to be registered")
+		}
+	})
+
+	t.Run("boundary__missing_app__creates_app_entry", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddAppLibraryToWorkspace(fs, "beta", "lib-b"); err != nil {
+			t.Fatalf("AddAppLibraryToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Apps) != 1 || config.Apps[0].Name != "beta" {
+			t.Fatalf("expected app beta to be registered")
+		}
+		if len(config.Apps[0].Libraries) != 1 || config.Apps[0].Libraries[0].Name != "lib-b" {
+			t.Fatalf("expected app library lib-b to be registered")
+		}
+	})
+
+	t.Run("boundary__existing_app_library__no_duplicate", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Apps: []workspace.WorkspaceApp{
+				{
+					Name: "gamma",
+					Libraries: []workspace.WorkspaceLibrary{
+						workspace.MakeLibrary("lib-c"),
+					},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddAppLibraryToWorkspace(fs, "gamma", "lib-c"); err != nil {
+			t.Fatalf("AddAppLibraryToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Apps) != 1 || len(config.Apps[0].Libraries) != 1 {
+			t.Fatalf("expected no duplicate app libraries")
+		}
+	})
+}
+
+func TestAddGlobalLibraryToWorkspace(t *testing.T) {
+	t.Run("domain__new_global_library__adds_entry", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Libraries: []workspace.WorkspaceLibrary{},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddGlobalLibraryToWorkspace(fs, "lib-a"); err != nil {
+			t.Fatalf("AddGlobalLibraryToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Libraries) != 1 || config.Libraries[0].Name != "lib-a" {
+			t.Fatalf("expected global library lib-a to be registered")
+		}
+	})
+
+	t.Run("boundary__existing_global_library__no_duplicate", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
+			Libraries: []workspace.WorkspaceLibrary{
+				workspace.MakeLibrary("lib-a"),
+				workspace.MakeLibrary("lib-b"),
+			},
+		}); err != nil {
+			t.Fatalf("WriteWorkspaceConfig: %v", err)
+		}
+
+		if err := AddGlobalLibraryToWorkspace(fs, "lib-a"); err != nil {
+			t.Fatalf("AddGlobalLibraryToWorkspace: %v", err)
+		}
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			t.Fatalf("ReadWorkspaceConfig: %v", err)
+		}
+		if len(config.Libraries) != 2 {
+			t.Fatalf("expected no duplicate global libraries")
 		}
 	})
 }

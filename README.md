@@ -4,8 +4,9 @@ Dusk Ocean CLI tool is used to manage polyglot mono-repos.
 ## Getting Started
 To get started, install the CLI from {{TBD}}, then run:
 ```bash
-    ocean init --name <workspace_name> --registry <registry_address>
+    dusk-ocean init --name <workspace_name> --registry <registry_address>
 ```
+All CLI commands must use the `dusk-ocean` prefix (`ocean` is not supported).
 This command initializes the workspace by creating the ocean-workspace.json configuration file and a .ocean metadata folder. It also ensures a .gitignore exists and adds .ocean to it.
 It also scaffolds the base workspace directory structure and template files:
 - `.ocean/` with `results/` and `hashes/` subfolders.
@@ -158,29 +159,29 @@ It also creates the base workspace structure and template files:
 
 #### Add
 Scaffold new components without manual boilerplate setup.
-- `ocean add app --name <name>`: Creates the folder structure and basic docker-compose files (including Redis and HashiCorp Vault).
-- `ocean add service`: Prompts for an app, name, template, and database attachment choice, then scaffolds the service. The flow and validation are:
+- `dusk-ocean add app --name <name>`: Creates the folder structure and basic docker-compose files (including Redis and HashiCorp Vault).
+- `dusk-ocean add service`: Prompts for an app, name, template, and database attachment choice, then scaffolds the service. The flow and validation are:
   - App selection: choose from existing apps; errors if no apps exist.
   - Service name: required, no spaces, and letters only (A-Z/a-z).
   - Template selection: choose from available API templates or "none (boilerplate)"; errors if no templates exist.
   - Attach database: yes/no prompt (selection is captured, but no side effects are currently applied).
   - Template placeholders: if the selected template contains `{{placeholders}}` in file names or contents, prompts for each value and requires non-empty input.
   - Applies scaffold output, assigns ports, updates `ocean-workspace.json`, and wires the service into the app's `docker-compose.yml` and `docker-compose.dev.yml`.
-  - `ocean add library`: Prompts for location (Global or App-specific) and template. For Go libraries, it automatically runs go work use.
-  - `ocean add project`: Scaffolds an external-facing project in the repos/projects directory from the selected template.
+  - `dusk-ocean add library`: Prompts for location (Global or App-specific) and template. Then, the CLI adds an entry to ocean.workspace.json in the "libraries" array.
+  - `dusk-ocean add project`: Scaffolds an external-facing project in the repos/projects directory from the selected template. Then, the CLI adds an entry to ocean.workspace.json in the "projects" array.
 
 #### Run
 Manage local development environments.
-- `ocean run app`: Merges base and dev Compose files to spin up a full environment. Use `--no-dev` for a production-like local run.
-- `ocean run service`: Allows interactive selection of one or more services to run.
+- `dusk-ocean run app`: Merges base and dev Compose files to spin up a full environment. Use `--no-dev` for a production-like local run.
+- `dusk-ocean run service`: Allows interactive selection of one or more services to run.
 
 #### Build & Check
-- `ocean build (project|service|library) --name <name>`: Executes the build task defined in the config if the hash has changed.
-- `ocean check (project|service|library) --name <name>`: Executes the test suite and outputs JUnit XML to .ocean/results.
+- `dusk-ocean build (project|service|library) --name <name>`: Executes the build task defined in the config if the hash has changed.
+- `dusk-ocean check (project|service|library) --name <name>`: Executes the test suite and outputs JUnit XML to .ocean/results.
 
 #### Install
 Install a local dependency into the current target directory using the dependency's install task.
-- `ocean install <dependency>`: Run from inside a service, app library, global library, or project folder.
+- `dusk-ocean install <dependency>`: Run from inside a service, app library, global library, or project folder.
 Allowed dependency flows:
 ```
 Target            -> Dependency
@@ -195,14 +196,14 @@ project           -> global library
 ```
 
 #### Contain & Refresh
-- `ocean contain service --name <name>`: Builds and publishes a Docker image to the configured registry.
-- `ocean refresh`: Performs a state cleanup. It validates hashes, ensures port consistency, and checks image names across orchestration configs.
-- `ocean refresh --clear-hashes`: Removes all build/check hash files when test runs appear stuck or need a clean rebuild.
+- `dusk-ocean contain service --name <name>`: Builds and publishes a Docker image to the configured registry.
+- `dusk-ocean refresh`: Performs a state cleanup. It validates hashes, ensures port consistency, and checks image names across orchestration configs.
+- `dusk-ocean refresh --clear-hashes`: Removes all build/check hash files when test runs appear stuck or need a clean rebuild.
 
 #### Detach
 Detaching allows code to be removed from the monorepo for delivery to clients or external hosting.
-- `ocean detach app`: Safely extracts a full application and its local dependencies.
-- `ocean detach package`: Extracts a single library or project.
+- `dusk-ocean detach app`: Safely extracts a full application and its local dependencies.
+- `dusk-ocean detach package`: Extracts a single library or project.
 
 ### Orchestration
 Dusk Ocean uses a layered Merge Strategy for Docker Compose to keep environments consistent:
@@ -223,7 +224,7 @@ To make the Pythen Test Explorer use Dusk Ocean, update your `.vscode/settings.j
 ```json
 {
     "python.testing.pytestEnabled": true,
-    "python.testing.pytestPath": "ocean", 
+    "python.testing.pytestPath": "dusk-ocean", 
     "python.testing.pytestArgs": [
         "check", "service", 
         "--name", "${workspaceFolderBasename}", 
@@ -233,7 +234,7 @@ To make the Pythen Test Explorer use Dusk Ocean, update your `.vscode/settings.j
 ```
 
 - Discovery: The Python extension will still scan your files to find `test_` functions.
-- Execution: when you click "Play", it calls `ocean check`, which spins up the `docker-compose + docker-compose.dev` stack, runs the tests, and shuts it down.
+- Execution: when you click "Play", it calls `dusk-ocean check`, which spins up the `docker-compose + docker-compose.dev` stack, runs the tests, and shuts it down.
 
 ##### Typescript
 For Typescript, we recommend using Jest with a custom command prefix. However, both are possible:
@@ -242,7 +243,7 @@ For Typescript, we recommend using Jest with a custom command prefix. However, b
 To use Jest, you should use the Jest Extension by Orta. Since this extension looks for the jest binary, you must configure it to call the CLI instead. In `.vscode/settings.json`:
 ```json
 {
-    "jest.jestCommandLine": "ocean check",
+    "jest.jestCommandLine": "dusk-ocean check",
     "jest.runArgs": [
         "library", 
         "--name", "${workspaceFolderBasename}", 
@@ -259,7 +260,7 @@ Note for Jest: You must install jest-junit in your project. The CLI will interce
 If you prefer Vitest, the override is simpler. In `.vscode/settings.json`:
 ```json
 {
-    "vitest.commandLine": "ocean check library --name my-ui-lib --"
+    "vitest.commandLine": "dusk-ocean check library --name my-ui-lib --"
 }
 ```
 
