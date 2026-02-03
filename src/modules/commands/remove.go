@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/libraries"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/projects"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/prompts"
@@ -148,13 +148,6 @@ var removeLibCmd = &cobra.Command{
 		}
 		dependents := libraries.CollectLibraryDependents(workspaceConfig, root, name, source)
 		if len(dependents) > 0 {
-			uninstallCmd, err := workspace.ReadRepoCommand(fs, path, "uninstall")
-			if err != nil {
-				return err
-			}
-			if strings.TrimSpace(uninstallCmd) == "" {
-				return fmt.Errorf("uninstall command missing for %s", name)
-			}
 			for _, target := range dependents {
 				if _, err := fs.Stat(target.Path); err != nil {
 					if os.IsNotExist(err) {
@@ -162,13 +155,9 @@ var removeLibCmd = &cobra.Command{
 					}
 					return err
 				}
-				execCmd := exec.Command("bash", "-lc", uninstallCmd)
-				execCmd.Dir = target.Path
-				execCmd.Stdout = cmd.OutOrStdout()
-				execCmd.Stderr = cmd.ErrOrStderr()
-				if err := execCmd.Run(); err != nil {
-					return err
-				}
+			}
+			if err := deps.RunUninstallForTargets(cmd, fs, path, name, dependents, deps.UninstallOptions{}); err != nil {
+				return err
 			}
 		}
 

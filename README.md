@@ -4,7 +4,7 @@ Dusk Ocean CLI tool is used to manage polyglot mono-repos.
 ## Getting Started
 To get started, install the CLI from {{TBD}}, then run:
 ```bash
-    dusk-ocean init --name <workspace_name> --registry <registry_address>
+    dusk-ocean init --name <workspace_name>
 ```
 All CLI commands must use the `dusk-ocean` prefix (`ocean` is not supported).
 This command initializes the workspace by creating the ocean-workspace.json configuration file and a .ocean metadata folder. It also ensures a .gitignore exists and adds .ocean to it.
@@ -46,7 +46,6 @@ Which looks like this:
 ```json
 {
     "workspace": "workspace-name",
-    "docker_registry": "localhost:3000",
     "ports": {
         "allowed": {
             "min": 3000,
@@ -149,7 +148,7 @@ Initializes the workspace and creates the ocean-workspace.json. This file tracks
 - Allowed and reserved ports for services.
 - A registry of all apps and their constituent services (including ports and image names).
 It also creates the base workspace structure and template files:
-- `ocean.workspace.json` (if missing) with workspace name, registry, and starter app/service placeholders.
+- `ocean.workspace.json` (if missing) with workspace name and starter app/service placeholders.
 - `.ocean/` with `results/` and `hashes/`.
 - `repos/` with `apps/`, `libs/`, `containers/`, and `templates/`.
 - `repos/templates/apps/` with subfolders `services/`, `libs/`, `jobs/`, and `testing/`.
@@ -196,7 +195,7 @@ project           -> global library
 ```
 
 #### Contain & Refresh
-- `dusk-ocean contain service --name <name>`: Builds and publishes a Docker image to the configured registry.
+- `dusk-ocean contain service --name <name>`: Builds and publishes a Docker image using the local Docker setup.
 - `dusk-ocean refresh`: Performs a state cleanup. It validates hashes, ensures port consistency, and checks image names across orchestration configs.
 - `dusk-ocean refresh --clear-hashes`: Removes all build/check hash files when test runs appear stuck or need a clean rebuild.
 

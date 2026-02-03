@@ -11,6 +11,13 @@ var rootCmd = &cobra.Command{
 	Use:   "Dusk-Inc Ocean",
 	Short: "Dusk Ocean CLI - Manage the Dusk Inc Monorepo",
 	Long:  `A polyglot monorepo tool for scaffolding, testing, and deploying services.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Name() == "version" || cmd.Name() == "init" || cmd.Name() == "help" {
+			return nil
+		}
+		_, err := workspace.EnsureWorkspaceRoot(afero.NewOsFs())
+		return err
+	},
 }
 
 var addCmd = &cobra.Command{
@@ -51,14 +58,8 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		registry, err := cmd.Flags().GetString("registry")
-		if err != nil {
-			return err
-		}
-
 		return workspace.InitWorkspace(afero.NewOsFs(), cmd.OutOrStdout(), workspace.InitOptions{
-			Name:     name,
-			Registry: registry,
+			Name: name,
 		})
 	},
 }
@@ -77,6 +78,7 @@ func init() {
 	rootCmd.AddCommand(containCmd)
 	rootCmd.AddCommand(refreshCmd)
 	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(versionCmd)
 
 	addCmd.AddCommand(addAppCmd)
@@ -106,5 +108,4 @@ func init() {
 	runCmd.AddCommand(runServiceCmd)
 
 	initCmd.Flags().String("name", "", "Workspace name")
-	initCmd.Flags().String("registry", "", "Docker registry address")
 }

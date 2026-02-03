@@ -21,13 +21,12 @@ import (
 )
 
 type WorkspaceConfig struct {
-	Workspace      string             `json:"workspace"`
-	Version        string             `json:"version,omitempty"`
-	DockerRegistry string             `json:"docker_registry"`
-	Ports          WorkspacePorts     `json:"ports"`
-	Apps           []WorkspaceApp     `json:"apps"`
-	Libraries      []WorkspaceLibrary `json:"libraries"`
-	Projects       []WorkspaceProject `json:"projects"`
+	Workspace string             `json:"workspace"`
+	Version   string             `json:"version,omitempty"`
+	Ports     WorkspacePorts     `json:"ports"`
+	Apps      []WorkspaceApp     `json:"apps"`
+	Libraries []WorkspaceLibrary `json:"libraries"`
+	Projects  []WorkspaceProject `json:"projects"`
 }
 
 type WorkspacePorts struct {
@@ -113,9 +112,37 @@ type Target struct {
 	Path string
 }
 
+func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	root, err := tree.GetRoot()
+	if err != nil {
+		return "", err
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
+	if absRoot != absCwd {
+		return "", fmt.Errorf("command must be run from the workspace root (%s)", absRoot)
+	}
+	if _, err := fs.Stat("ocean.workspace.json"); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workspace config not found: ocean.workspace.json")
+		}
+		return "", err
+	}
+	return absRoot, nil
+}
+
 type InitOptions struct {
-	Name     string
-	Registry string
+	Name string
 }
 
 func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []WorkspaceProject) WorkspaceConfig {
@@ -153,10 +180,6 @@ func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	if opts.Name == "" {
 		return fmt.Errorf("--name is required")
 	}
-	if opts.Registry == "" {
-		return fmt.Errorf("--registry is required")
-	}
-
 	if err := ensureWorkspaceFile(fs, out, opts); err != nil {
 		return err
 	}
@@ -212,9 +235,8 @@ func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	}
 
 	workspaceConfig := WorkspaceConfig{
-		Workspace:      opts.Name,
-		Version:        "",
-		DockerRegistry: opts.Registry,
+		Workspace: opts.Name,
+		Version:   "",
 		Ports: WorkspacePorts{
 			Allowed: WorkspacePortRange{
 				Min: 3000,

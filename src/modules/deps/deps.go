@@ -2,11 +2,13 @@ package deps
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/hash"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
@@ -20,10 +22,15 @@ const (
 )
 
 type Node struct {
-	Kind     NodeKind
-	App      string
-	Name     string
-	Deps     []workspace.WorkspaceDep
+	Kind NodeKind
+	App  string
+	Name string
+	Deps []workspace.WorkspaceDep
+}
+
+type UninstallOptions struct {
+	ReadRepoCommand func(afero.Fs, string, string) (string, error)
+	RunCommand      func(*exec.Cmd) error
 }
 
 func RunBuildWithDependencies(cmd *cobra.Command, root string, config workspace.WorkspaceConfig, target Node, built map[string]struct{}) error {
@@ -78,6 +85,39 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config workspace.
 	return workspace.RunCheck(cmd, label, path, hashPath, passThrough, root)
 }
 
+func RunUninstallForTargets(cmd *cobra.Command, fs afero.Fs, dependencyPath string, dependencyName string, targets []workspace.Target, options UninstallOptions) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	readRepoCommand := options.ReadRepoCommand
+	if readRepoCommand == nil {
+		readRepoCommand = workspace.ReadRepoCommand
+	}
+	runCommand := options.RunCommand
+	if runCommand == nil {
+		runCommand = func(command *exec.Cmd) error {
+			return command.Run()
+		}
+	}
+	uninstallCmd, err := readRepoCommand(fs, dependencyPath, "uninstall")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(uninstallCmd) == "" {
+		return fmt.Errorf("uninstall command missing for %s", dependencyName)
+	}
+	for _, target := range targets {
+		execCmd := exec.Command("bash", "-lc", uninstallCmd)
+		execCmd.Dir = target.Path
+		execCmd.Stdout = cmd.OutOrStdout()
+		execCmd.Stderr = cmd.ErrOrStderr()
+		if err := runCommand(execCmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func CollectDependencyOrder(config workspace.WorkspaceConfig, target Node) ([]Node, error) {
 	visited := map[string]struct{}{}
 	stack := map[string]struct{}{}
@@ -93,11 +133,11 @@ func CollectDependencyOrder(config workspace.WorkspaceConfig, target Node) ([]No
 			return nil
 		}
 		stack[key] = struct{}{}
-	for _, dep := range node.Deps {
-		depNode, err := resolveDependencyNode(config, node, dep)
-		if err != nil {
-			return err
-		}
+		for _, dep := range node.Deps {
+			depNode, err := resolveDependencyNode(config, node, dep)
+			if err != nil {
+				return err
+			}
 			if err := visit(depNode); err != nil {
 				return err
 			}
@@ -262,9 +302,9 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep wo
 			return Node{}, fmt.Errorf("dependency not found: %s", depName)
 		}
 		return Node{
-			Kind:     NodeGlobalLib,
-			Name:     lib.Name,
-			Deps:     lib.Deps,
+			Kind: NodeGlobalLib,
+			Name: lib.Name,
+			Deps: lib.Deps,
 		}, nil
 	}
 
@@ -273,10 +313,10 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep wo
 	if target.App != "" && depFrom == target.App {
 		if lib, ok := findAppLibraryByName(config, target.App, depName); ok {
 			candidates = append(candidates, Node{
-				Kind:     NodeAppLib,
-				App:      target.App,
-				Name:     lib.Name,
-				Deps:     lib.Deps,
+				Kind: NodeAppLib,
+				App:  target.App,
+				Name: lib.Name,
+				Deps: lib.Deps,
 			})
 		}
 	}
@@ -286,9 +326,9 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep wo
 			return Node{}, err
 		} else if ok {
 			candidates = append(candidates, Node{
-				Kind:     NodeGlobalLib,
-				Name:     lib.Name,
-				Deps:     lib.Deps,
+				Kind: NodeGlobalLib,
+				Name: lib.Name,
+				Deps: lib.Deps,
 			})
 		}
 	}
@@ -298,9 +338,9 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep wo
 			return Node{}, err
 		} else if ok {
 			candidates = append(candidates, Node{
-				Kind:     NodeProject,
-				Name:     project.Name,
-				Deps:     project.Deps,
+				Kind: NodeProject,
+				Name: project.Name,
+				Deps: project.Deps,
 			})
 		}
 	}
@@ -465,9 +505,9 @@ func findAppLibraryByName(config workspace.WorkspaceConfig, appName string, name
 
 func makeNode(kind NodeKind, app string, name string, deps ...workspace.WorkspaceDep) Node {
 	return Node{
-		Kind:     kind,
-		App:      app,
-		Name:     name,
-		Deps:     deps,
+		Kind: kind,
+		App:  app,
+		Name: name,
+		Deps: deps,
 	}
 }

@@ -171,7 +171,6 @@ func TestWireServiceToCompose(t *testing.T) {
 			t.Fatalf("mkdir app: %v", err)
 		}
 		if err := workspace.WriteWorkspaceConfig(fs, workspace.WorkspaceConfig{
-			DockerRegistry: "ghcr.io/acme",
 			Ports: workspace.WorkspacePorts{
 				Allowed: workspace.WorkspacePortRange{
 					Min: 4000,
@@ -183,8 +182,8 @@ func TestWireServiceToCompose(t *testing.T) {
 					Name: "alpha",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "api",
-							Port:     "4001",
+							Name: "api",
+							Port: "4001",
 						},
 					},
 				},
@@ -202,7 +201,7 @@ func TestWireServiceToCompose(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read compose service: %v", err)
 		}
-		if service["image"] != "ghcr.io/acme/alpha__api:dev" {
+		if service["image"] != "alpha__api:dev" {
 			t.Fatalf("expected image to be set")
 		}
 		ports, ok := service["ports"].([]any)
@@ -241,8 +240,8 @@ func TestWireServiceToCompose(t *testing.T) {
 					Name: "alpha",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "api",
-							Port:     "",
+							Name: "api",
+							Port: "",
 						},
 					},
 				},
@@ -419,12 +418,12 @@ func TestNextServicePort(t *testing.T) {
 					Name: "alpha",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "api",
-							Port:     "4001",
+							Name: "api",
+							Port: "4001",
 						},
 						{
-							Name:     "jobs",
-							Port:     "4005",
+							Name: "jobs",
+							Port: "4005",
 						},
 					},
 				},
@@ -478,8 +477,8 @@ func TestNextServicePort(t *testing.T) {
 					Name: "alpha",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "api",
-							Port:     "bad",
+							Name: "api",
+							Port: "bad",
 						},
 					},
 				},

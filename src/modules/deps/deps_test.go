@@ -1,21 +1,26 @@
 package deps
 
 import (
+	"bytes"
+	"os/exec"
+	"reflect"
 	"testing"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func TestCollectDependencyOrder(t *testing.T) {
 	t.Run("domain__linear_deps__returns_topological_order", func(t *testing.T) {
 		config := workspace.MakeConfig(
 			[]workspace.WorkspaceLibrary{
-				workspace.MakeLibrary("lib-a",  "lib-b"),
+				workspace.MakeLibrary("lib-a", "lib-b"),
 				workspace.MakeLibrary("lib-b"),
 			},
 			nil,
 			[]workspace.WorkspaceProject{
-				workspace.MakeProject("project-x",  "lib-a"),
+				workspace.MakeProject("project-x", "lib-a"),
 			},
 		)
 		dep := workspace.WorkspaceDep{
@@ -134,6 +139,63 @@ func TestHasPath(t *testing.T) {
 	})
 }
 
+func TestRunUninstallForTargets(t *testing.T) {
+	t.Run("domain__targets__runs_uninstall_per_target", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		cmd := &cobra.Command{}
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		targets := []workspace.Target{
+			{Path: "/repo/apps/app/services/a"},
+			{Path: "/repo/apps/app/services/b"},
+		}
+		runDirs := []string{}
+		readCount := 0
+
+		err := RunUninstallForTargets(cmd, fs, "/repo/repos/libs/lib-a", "lib-a", targets, UninstallOptions{
+			ReadRepoCommand: func(fs afero.Fs, root string, kind string) (string, error) {
+				readCount++
+				return "echo ok", nil
+			},
+			RunCommand: func(command *exec.Cmd) error {
+				runDirs = append(runDirs, command.Dir)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("RunUninstallForTargets: %v", err)
+		}
+		if readCount != 1 {
+			t.Fatalf("expected read command once, got %d", readCount)
+		}
+		if !reflect.DeepEqual(runDirs, []string{targets[0].Path, targets[1].Path}) {
+			t.Fatalf("unexpected run dirs: %v", runDirs)
+		}
+	})
+
+	t.Run("complement__missing_uninstall_command__returns_error", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		cmd := &cobra.Command{}
+		runCount := 0
+
+		err := RunUninstallForTargets(cmd, fs, "/repo/repos/libs/lib-a", "lib-a", []workspace.Target{{Path: "/repo/apps/app/services/a"}}, UninstallOptions{
+			ReadRepoCommand: func(fs afero.Fs, root string, kind string) (string, error) {
+				return " ", nil
+			},
+			RunCommand: func(command *exec.Cmd) error {
+				runCount++
+				return nil
+			},
+		})
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if runCount != 0 {
+			t.Fatalf("expected no command execution")
+		}
+	})
+}
+
 func TestResolveDependencyNode(t *testing.T) {
 	t.Run("domain__app_lib_dependency__returns_app_lib", func(t *testing.T) {
 		config := workspace.MakeConfig(
@@ -208,10 +270,10 @@ func TestResolveDependencyNode(t *testing.T) {
 					workspace.MakeLibrary("lib-a"),
 				}),
 			},
-				[]workspace.WorkspaceProject{
-					workspace.MakeProject("lib-a"),
-				},
-			)
+			[]workspace.WorkspaceProject{
+				workspace.MakeProject("lib-a"),
+			},
+		)
 		dep := workspace.WorkspaceDep{
 			Lib:  "lib-a",
 			From: "app",
@@ -235,21 +297,21 @@ func TestBuildDependencyGraph(t *testing.T) {
 				workspace.MakeLibrary("g-lib"),
 				workspace.MakeLibrary("g-dep"),
 			},
-				[]workspace.WorkspaceApp{
-					workspace.MakeApp("app", []workspace.WorkspaceLibrary{
-						{
-							Name: "a-lib",
-							Deps: []workspace.WorkspaceDep{
-								{Lib: "g-lib", From: "global"},
-								{Lib: "project-x", From: "project"},
-							},
+			[]workspace.WorkspaceApp{
+				workspace.MakeApp("app", []workspace.WorkspaceLibrary{
+					{
+						Name: "a-lib",
+						Deps: []workspace.WorkspaceDep{
+							{Lib: "g-lib", From: "global"},
+							{Lib: "project-x", From: "project"},
 						},
-						workspace.MakeLibrary("a-dep"),
-					}),
-				},
-				[]workspace.WorkspaceProject{
-					workspace.MakeProject("project-x",  "g-dep"),
-				},
+					},
+					workspace.MakeLibrary("a-dep"),
+				}),
+			},
+			[]workspace.WorkspaceProject{
+				workspace.MakeProject("project-x", "g-dep"),
+			},
 		)
 
 		graph, err := BuildDependencyGraph(config)
@@ -299,7 +361,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 	t.Run("chaos__unknown_deps__returns_error", func(t *testing.T) {
 		config := workspace.MakeConfig(
 			[]workspace.WorkspaceLibrary{
-				workspace.MakeLibrary("g-lib",  "missing"),
+				workspace.MakeLibrary("g-lib", "missing"),
 			},
 			[]workspace.WorkspaceApp{
 				workspace.MakeApp("app", []workspace.WorkspaceLibrary{
@@ -314,7 +376,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 				}),
 			},
 			[]workspace.WorkspaceProject{
-				workspace.MakeProject("project-x",  "missing"),
+				workspace.MakeProject("project-x", "missing"),
 			},
 		)
 
@@ -609,7 +671,6 @@ func nodeKeys(nodes []Node) []string {
 	}
 	return keys
 }
-
 
 func assertGraphEntry(t *testing.T, graph map[string][]string, key string, expected []string) {
 	t.Helper()

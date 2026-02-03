@@ -82,7 +82,7 @@ func ServiceImageReference(fs afero.Fs, appName string, serviceName string) (str
 			}
 		}
 	}
-	return formatImageReference(workspaceConfig.DockerRegistry, image), nil
+	return formatImageReference(image), nil
 }
 
 func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port string, image workspace.WorkspaceImage, dockerfile string) error {
@@ -104,15 +104,15 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 		workspaceConfig.Apps = append(workspaceConfig.Apps, workspace.WorkspaceApp{
 			Name: appName,
 			Services: []workspace.WorkspaceService{
-					{
-						Name:       serviceName,
-						Port:       port,
-						Image:      image,
-						Dockerfile: dockerfile,
-						Deps:       []workspace.WorkspaceDep{},
-					},
+				{
+					Name:       serviceName,
+					Port:       port,
+					Image:      image,
+					Dockerfile: dockerfile,
+					Deps:       []workspace.WorkspaceDep{},
 				},
-				Libraries: []workspace.WorkspaceLibrary{},
+			},
+			Libraries: []workspace.WorkspaceLibrary{},
 		})
 		return workspace.WriteWorkspaceConfig(fs, workspaceConfig)
 	}
@@ -172,14 +172,14 @@ func MakeServiceNode(config workspace.WorkspaceConfig, appName string, name stri
 	}
 	service := config.Apps[appIndex].Services[serviceIndex]
 	return deps.Node{
-		Kind:     deps.NodeService,
-		App:      appName,
-		Name:     name,
-		Deps:     service.Deps,
+		Kind: deps.NodeService,
+		App:  appName,
+		Name: name,
+		Deps: service.Deps,
 	}, nil
 }
 
-func formatImageReference(registry string, image workspace.WorkspaceImage) string {
+func formatImageReference(image workspace.WorkspaceImage) string {
 	name := strings.TrimSpace(image.Name)
 	if name == "" {
 		return ""
@@ -188,8 +188,5 @@ func formatImageReference(registry string, image workspace.WorkspaceImage) strin
 	if tag != "" {
 		name = fmt.Sprintf("%s:%s", name, tag)
 	}
-	if registry == "" {
-		return name
-	}
-	return fmt.Sprintf("%s/%s", registry, name)
+	return name
 }

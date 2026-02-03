@@ -9,6 +9,7 @@ import (
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/prompts"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/targets"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/tree"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
 	"github.com/manifoldco/promptui"
@@ -60,7 +61,7 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 }
 
 func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
-	root, err := ensureWorkspaceRoot(fs)
+	root, err := workspace.EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	if err != nil {
 		return err
 	}
-	target, err := promptForTarget(config, root)
+	target, err := prompts.PromptForTarget(config, root)
 	if err != nil {
 		return err
 	}
@@ -85,7 +86,7 @@ func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 		return fmt.Errorf("payload and target cannot be the same")
 	}
 	confirmPrompt := promptui.Prompt{
-		Label:     fmt.Sprintf("Install %s into %s", formatDependencyLabel(dependency), formatTargetLabel(target)),
+		Label:     fmt.Sprintf("Install %s into %s", formatDependencyLabel(dependency), targets.FormatTargetLabel(target)),
 		IsConfirm: true,
 	}
 	confirm, err := confirmPrompt.Run()
@@ -187,10 +188,10 @@ func resolveDependency(root string, target installTarget, name string, config wo
 					return installDependency{}, fmt.Errorf("library not registered in workspace: %s", name)
 				}
 				matches = append(matches, installDependency{
-					kind:     dependencyAppLib,
-					app:      target.App,
-					name:     name,
-					path:     appLibPath,
+					kind: dependencyAppLib,
+					app:  target.App,
+					name: name,
+					path: appLibPath,
 				})
 			}
 		}
@@ -201,9 +202,9 @@ func resolveDependency(root string, target installTarget, name string, config wo
 	} else if ok {
 		depPath := filepath.Join(root, "repos", "libs", lib.Name)
 		matches = append(matches, installDependency{
-			kind:     dependencyGlobalLib,
-			name:     name,
-			path:     depPath,
+			kind: dependencyGlobalLib,
+			name: name,
+			path: depPath,
 		})
 	}
 
@@ -212,9 +213,9 @@ func resolveDependency(root string, target installTarget, name string, config wo
 	} else if ok {
 		depPath := filepath.Join(root, "repos", "projects", project.Name)
 		matches = append(matches, installDependency{
-			kind:     dependencyProject,
-			name:     name,
-			path:     depPath,
+			kind: dependencyProject,
+			name: name,
+			path: depPath,
 		})
 	}
 
@@ -310,99 +311,6 @@ func promptForDependency(config workspace.WorkspaceConfig, root string) (install
 	}, nil
 }
 
-func promptForTarget(config workspace.WorkspaceConfig, root string) (installTarget, error) {
-	options := []string{}
-	if len(config.Libraries) > 0 {
-		options = append(options, "global library")
-	}
-	if len(config.Projects) > 0 {
-		options = append(options, "project")
-	}
-	appLibApps := workspace.AppNamesWithLibraries(config)
-	if len(appLibApps) > 0 {
-		options = append(options, "app library")
-	}
-	serviceApps := workspace.AppNamesWithServices(config)
-	if len(serviceApps) > 0 {
-		options = append(options, "service")
-	}
-	if len(options) == 0 {
-		return installTarget{}, fmt.Errorf("no targets available for install")
-	}
-	targetKindLabel := options[0]
-	if len(options) > 1 {
-		selected, err := prompts.SelectFromList("Select target type", options)
-		if err != nil {
-			return installTarget{}, err
-		}
-		targetKindLabel = selected
-	}
-	switch targetKindLabel {
-	case "service":
-		appName, err := prompts.SelectFromList("Select app", serviceApps)
-		if err != nil {
-			return installTarget{}, err
-		}
-		serviceNames := workspace.ServiceNames(config, appName)
-		if len(serviceNames) == 0 {
-			return installTarget{}, fmt.Errorf("no services found for app: %s", appName)
-		}
-		name, err := prompts.SelectFromList("Select service", serviceNames)
-		if err != nil {
-			return installTarget{}, err
-		}
-		return installTarget{
-			Kind: targetService,
-			App:  appName,
-			Name: name,
-			Path: filepath.Join(root, "repos", "apps", appName, "services", name),
-		}, nil
-	case "app library":
-		appName, err := prompts.SelectFromList("Select app", appLibApps)
-		if err != nil {
-			return installTarget{}, err
-		}
-		libNames := workspace.AppLibraryNames(config, appName)
-		if len(libNames) == 0 {
-			return installTarget{}, fmt.Errorf("no libraries found for app: %s", appName)
-		}
-		name, err := prompts.SelectFromList("Select library", libNames)
-		if err != nil {
-			return installTarget{}, err
-		}
-		return installTarget{
-			Kind: targetAppLib,
-			App:  appName,
-			Name: name,
-			Path: filepath.Join(root, "repos", "apps", appName, "libs", name),
-		}, nil
-	case "project":
-		projectNames := workspace.ProjectNames(config)
-		name, err := prompts.SelectFromList("Select project", projectNames)
-		if err != nil {
-			return installTarget{}, err
-		}
-		return installTarget{
-			Kind: targetProject,
-			Name: name,
-			Path: filepath.Join(root, "repos", "projects", name),
-		}, nil
-	case "global library":
-		globalLibs := workspace.GlobalLibraryNames(config)
-		name, err := prompts.SelectFromList("Select library", globalLibs)
-		if err != nil {
-			return installTarget{}, err
-		}
-		return installTarget{
-			Kind: targetGlobalLib,
-			Name: name,
-			Path: filepath.Join(root, "repos", "libs", name),
-		}, nil
-	default:
-		return installTarget{}, fmt.Errorf("unsupported target type")
-	}
-}
-
 func formatDependencyLabel(dep installDependency) string {
 	switch dep.kind {
 	case dependencyAppLib:
@@ -414,50 +322,6 @@ func formatDependencyLabel(dep installDependency) string {
 	default:
 		return dep.name
 	}
-}
-
-func formatTargetLabel(target installTarget) string {
-	switch target.Kind {
-	case targetService:
-		return fmt.Sprintf("service %s/%s", target.App, target.Name)
-	case targetAppLib:
-		return fmt.Sprintf("app library %s/%s", target.App, target.Name)
-	case targetGlobalLib:
-		return fmt.Sprintf("global library %s", target.Name)
-	case targetProject:
-		return fmt.Sprintf("project %s", target.Name)
-	default:
-		return target.Name
-	}
-}
-
-func ensureWorkspaceRoot(fs afero.Fs) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	root, err := tree.GetRoot()
-	if err != nil {
-		return "", err
-	}
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	absCwd, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", err
-	}
-	if absRoot != absCwd {
-		return "", fmt.Errorf("install must be run from the workspace root (%s)", absRoot)
-	}
-	if _, err := fs.Stat("ocean.workspace.json"); err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("workspace config not found: ocean.workspace.json")
-		}
-		return "", err
-	}
-	return absRoot, nil
 }
 
 func registerDependency(config workspace.WorkspaceConfig, target installTarget, dependency installDependency) (workspace.WorkspaceConfig, error) {

@@ -199,8 +199,8 @@ func TestAddServiceToWorkspace(t *testing.T) {
 					Name: "{{app_name}}",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "{{existing_service}}",
-							Port:     "3000",
+							Name: "{{existing_service}}",
+							Port: "3000",
 						},
 					},
 				},
@@ -240,19 +240,19 @@ func TestAddServiceToWorkspace(t *testing.T) {
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "app",
-				Services: []workspace.WorkspaceService{
-					{
-						Name:       "api",
-						Port:       "3000",
-						Image:      workspace.WorkspaceImage{Name: "custom-image", Tag: "old"},
-						Dockerfile: "Dockerfile.old",
-						Deps: []workspace.WorkspaceDep{
-							{Lib: "db", From: "global"},
-							{Lib: "cache", From: "global"},
+					Services: []workspace.WorkspaceService{
+						{
+							Name:       "api",
+							Port:       "3000",
+							Image:      workspace.WorkspaceImage{Name: "custom-image", Tag: "old"},
+							Dockerfile: "Dockerfile.old",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "db", From: "global"},
+								{Lib: "cache", From: "global"},
+							},
 						},
 					},
 				},
-			},
 			},
 		}
 		writeWorkspaceConfig(t, fs, config)
@@ -267,15 +267,15 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		if service.Port != "3005" {
 			t.Fatalf("expected port 3005, got %s", service.Port)
 		}
-			if service.Dockerfile != "Dockerfile.old" {
-				t.Fatalf("expected Dockerfile Dockerfile.old, got %s", service.Dockerfile)
-			}
-			if len(service.Deps) != 2 || service.Deps[0].Lib != "db" || service.Deps[1].Lib != "cache" {
-				t.Fatalf("expected deps [db cache], got %v", service.Deps)
-			}
-			if service.Image.Name != "app__api" {
-				t.Fatalf("expected image name app__api, got %s", service.Image.Name)
-			}
+		if service.Dockerfile != "Dockerfile.old" {
+			t.Fatalf("expected Dockerfile Dockerfile.old, got %s", service.Dockerfile)
+		}
+		if len(service.Deps) != 2 || service.Deps[0].Lib != "db" || service.Deps[1].Lib != "cache" {
+			t.Fatalf("expected deps [db cache], got %v", service.Deps)
+		}
+		if service.Image.Name != "app__api" {
+			t.Fatalf("expected image name app__api, got %s", service.Image.Name)
+		}
 		if service.Image.Tag != "dev" {
 			t.Fatalf("expected image tag dev, got %s", service.Image.Tag)
 		}
@@ -286,13 +286,12 @@ func TestServiceImageReference(t *testing.T) {
 	t.Run("domain__default_image_with_registry__returns_registry_reference", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		config := workspace.WorkspaceConfig{
-			DockerRegistry: "ghcr.io/dusk-inc",
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "{{app_name}}",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "{{service_name}}",
+							Name: "{{service_name}}",
 						},
 					},
 				},
@@ -304,7 +303,7 @@ func TestServiceImageReference(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ServiceImageReference: %v", err)
 		}
-		if ref != "ghcr.io/dusk-inc/{{app_name}}__{{service_name}}:dev" {
+		if ref != "{{app_name}}__{{service_name}}:dev" {
 			t.Fatalf("expected registry reference, got %s", ref)
 		}
 	})
@@ -312,13 +311,12 @@ func TestServiceImageReference(t *testing.T) {
 	t.Run("boundary__override_name__keeps_default_tag", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		config := workspace.WorkspaceConfig{
-			DockerRegistry: "ghcr.io/dusk-inc",
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "{{app_name}}",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "{{service_name}}",
+							Name: "{{service_name}}",
 							Image: workspace.WorkspaceImage{
 								Name: "custom-image",
 							},
@@ -333,7 +331,7 @@ func TestServiceImageReference(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ServiceImageReference: %v", err)
 		}
-		if ref != "ghcr.io/dusk-inc/custom-image:dev" {
+		if ref != "custom-image:dev" {
 			t.Fatalf("expected registry reference, got %s", ref)
 		}
 	})
@@ -341,13 +339,12 @@ func TestServiceImageReference(t *testing.T) {
 	t.Run("boundary__override_tag__keeps_default_name", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		config := workspace.WorkspaceConfig{
-			DockerRegistry: "",
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "{{app_name}}",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "{{service_name}}",
+							Name: "{{service_name}}",
 							Image: workspace.WorkspaceImage{
 								Tag: "v2",
 							},
@@ -370,13 +367,12 @@ func TestServiceImageReference(t *testing.T) {
 	t.Run("complement__missing_service__returns_default_reference", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		config := workspace.WorkspaceConfig{
-			DockerRegistry: "ghcr.io/dusk-inc",
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "{{app_name}}",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "{{other_service}}",
+							Name: "{{other_service}}",
 						},
 					},
 				},
@@ -388,7 +384,7 @@ func TestServiceImageReference(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ServiceImageReference: %v", err)
 		}
-		if ref != "ghcr.io/dusk-inc/{{app_name}}__{{service_name}}:dev" {
+		if ref != "{{app_name}}__{{service_name}}:dev" {
 			t.Fatalf("expected default reference, got %s", ref)
 		}
 	})
@@ -431,15 +427,15 @@ func TestMakeServiceNode(t *testing.T) {
 			Apps: []workspace.WorkspaceApp{
 				{
 					Name: "app",
-				Services: []workspace.WorkspaceService{
-					{
-						Name: "api",
-						Deps: []workspace.WorkspaceDep{
-							{Lib: "db", From: "global"},
+					Services: []workspace.WorkspaceService{
+						{
+							Name: "api",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "db", From: "global"},
+							},
 						},
 					},
 				},
-			},
 			},
 		}
 
@@ -453,14 +449,14 @@ func TestMakeServiceNode(t *testing.T) {
 		if node.App != "app" {
 			t.Fatalf("expected app app, got %s", node.App)
 		}
-			if node.Name != "api" {
-				t.Fatalf("expected name api, got %s", node.Name)
-			}
-			if len(node.Deps) != 1 || node.Deps[0].Lib != "db" {
-				t.Fatalf("expected deps [db], got %v", node.Deps)
-			}
-		})
-	}
+		if node.Name != "api" {
+			t.Fatalf("expected name api, got %s", node.Name)
+		}
+		if len(node.Deps) != 1 || node.Deps[0].Lib != "db" {
+			t.Fatalf("expected deps [db], got %v", node.Deps)
+		}
+	})
+}
 
 func TestRemoveServiceFromWorkspace(t *testing.T) {
 	t.Run("domain__existing_service__removes_entry", func(t *testing.T) {
@@ -471,17 +467,17 @@ func TestRemoveServiceFromWorkspace(t *testing.T) {
 					Name: "alpha",
 					Services: []workspace.WorkspaceService{
 						{
-							Name:     "api",
-							Port:     "3000",
+							Name: "api",
+							Port: "3000",
 						},
 						{
-							Name:     "worker",
-							Port:     "3001",
+							Name: "worker",
+							Port: "3001",
 						},
 					},
 					Libraries: []workspace.WorkspaceLibrary{
 						{
-							Name:     "shared",
+							Name: "shared",
 						},
 					},
 				},
@@ -518,17 +514,7 @@ func TestRemoveServiceFromWorkspace(t *testing.T) {
 
 func TestFormatImageReference(t *testing.T) {
 	t.Run("domain__name_tag_registry__formats_full_reference", func(t *testing.T) {
-		ref := formatImageReference("ghcr.io/dusk-inc", workspace.WorkspaceImage{
-			Name: "image",
-			Tag:  "v1",
-		})
-		if ref != "ghcr.io/dusk-inc/image:v1" {
-			t.Fatalf("expected ghcr.io/dusk-inc/image:v1, got %s", ref)
-		}
-	})
-
-	t.Run("boundary__empty_registry__omits_registry_prefix", func(t *testing.T) {
-		ref := formatImageReference("", workspace.WorkspaceImage{
+		ref := formatImageReference(workspace.WorkspaceImage{
 			Name: "image",
 			Tag:  "v1",
 		})
@@ -538,17 +524,17 @@ func TestFormatImageReference(t *testing.T) {
 	})
 
 	t.Run("boundary__empty_tag__omits_tag", func(t *testing.T) {
-		ref := formatImageReference("ghcr.io/dusk-inc", workspace.WorkspaceImage{
+		ref := formatImageReference(workspace.WorkspaceImage{
 			Name: "image",
 			Tag:  " ",
 		})
-		if ref != "ghcr.io/dusk-inc/image" {
-			t.Fatalf("expected ghcr.io/dusk-inc/image, got %s", ref)
+		if ref != "image" {
+			t.Fatalf("expected image, got %s", ref)
 		}
 	})
 
 	t.Run("complement__empty_name__returns_empty", func(t *testing.T) {
-		ref := formatImageReference("ghcr.io/dusk-inc", workspace.WorkspaceImage{
+		ref := formatImageReference(workspace.WorkspaceImage{
 			Name: " ",
 			Tag:  "v1",
 		})

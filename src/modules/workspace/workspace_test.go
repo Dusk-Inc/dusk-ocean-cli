@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
 	"github.com/spf13/afero"
 )
 
@@ -14,8 +15,7 @@ func TestInitWorkspace(t *testing.T) {
 		var out bytes.Buffer
 
 		err := InitWorkspace(fs, &out, InitOptions{
-			Name:     "dusk-ocean",
-			Registry: "ghcr.io/dusk-inc",
+			Name: "dusk-ocean",
 		})
 		if err != nil {
 			t.Fatalf("InitWorkspace: %v", err)
@@ -70,8 +70,7 @@ func TestInitWorkspace(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		var out bytes.Buffer
 		opts := InitOptions{
-			Name:     "dusk-ocean",
-			Registry: "ghcr.io/dusk-inc",
+			Name: "dusk-ocean",
 		}
 
 		if err := InitWorkspace(fs, &out, opts); err != nil {
@@ -100,21 +99,7 @@ func TestInitWorkspace(t *testing.T) {
 		var out bytes.Buffer
 
 		err := InitWorkspace(fs, &out, InitOptions{
-			Name:     "",
-			Registry: "ghcr.io/dusk-inc",
-		})
-		if err == nil {
-			t.Fatalf("expected error")
-		}
-	})
-
-	t.Run("complement__missing_registry__returns_error", func(t *testing.T) {
-		fs := afero.NewMemMapFs()
-		var out bytes.Buffer
-
-		err := InitWorkspace(fs, &out, InitOptions{
-			Name:     "dusk-ocean",
-			Registry: "",
+			Name: "",
 		})
 		if err == nil {
 			t.Fatalf("expected error")
