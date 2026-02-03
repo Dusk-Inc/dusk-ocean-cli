@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/scaffold"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/services"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/tree"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -135,13 +137,52 @@ var removeLibCmd = &cobra.Command{
 			}
 			return err
 		}
+		source := "global"
+		if location == "app" {
+			source = appName
+		}
+
+		workspaceConfig, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		dependents := libraries.CollectLibraryDependents(workspaceConfig, root, name, source)
+		if len(dependents) > 0 {
+			uninstallCmd, err := workspace.ReadRepoCommand(fs, path, "uninstall")
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(uninstallCmd) == "" {
+				return fmt.Errorf("uninstall command missing for %s", name)
+			}
+			for _, target := range dependents {
+				if _, err := fs.Stat(target.Path); err != nil {
+					if os.IsNotExist(err) {
+						return fmt.Errorf("dependency target does not exist: %s", target.Path)
+					}
+					return err
+				}
+				execCmd := exec.Command("bash", "-lc", uninstallCmd)
+				execCmd.Dir = target.Path
+				execCmd.Stdout = cmd.OutOrStdout()
+				execCmd.Stderr = cmd.ErrOrStderr()
+				if err := execCmd.Run(); err != nil {
+					return err
+				}
+			}
+		}
+
 		if err := fs.RemoveAll(path); err != nil {
 			return err
 		}
-		if location == "app" {
-			return libraries.RemoveAppLibraryFromWorkspace(fs, appName, name)
-		}
-		return libraries.RemoveGlobalLibraryFromWorkspace(fs, name)
+
+		return workspace.UpdateConfig(fs, func(config workspace.WorkspaceConfig) (workspace.WorkspaceConfig, error) {
+			config = libraries.RemoveLibraryDeps(config, name, source)
+			if location == "app" {
+				return libraries.RemoveAppLibraryFromConfig(config, appName, name), nil
+			}
+			return libraries.RemoveGlobalLibraryFromConfig(config, name), nil
+		})
 	},
 }
 

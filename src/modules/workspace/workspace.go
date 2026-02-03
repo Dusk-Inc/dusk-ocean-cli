@@ -79,9 +79,24 @@ type WorkspaceDep struct {
 	From string `json:"from"`
 }
 
+type RepoConfig struct {
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	Type      string `json:"type"`
+	Build     string `json:"build"`
+	Test      string `json:"test"`
+	Install   string `json:"install"`
+	Uninstall string `json:"uninstall"`
+	Tasks     struct {
+		Build     string `json:"build"`
+		Test      string `json:"test"`
+		Install   string `json:"install"`
+		Uninstall string `json:"uninstall"`
+	} `json:"tasks"`
+}
+
 const defaultImageTag = "dev"
 
-// TargetKind identifies a workspace target kind.
 type TargetKind string
 
 const (
@@ -91,7 +106,6 @@ const (
 	TargetProject   TargetKind = "project"
 )
 
-// Target describes a workspace install target.
 type Target struct {
 	Kind TargetKind
 	App  string
@@ -848,6 +862,56 @@ func makeGlobalDeps(deps ...string) []WorkspaceDep {
 		})
 	}
 	return out
+}
+
+func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
+	configPath := filepath.Join(root, "ocean.config.json")
+	payload, err := afero.ReadFile(fs, configPath)
+	if err != nil {
+		return RepoConfig{}, err
+	}
+	var config RepoConfig
+	if err := json.Unmarshal(payload, &config); err != nil {
+		return RepoConfig{}, err
+	}
+	config.Language = strings.TrimSpace(config.Language)
+	config.Type = strings.TrimSpace(config.Type)
+	return config, nil
+}
+
+func RepoCommand(config RepoConfig, kind string) (string, error) {
+	switch kind {
+	case "build":
+		if strings.TrimSpace(config.Tasks.Build) != "" {
+			return config.Tasks.Build, nil
+		}
+		return config.Build, nil
+	case "test":
+		if strings.TrimSpace(config.Tasks.Test) != "" {
+			return config.Tasks.Test, nil
+		}
+		return config.Test, nil
+	case "install":
+		if strings.TrimSpace(config.Tasks.Install) != "" {
+			return config.Tasks.Install, nil
+		}
+		return config.Install, nil
+	case "uninstall":
+		if strings.TrimSpace(config.Tasks.Uninstall) != "" {
+			return config.Tasks.Uninstall, nil
+		}
+		return config.Uninstall, nil
+	default:
+		return "", fmt.Errorf("unsupported command kind: %s", kind)
+	}
+}
+
+func ReadRepoCommand(fs afero.Fs, root string, kind string) (string, error) {
+	config, err := ReadRepoConfig(fs, root)
+	if err != nil {
+		return "", err
+	}
+	return RepoCommand(config, kind)
 }
 
 func isTemplateName(value string) bool {

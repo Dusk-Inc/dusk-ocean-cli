@@ -205,6 +205,12 @@ Detaching allows code to be removed from the monorepo for delivery to clients or
 - `dusk-ocean detach app`: Safely extracts a full application and its local dependencies.
 - `dusk-ocean detach package`: Extracts a single library or project.
 
+#### Remove
+- `dusk-ocean remove app --name <name>`: Removes an app and deletes its workspace entries.
+- `dusk-ocean remove library --name <name>`: Removes a library (use `--in <app>` for app libraries). Runs the library's `uninstall` task in every dependent service/library/project and removes the dependency entries from ocean.workspace.json.
+- `dusk-ocean remove project --name <name>`: Removes a project and deletes its workspace entry.
+- `dusk-ocean remove service --name <name> --in <app>`: Removes a service from the app and deletes its workspace entry.
+
 ### Orchestration
 Dusk Ocean uses a layered Merge Strategy for Docker Compose to keep environments consistent:
 - `docker-compose.yml`: The "Source of Truth" defining minimal services.

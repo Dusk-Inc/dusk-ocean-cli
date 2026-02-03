@@ -346,6 +346,128 @@ func TestAddGlobalLibraryToWorkspace(t *testing.T) {
 	})
 }
 
+func TestCollectLibraryDependents(t *testing.T) {
+	t.Run("domain__global_library_dependents__returns_targets", func(t *testing.T) {
+		config := workspace.WorkspaceConfig{
+			Apps: []workspace.WorkspaceApp{
+				{
+					Name: "alpha",
+					Services: []workspace.WorkspaceService{
+						{
+							Name: "api",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "lib-a", From: "global"},
+							},
+						},
+					},
+					Libraries: []workspace.WorkspaceLibrary{
+						{
+							Name: "lib-app",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "lib-a", From: "global"},
+							},
+						},
+					},
+				},
+			},
+			Libraries: []workspace.WorkspaceLibrary{
+				{
+					Name: "lib-consumer",
+					Deps: []workspace.WorkspaceDep{
+						{Lib: "lib-a", From: "global"},
+					},
+				},
+			},
+			Projects: []workspace.WorkspaceProject{
+				{
+					Name: "proj",
+					Deps: []workspace.WorkspaceDep{
+						{Lib: "lib-a", From: "global"},
+					},
+				},
+			},
+		}
+
+		targets := CollectLibraryDependents(config, "/root", "lib-a", "global")
+		if len(targets) != 4 {
+			t.Fatalf("expected 4 dependents, got %d", len(targets))
+		}
+
+		expected := map[string]workspace.TargetKind{
+			"/root/repos/apps/alpha/services/api": workspace.TargetService,
+			"/root/repos/apps/alpha/libs/lib-app": workspace.TargetAppLib,
+			"/root/repos/libs/lib-consumer":       workspace.TargetGlobalLib,
+			"/root/repos/projects/proj":           workspace.TargetProject,
+		}
+		for _, target := range targets {
+			if kind, ok := expected[target.Path]; !ok || kind != target.Kind {
+				t.Fatalf("unexpected target %s (%s)", target.Path, target.Kind)
+			}
+		}
+	})
+}
+
+func TestRemoveLibraryDeps(t *testing.T) {
+	t.Run("domain__matching_deps__removed", func(t *testing.T) {
+		config := workspace.WorkspaceConfig{
+			Apps: []workspace.WorkspaceApp{
+				{
+					Name: "alpha",
+					Services: []workspace.WorkspaceService{
+						{
+							Name: "api",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "lib-a", From: "global"},
+								{Lib: "lib-b", From: "global"},
+							},
+						},
+					},
+					Libraries: []workspace.WorkspaceLibrary{
+						{
+							Name: "lib-app",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "lib-a", From: "global"},
+								{Lib: "lib-c", From: "global"},
+							},
+						},
+					},
+				},
+			},
+			Libraries: []workspace.WorkspaceLibrary{
+				{
+					Name: "lib-consumer",
+					Deps: []workspace.WorkspaceDep{
+						{Lib: "lib-a", From: "global"},
+					},
+				},
+			},
+			Projects: []workspace.WorkspaceProject{
+				{
+					Name: "proj",
+					Deps: []workspace.WorkspaceDep{
+						{Lib: "lib-a", From: "global"},
+						{Lib: "lib-d", From: "global"},
+					},
+				},
+			},
+		}
+
+		updated := RemoveLibraryDeps(config, "lib-a", "global")
+		if len(updated.Apps[0].Services[0].Deps) != 1 || updated.Apps[0].Services[0].Deps[0].Lib != "lib-b" {
+			t.Fatalf("expected lib-a removed from service deps")
+		}
+		if len(updated.Apps[0].Libraries[0].Deps) != 1 || updated.Apps[0].Libraries[0].Deps[0].Lib != "lib-c" {
+			t.Fatalf("expected lib-a removed from app library deps")
+		}
+		if len(updated.Libraries[0].Deps) != 0 {
+			t.Fatalf("expected lib-a removed from global library deps")
+		}
+		if len(updated.Projects[0].Deps) != 1 || updated.Projects[0].Deps[0].Lib != "lib-d" {
+			t.Fatalf("expected lib-a removed from project deps")
+		}
+	})
+}
+
 func TestRemoveGlobalLibraryFromWorkspace(t *testing.T) {
 	t.Run("domain__existing_library__removes_entry", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
