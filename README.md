@@ -194,6 +194,10 @@ service           -> project
 project           -> global library
 ```
 
+#### Uninstall
+Remove a local dependency from the current target directory using the dependency's uninstall task.
+- `dusk-ocean uninstall`: Run from the workspace root and select the target and dependency to remove.
+
 #### Contain & Refresh
 - `dusk-ocean contain service --name <name>`: Builds and publishes a Docker image using the local Docker setup.
 - `dusk-ocean refresh`: Performs a state cleanup. It validates hashes, ensures port consistency, and checks image names across orchestration configs.
