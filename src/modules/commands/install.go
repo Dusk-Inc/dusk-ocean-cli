@@ -8,7 +8,7 @@ import (
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install a local dependency into a target repository",
+	Short: "Add a local dependency into a target repository",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return install.RunInstallPrompt(cmd, afero.NewOsFs())

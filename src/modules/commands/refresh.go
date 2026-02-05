@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/hash"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/refresh"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/tree"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/workspace"
 	"github.com/spf13/afero"
@@ -10,28 +11,36 @@ import (
 
 var refreshCmd = &cobra.Command{
 	Use:   "refresh",
-	Short: "Validate workspace state and orchestration configs",
+	Short: "Install, build, and test the workspace dependency graph",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		clearHashes, err := cmd.Flags().GetBool("clear-hashes")
 		if err != nil {
 			return err
 		}
+		fs := afero.NewOsFs()
 		root, err := tree.GetRoot()
 		if err != nil {
 			return err
 		}
-		fs := afero.NewOsFs()
 
 		if clearHashes {
-			return hash.ClearHashes(fs, cmd, root)
+			if err := hash.ClearHashes(fs, cmd, root); err != nil {
+				return err
+			}
 		}
+
 		if err := workspace.ValidateComposeConsistency(fs, root); err != nil {
 			return err
 		}
-		if err := hash.CleanupStaleHashes(fs, cmd, root); err != nil {
+
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
 			return err
 		}
-		return nil
+		if err := refresh.RunRefresh(cmd, fs, root, config); err != nil {
+			return err
+		}
+		return hash.CleanupStaleHashes(fs, cmd, root)
 	},
 }
 

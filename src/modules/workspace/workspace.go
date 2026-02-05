@@ -84,11 +84,13 @@ type RepoConfig struct {
 	Type      string `json:"type"`
 	Build     string `json:"build"`
 	Test      string `json:"test"`
+	Add       string `json:"add"`
 	Install   string `json:"install"`
 	Uninstall string `json:"uninstall"`
 	Tasks     struct {
 		Build     string `json:"build"`
 		Test      string `json:"test"`
+		Add       string `json:"add"`
 		Install   string `json:"install"`
 		Uninstall string `json:"uninstall"`
 	} `json:"tasks"`
@@ -918,6 +920,11 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 			return config.Tasks.Install, nil
 		}
 		return config.Install, nil
+	case "add":
+		if strings.TrimSpace(config.Tasks.Add) != "" {
+			return config.Tasks.Add, nil
+		}
+		return config.Add, nil
 	case "uninstall":
 		if strings.TrimSpace(config.Tasks.Uninstall) != "" {
 			return config.Tasks.Uninstall, nil

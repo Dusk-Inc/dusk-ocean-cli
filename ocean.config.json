@@ -4,6 +4,7 @@
     "type": "project",
     "tasks": {
         "build": "go build ./...",
-        "test": "go test ./..."
+        "test": "go test ./...",
+        "install": "go mod download"
     }
 }

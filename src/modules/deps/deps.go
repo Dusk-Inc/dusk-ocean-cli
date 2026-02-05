@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/hash"
@@ -43,7 +44,7 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config workspace.
 		if _, ok := built[key]; ok {
 			continue
 		}
-		label, path, hashPath, err := nodeBuildInfo(root, dep)
+		label, path, hashPath, err := NodeBuildInfo(root, dep)
 		if err != nil {
 			return err
 		}
@@ -52,7 +53,7 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config workspace.
 		}
 		built[key] = struct{}{}
 	}
-	label, path, hashPath, err := nodeBuildInfo(root, target)
+	label, path, hashPath, err := NodeBuildInfo(root, target)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config workspace.
 		if _, ok := built[key]; ok {
 			continue
 		}
-		label, path, hashPath, err := nodeBuildInfo(root, dep)
+		label, path, hashPath, err := NodeBuildInfo(root, dep)
 		if err != nil {
 			return err
 		}
@@ -78,7 +79,7 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config workspace.
 		}
 		built[key] = struct{}{}
 	}
-	label, path, hashPath, err := nodeCheckInfo(root, target)
+	label, path, hashPath, err := NodeCheckInfo(root, target)
 	if err != nil {
 		return err
 	}
@@ -155,6 +156,117 @@ func CollectDependencyOrder(config workspace.WorkspaceConfig, target Node) ([]No
 		return nil, nil
 	}
 	return order[:len(order)-1], nil
+}
+
+func CollectWorkspaceNodes(config workspace.WorkspaceConfig) []Node {
+	nodes := make([]Node, 0)
+	for _, app := range config.Apps {
+		for _, service := range app.Services {
+			nodes = append(nodes, Node{
+				Kind: NodeService,
+				App:  app.Name,
+				Name: service.Name,
+				Deps: service.Deps,
+			})
+		}
+		for _, lib := range app.Libraries {
+			nodes = append(nodes, Node{
+				Kind: NodeAppLib,
+				App:  app.Name,
+				Name: lib.Name,
+				Deps: lib.Deps,
+			})
+		}
+	}
+	for _, lib := range config.Libraries {
+		nodes = append(nodes, Node{
+			Kind: NodeGlobalLib,
+			Name: lib.Name,
+			Deps: lib.Deps,
+		})
+	}
+	for _, project := range config.Projects {
+		nodes = append(nodes, Node{
+			Kind: NodeProject,
+			Name: project.Name,
+			Deps: project.Deps,
+		})
+	}
+	return nodes
+}
+
+func BuildWorkspaceGraph(config workspace.WorkspaceConfig) (map[string][]string, map[string]Node, error) {
+	nodes := CollectWorkspaceNodes(config)
+	graph := map[string][]string{}
+	index := map[string]Node{}
+	for _, node := range nodes {
+		key := nodeKey(node)
+		if key == "" {
+			return nil, nil, fmt.Errorf("unsupported dependency node")
+		}
+		if _, ok := index[key]; ok {
+			return nil, nil, fmt.Errorf("dependency node collision: %s", key)
+		}
+		index[key] = node
+		graph[key] = []string{}
+	}
+
+	for _, node := range nodes {
+		key := nodeKey(node)
+		for _, dep := range node.Deps {
+			depNode, err := resolveDependencyNode(config, node, dep)
+			if err != nil {
+				return nil, nil, err
+			}
+			depKey := nodeKey(depNode)
+			if depKey == "" {
+				return nil, nil, fmt.Errorf("unsupported dependency node")
+			}
+			graph[key] = append(graph[key], depKey)
+		}
+	}
+	return graph, index, nil
+}
+
+func SortDependencyGraph(graph map[string][]string) ([]string, error) {
+	visited := map[string]struct{}{}
+	stack := map[string]struct{}{}
+	order := make([]string, 0, len(graph))
+	keys := make([]string, 0, len(graph))
+	for key := range graph {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var visit func(string) error
+	visit = func(node string) error {
+		if _, ok := stack[node]; ok {
+			return fmt.Errorf("dependency cycle detected")
+		}
+		if _, ok := visited[node]; ok {
+			return nil
+		}
+		stack[node] = struct{}{}
+		for _, dep := range graph[node] {
+			if _, ok := graph[dep]; !ok {
+				return fmt.Errorf("dependency not found: %s", dep)
+			}
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		delete(stack, node)
+		visited[node] = struct{}{}
+		order = append(order, node)
+		return nil
+	}
+
+	for _, key := range keys {
+		if err := visit(key); err != nil {
+			return nil, err
+		}
+	}
+	return order, nil
 }
 
 func BuildDependencyGraph(config workspace.WorkspaceConfig) (map[string][]string, error) {
@@ -354,7 +466,7 @@ func resolveDependencyNode(config workspace.WorkspaceConfig, target Node, dep wo
 	return candidates[0], nil
 }
 
-func nodeBuildInfo(root string, node Node) (string, string, string, error) {
+func NodeBuildInfo(root string, node Node) (string, string, string, error) {
 	switch node.Kind {
 	case NodeService:
 		path := filepath.Join(root, "repos", "apps", node.App, "services", node.Name)
@@ -381,7 +493,7 @@ func nodeBuildInfo(root string, node Node) (string, string, string, error) {
 	}
 }
 
-func nodeCheckInfo(root string, node Node) (string, string, string, error) {
+func NodeCheckInfo(root string, node Node) (string, string, string, error) {
 	switch node.Kind {
 	case NodeService:
 		path := filepath.Join(root, "repos", "apps", node.App, "services", node.Name)

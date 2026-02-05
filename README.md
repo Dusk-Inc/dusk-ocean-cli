@@ -116,7 +116,7 @@ Language requirements:
 - Global libs/projects must have unique names (use `-ts/-py/-go` suffix when names collide).
 
 #### Repositories
-Each repository (service, library, or project) contains an ocean.config.json at its root. This allows Dusk Ocean to remain language-agnostic and exposes `language` and `type` metadata.
+Each repository (service, library, or project) contains an ocean.config.json at its root. This allows Dusk Ocean to remain language-agnostic and exposes `language` and `type` metadata. Libraries should define `tasks.add` and `tasks.uninstall` for dependency wiring alongside `tasks.install` for local dependency installs.
 ```json
 {
     "name": "service-a",
@@ -179,7 +179,7 @@ Manage local development environments.
 - `dusk-ocean check (project|service|library) --name <name>`: Executes the test suite and outputs JUnit XML to .ocean/results.
 
 #### Install
-Install a local dependency into the current target directory using the dependency's install task.
+Install a local dependency into the current target directory using the dependency's add task.
 - `dusk-ocean install <dependency>`: Run from inside a service, app library, global library, or project folder.
 Allowed dependency flows:
 ```
@@ -200,8 +200,8 @@ Remove a local dependency from the current target directory using the dependency
 
 #### Contain & Refresh
 - `dusk-ocean contain service --name <name>`: Builds and publishes a Docker image using the local Docker setup.
-- `dusk-ocean refresh`: Performs a state cleanup. It validates hashes, ensures port consistency, and checks image names across orchestration configs.
-- `dusk-ocean refresh --clear-hashes`: Removes all build/check hash files when test runs appear stuck or need a clean rebuild.
+- `dusk-ocean refresh`: Installs dependencies, builds, and tests the full workspace dependency graph.
+- `dusk-ocean refresh --clear-hashes`: Clears build/check hashes before running the refresh flow.
 
 #### Detach
 Detaching allows code to be removed from the monorepo for delivery to clients or external hosting.

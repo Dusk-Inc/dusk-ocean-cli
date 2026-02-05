@@ -96,12 +96,12 @@ func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	if strings.ToLower(confirm) != "y" {
 		return fmt.Errorf("aborted")
 	}
-	installCmd, err := workspace.ReadRepoCommand(afero.NewOsFs(), dependency.path, "install")
+	installCmd, err := workspace.ReadRepoCommand(afero.NewOsFs(), dependency.path, "add")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(installCmd) == "" {
-		return fmt.Errorf("install command missing for %s", dependency.name)
+		return fmt.Errorf("add command missing for %s", dependency.name)
 	}
 	dependency.installCmd = installCmd
 	updatedConfig, err := registerDependency(config, target, dependency)
@@ -145,12 +145,12 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	if err := validateInstallFlow(target, dependency); err != nil {
 		return err
 	}
-	installCmd, err := workspace.ReadRepoCommand(afero.NewOsFs(), dependency.path, "install")
+	installCmd, err := workspace.ReadRepoCommand(afero.NewOsFs(), dependency.path, "add")
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(installCmd) == "" {
-		return fmt.Errorf("install command missing for %s", dependency.name)
+		return fmt.Errorf("add command missing for %s", dependency.name)
 	}
 	dependency.installCmd = installCmd
 	updatedConfig, err := registerDependency(config, target, dependency)
