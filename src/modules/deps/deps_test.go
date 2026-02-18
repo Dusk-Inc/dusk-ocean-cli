@@ -331,6 +331,42 @@ func TestBuildDependencyGraph(t *testing.T) {
 		})
 	})
 
+	t.Run("domain__app_test_dependencies__included_in_graph", func(t *testing.T) {
+		config := workspace.WorkspaceConfig{
+			Libraries: []workspace.WorkspaceLibrary{
+				workspace.MakeLibrary("g-lib"),
+			},
+			Apps: []workspace.WorkspaceApp{
+				{
+					Name: "app",
+					Libraries: []workspace.WorkspaceLibrary{
+						workspace.MakeLibrary("a-lib"),
+					},
+					Testing: []workspace.WorkspaceTest{
+						{
+							Name: "suite",
+							Deps: []workspace.WorkspaceDep{
+								{Lib: "a-lib", From: "app"},
+								{Lib: "g-lib", From: "global"},
+							},
+						},
+					},
+				},
+			},
+			Projects: []workspace.WorkspaceProject{},
+		}
+
+		graph, err := BuildDependencyGraph(config)
+		if err != nil {
+			t.Fatalf("BuildDependencyGraph: %v", err)
+		}
+
+		assertGraphEntry(t, graph, "test:app:suite", []string{
+			AppLibKey("app", "a-lib"),
+			GlobalLibKey("g-lib"),
+		})
+	})
+
 	t.Run("boundary__empty_config__returns_empty", func(t *testing.T) {
 		config := workspace.MakeConfig(nil, nil, nil)
 
@@ -390,7 +426,7 @@ func TestNodeBuildInfo(t *testing.T) {
 	t.Run("domain__service_node__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeService, "app", "svc")
 
-		label, path, hashPath, err := nodeBuildInfo("/root", node)
+		label, path, hashPath, err := NodeBuildInfo("/root", node)
 		if err != nil {
 			t.Fatalf("nodeBuildInfo: %v", err)
 		}
@@ -408,7 +444,7 @@ func TestNodeBuildInfo(t *testing.T) {
 	t.Run("boundary__global_lib_node__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeGlobalLib, "", "lib")
 
-		label, path, hashPath, err := nodeBuildInfo("/root", node)
+		label, path, hashPath, err := NodeBuildInfo("/root", node)
 		if err != nil {
 			t.Fatalf("nodeBuildInfo: %v", err)
 		}
@@ -426,7 +462,7 @@ func TestNodeBuildInfo(t *testing.T) {
 	t.Run("complement__unsupported_node__returns_error", func(t *testing.T) {
 		node := makeNode("invalid-kind", "", "name")
 
-		if _, _, _, err := nodeBuildInfo("/root", node); err == nil {
+		if _, _, _, err := NodeBuildInfo("/root", node); err == nil {
 			t.Fatalf("expected error")
 		}
 	})
@@ -434,7 +470,7 @@ func TestNodeBuildInfo(t *testing.T) {
 	t.Run("chaos__empty_root__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeProject, "", "proj")
 
-		label, path, hashPath, err := nodeBuildInfo("", node)
+		label, path, hashPath, err := NodeBuildInfo("", node)
 		if err != nil {
 			t.Fatalf("nodeBuildInfo: %v", err)
 		}
@@ -454,7 +490,7 @@ func TestNodeCheckInfo(t *testing.T) {
 	t.Run("domain__service_node__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeService, "app", "svc")
 
-		label, path, hashPath, err := nodeCheckInfo("/root", node)
+		label, path, hashPath, err := NodeCheckInfo("/root", node)
 		if err != nil {
 			t.Fatalf("nodeCheckInfo: %v", err)
 		}
@@ -472,7 +508,7 @@ func TestNodeCheckInfo(t *testing.T) {
 	t.Run("boundary__global_lib_node__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeGlobalLib, "", "lib")
 
-		label, path, hashPath, err := nodeCheckInfo("/root", node)
+		label, path, hashPath, err := NodeCheckInfo("/root", node)
 		if err != nil {
 			t.Fatalf("nodeCheckInfo: %v", err)
 		}
@@ -490,7 +526,7 @@ func TestNodeCheckInfo(t *testing.T) {
 	t.Run("complement__unsupported_node__returns_error", func(t *testing.T) {
 		node := makeNode("invalid-kind", "", "name")
 
-		if _, _, _, err := nodeCheckInfo("/root", node); err == nil {
+		if _, _, _, err := NodeCheckInfo("/root", node); err == nil {
 			t.Fatalf("expected error")
 		}
 	})
@@ -498,7 +534,7 @@ func TestNodeCheckInfo(t *testing.T) {
 	t.Run("chaos__empty_root__returns_paths", func(t *testing.T) {
 		node := makeNode(NodeProject, "", "proj")
 
-		label, path, hashPath, err := nodeCheckInfo("", node)
+		label, path, hashPath, err := NodeCheckInfo("", node)
 		if err != nil {
 			t.Fatalf("nodeCheckInfo: %v", err)
 		}

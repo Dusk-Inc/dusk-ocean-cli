@@ -113,6 +113,7 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 				},
 			},
 			Libraries: []workspace.WorkspaceLibrary{},
+			Testing:   []workspace.WorkspaceTest{},
 		})
 		return workspace.WriteWorkspaceConfig(fs, workspaceConfig)
 	}

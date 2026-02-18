@@ -18,6 +18,7 @@ type NodeKind string
 const (
 	NodeService   NodeKind = "service"
 	NodeAppLib    NodeKind = "app-lib"
+	NodeAppTest   NodeKind = "app-test"
 	NodeGlobalLib NodeKind = "global-lib"
 	NodeProject   NodeKind = "project"
 )
@@ -177,6 +178,14 @@ func CollectWorkspaceNodes(config workspace.WorkspaceConfig) []Node {
 				Deps: lib.Deps,
 			})
 		}
+		for _, test := range app.Testing {
+			nodes = append(nodes, Node{
+				Kind: NodeAppTest,
+				App:  app.Name,
+				Name: test.Name,
+				Deps: test.Deps,
+			})
+		}
 	}
 	for _, lib := range config.Libraries {
 		nodes = append(nodes, Node{
@@ -322,6 +331,15 @@ func BuildDependencyGraph(config workspace.WorkspaceConfig) (map[string][]string
 			}
 			graph[key] = append([]string{}, resolved...)
 		}
+		for _, test := range app.Testing {
+			key := fmt.Sprintf("test:%s:%s", app.Name, test.Name)
+			graph[key] = []string{}
+			resolved, err := resolveAppDeps(app.Name, test.Deps, appLibs, globalLibs, projects)
+			if err != nil {
+				return nil, err
+			}
+			graph[key] = append([]string{}, resolved...)
+		}
 	}
 
 	for _, project := range config.Projects {
@@ -383,6 +401,8 @@ func nodeKey(node Node) string {
 		return ServiceKey(node.App, node.Name)
 	case NodeAppLib:
 		return AppLibKey(node.App, node.Name)
+	case NodeAppTest:
+		return fmt.Sprintf("test:%s:%s", node.App, node.Name)
 	case NodeGlobalLib:
 		return GlobalLibKey(node.Name)
 	case NodeProject:
@@ -478,6 +498,11 @@ func NodeBuildInfo(root string, node Node) (string, string, string, error) {
 		label := fmt.Sprintf("library %s/%s", node.App, node.Name)
 		hashPath := hash.MakeHashPath(root, "libs", node.App, node.Name)
 		return label, path, hashPath, nil
+	case NodeAppTest:
+		path := filepath.Join(root, "repos", "apps", node.App, "testing", node.Name)
+		label := fmt.Sprintf("test %s/%s", node.App, node.Name)
+		hashPath := hash.MakeHashPath(root, "tests", node.App, node.Name)
+		return label, path, hashPath, nil
 	case NodeGlobalLib:
 		path := filepath.Join(root, "repos", "libs", node.Name)
 		label := fmt.Sprintf("library %s", node.Name)
@@ -504,6 +529,11 @@ func NodeCheckInfo(root string, node Node) (string, string, string, error) {
 		path := filepath.Join(root, "repos", "apps", node.App, "libs", node.Name)
 		label := fmt.Sprintf("library %s/%s", node.App, node.Name)
 		hashPath := hash.MakeCheckHashPath(root, "libs", node.App, node.Name)
+		return label, path, hashPath, nil
+	case NodeAppTest:
+		path := filepath.Join(root, "repos", "apps", node.App, "testing", node.Name)
+		label := fmt.Sprintf("test %s/%s", node.App, node.Name)
+		hashPath := hash.MakeCheckHashPath(root, "tests", node.App, node.Name)
 		return label, path, hashPath, nil
 	case NodeGlobalLib:
 		path := filepath.Join(root, "repos", "libs", node.Name)

@@ -25,6 +25,7 @@ Dusk Ocean organizes all code into a structured repos folder to maintain consist
 The apps folder contains full-stack or microservice-based applications. Each app is subdivided into:
 - Services: API and backend service logic.
 - Libs: Libraries internal to that specific application.
+- Testing: App-scoped integration/system testing projects (polyglot).
 - Jobs: Orchestration, deployment, and CI/CD configurations.
 
 #### Libs
@@ -112,7 +113,7 @@ Which looks like this:
 Service images include a name and tag. The name defaults to `app-name__service_name`, and the default tag is `dev`.
 
 Language requirements:
-- Language and `type` live in each repo's `ocean.config.json` (service|library|project).
+- Language and `type` live in each repo's `ocean.config.json` (service|library|project|test).
 - Global libs/projects must have unique names (use `-ts/-py/-go` suffix when names collide).
 
 #### Repositories
@@ -168,6 +169,7 @@ Scaffold new components without manual boilerplate setup.
   - Applies scaffold output, assigns ports, updates `ocean-workspace.json`, and wires the service into the app's `docker-compose.yml` and `docker-compose.dev.yml`.
   - `dusk-ocean add library`: Prompts for location (Global or App-specific) and template. Then, the CLI adds an entry to ocean.workspace.json in the "libraries" array.
   - `dusk-ocean add project`: Scaffolds an external-facing project in the repos/projects directory from the selected template. Then, the CLI adds an entry to ocean.workspace.json in the "projects" array.
+  - `dusk-ocean add test`: Prompts for app, name, and test template, then scaffolds to `repos/apps/<app>/testing/<name>` and tracks it in workspace config.
 
 #### Run
 Manage local development environments.
@@ -175,8 +177,8 @@ Manage local development environments.
 - `dusk-ocean run service`: Allows interactive selection of one or more services to run.
 
 #### Build & Check
-- `dusk-ocean build (project|service|library) --name <name>`: Executes the build task defined in the config if the hash has changed.
-- `dusk-ocean check (project|service|library) --name <name>`: Executes the test suite and outputs JUnit XML to .ocean/results.
+- `dusk-ocean build (project|service|library|test) --name <name>`: Executes the build task defined in the config if the hash has changed.
+- `dusk-ocean check (project|service|library|test) --name <name>`: Executes the test suite and outputs JUnit XML to .ocean/results.
 
 #### Install
 Install a local dependency into the current target directory using the dependency's add task.
@@ -191,6 +193,9 @@ app library       -> project
 service           -> global library
 service           -> app library (same app)
 service           -> project
+app test          -> global library
+app test          -> app library (same app)
+app test          -> project
 project           -> global library
 ```
 
@@ -210,9 +215,10 @@ Detaching allows code to be removed from the monorepo for delivery to clients or
 
 #### Remove
 - `dusk-ocean remove app --name <name>`: Removes an app and deletes its workspace entries.
-- `dusk-ocean remove library --name <name>`: Removes a library (use `--in <app>` for app libraries). Runs the library's `uninstall` task in every dependent service/library/project and removes the dependency entries from ocean.workspace.json.
+- `dusk-ocean remove library --name <name>`: Removes a library (use `--in <app>` for app libraries). Runs the library's `uninstall` task in every dependent service/library/project/test and removes the dependency entries from ocean.workspace.json.
 - `dusk-ocean remove project --name <name>`: Removes a project and deletes its workspace entry.
 - `dusk-ocean remove service --name <name> --in <app>`: Removes a service from the app and deletes its workspace entry.
+- `dusk-ocean remove test --name <name> --in <app>`: Removes a testing project from an app and deletes its workspace entry.
 
 ### Orchestration
 Dusk Ocean uses a layered Merge Strategy for Docker Compose to keep environments consistent:

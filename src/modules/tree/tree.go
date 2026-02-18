@@ -79,6 +79,10 @@ func GetAppLibs(appName string) ([]Component, error) {
 	return getSubfolders(filepath.Join(appsDir, appName, "libs"))
 }
 
+func GetAppTests(appName string) ([]Component, error) {
+	return getSubfolders(filepath.Join(appsDir, appName, "testing"))
+}
+
 func GetProjects() ([]Component, error) {
 	return getSubfolders(projectsDir)
 }

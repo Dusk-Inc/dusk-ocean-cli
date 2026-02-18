@@ -111,6 +111,16 @@ func collectTargetDeps(config workspace.WorkspaceConfig, target workspace.Target
 			return nil, fmt.Errorf("project not registered in workspace: %s", target.Name)
 		}
 		return config.Projects[projectIndex].Deps, nil
+	case workspace.TargetTest:
+		appIndex := workspace.FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return nil, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		testIndex := workspace.FindAppTestIndex(config.Apps[appIndex], target.Name)
+		if testIndex == -1 {
+			return nil, fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+		return config.Apps[appIndex].Testing[testIndex].Deps, nil
 	default:
 		return nil, fmt.Errorf("unsupported uninstall target")
 	}
@@ -234,6 +244,17 @@ func removeTargetDependency(config workspace.WorkspaceConfig, target workspace.T
 		}
 		depsList := config.Projects[projectIndex].Deps
 		config.Projects[projectIndex].Deps = filterTargetDeps(depsList, dependency.name, dependency.from)
+	case workspace.TargetTest:
+		appIndex := workspace.FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return config
+		}
+		testIndex := workspace.FindAppTestIndex(config.Apps[appIndex], target.Name)
+		if testIndex == -1 {
+			return config
+		}
+		depsList := config.Apps[appIndex].Testing[testIndex].Deps
+		config.Apps[appIndex].Testing[testIndex].Deps = filterTargetDeps(depsList, dependency.name, dependency.from)
 	}
 	return config
 }

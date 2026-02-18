@@ -48,6 +48,7 @@ type WorkspaceApp struct {
 	Name      string             `json:"name"`
 	Services  []WorkspaceService `json:"services"`
 	Libraries []WorkspaceLibrary `json:"libraries"`
+	Testing   []WorkspaceTest    `json:"testing"`
 }
 
 type WorkspaceImage struct {
@@ -69,6 +70,11 @@ type WorkspaceLibrary struct {
 }
 
 type WorkspaceProject struct {
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceTest struct {
 	Name string         `json:"name"`
 	Deps []WorkspaceDep `json:"deps"`
 }
@@ -105,6 +111,7 @@ const (
 	TargetAppLib    TargetKind = "app-lib"
 	TargetGlobalLib TargetKind = "global-lib"
 	TargetProject   TargetKind = "project"
+	TargetTest      TargetKind = "test"
 )
 
 type Target struct {
@@ -175,6 +182,7 @@ func MakeApp(name string, libraries []WorkspaceLibrary) WorkspaceApp {
 		Name:      name,
 		Services:  nil,
 		Libraries: libraries,
+		Testing:   nil,
 	}
 }
 
@@ -461,6 +469,14 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 				config.Apps[i].Libraries[j].Deps = []WorkspaceDep{}
 			}
 		}
+		if config.Apps[i].Testing == nil {
+			config.Apps[i].Testing = []WorkspaceTest{}
+		}
+		for j := range config.Apps[i].Testing {
+			if config.Apps[i].Testing[j].Deps == nil {
+				config.Apps[i].Testing[j].Deps = []WorkspaceDep{}
+			}
+		}
 	}
 	for i := range config.Libraries {
 		if config.Libraries[i].Deps == nil {
@@ -499,6 +515,16 @@ func FindServiceIndex(app WorkspaceApp, serviceName string) int {
 func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
 	for i, lib := range app.Libraries {
 		if lib.Name == libName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindAppTestIndex returns the index of an app test name within an app, or -1 if not found.
+func FindAppTestIndex(app WorkspaceApp, testName string) int {
+	for i, test := range app.Testing {
+		if test.Name == testName {
 			return i
 		}
 	}
@@ -575,6 +601,54 @@ func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, b
 	return *match, true, nil
 }
 
+// AddTestToWorkspace registers an app-scoped test project.
+func AddTestToWorkspace(fs afero.Fs, appName string, name string) error {
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	appIndex := FindAppIndex(config, appName)
+	if appIndex == -1 {
+		config.Apps = append(config.Apps, WorkspaceApp{
+			Name:      appName,
+			Services:  []WorkspaceService{},
+			Libraries: []WorkspaceLibrary{},
+			Testing: []WorkspaceTest{
+				{
+					Name: name,
+					Deps: []WorkspaceDep{},
+				},
+			},
+		})
+		return WriteWorkspaceConfig(fs, config)
+	}
+	if FindAppTestIndex(config.Apps[appIndex], name) != -1 {
+		return nil
+	}
+	config.Apps[appIndex].Testing = append(config.Apps[appIndex].Testing, WorkspaceTest{
+		Name: name,
+		Deps: []WorkspaceDep{},
+	})
+	return WriteWorkspaceConfig(fs, config)
+}
+
+// RemoveTestFromWorkspace removes an app-scoped test project registration.
+func RemoveTestFromWorkspace(fs afero.Fs, appName string, name string) error {
+	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
+		appIndex := FindAppIndex(config, appName)
+		if appIndex == -1 {
+			return config, nil
+		}
+		testIndex := FindAppTestIndex(config.Apps[appIndex], name)
+		if testIndex == -1 {
+			return config, nil
+		}
+		tests := config.Apps[appIndex].Testing
+		config.Apps[appIndex].Testing = append(tests[:testIndex], tests[testIndex+1:]...)
+		return config, nil
+	})
+}
+
 // FindRepoLanguage returns whether the repo exists and its language if configured.
 func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
 	info, err := fs.Stat(repoPath)
@@ -618,6 +692,18 @@ func AppNamesWithServices(config WorkspaceConfig) []string {
 	return names
 }
 
+// AppNamesWithTests returns app names that contain testing projects.
+func AppNamesWithTests(config WorkspaceConfig) []string {
+	names := []string{}
+	for _, app := range config.Apps {
+		if len(app.Testing) == 0 {
+			continue
+		}
+		names = append(names, app.Name)
+	}
+	return names
+}
+
 // AppLibraryNames returns library names for a given app.
 func AppLibraryNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
@@ -648,6 +734,21 @@ func ServiceNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
+// TestNames returns testing project names for a given app.
+func TestNames(config WorkspaceConfig, appName string) []string {
+	for _, app := range config.Apps {
+		if app.Name != appName {
+			continue
+		}
+		names := make([]string, 0, len(app.Testing))
+		for _, test := range app.Testing {
+			names = append(names, test.Name)
+		}
+		return names
+	}
+	return nil
+}
+
 // GlobalLibraryNames returns names of global libraries.
 func GlobalLibraryNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Libraries))
@@ -666,8 +767,8 @@ func ProjectNames(config WorkspaceConfig) []string {
 	return names
 }
 
-// ResolveTargetFromCwd resolves a workspace target from the current working directory.
-func ResolveTargetFromCwd(fs afero.Fs, root string, cwd string) (Target, error) {
+// ResolveTarget resolves a workspace target from a path.
+func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return Target{}, err
@@ -706,6 +807,18 @@ func ResolveTargetFromCwd(fs afero.Fs, root string, cwd string) (Target, error) 
 			}
 			return Target{
 				Kind: TargetAppLib,
+				App:  parts[2],
+				Name: parts[4],
+				Path: targetPath,
+			}, nil
+		}
+		if len(parts) >= 5 && parts[3] == "testing" {
+			targetPath := filepath.Join(absRoot, "repos", "apps", parts[2], "testing", parts[4])
+			if !tree.DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("test path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetTest,
 				App:  parts[2],
 				Name: parts[4],
 				Path: targetPath,
@@ -769,6 +882,14 @@ func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 		if projectIndex == -1 {
 			return fmt.Errorf("project not registered in workspace: %s", target.Name)
 		}
+	case TargetTest:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		if FindAppTestIndex(config.Apps[appIndex], target.Name) == -1 {
+			return fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
 	default:
 		return fmt.Errorf("unsupported install target")
 	}
@@ -799,6 +920,16 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 			libNames[lib.Name] = struct{}{}
 			if err := validateDeps(lib.Deps); err != nil {
 				problems = append(problems, fmt.Sprintf("app %s library %s deps: %s", app.Name, lib.Name, err.Error()))
+			}
+		}
+		testNames := map[string]struct{}{}
+		for _, test := range app.Testing {
+			if _, exists := testNames[test.Name]; exists && !isTemplateName(test.Name) {
+				problems = append(problems, fmt.Sprintf("app %s test %s: duplicate", app.Name, test.Name))
+			}
+			testNames[test.Name] = struct{}{}
+			if err := validateDeps(test.Deps); err != nil {
+				problems = append(problems, fmt.Sprintf("app %s test %s deps: %s", app.Name, test.Name, err.Error()))
 			}
 		}
 	}

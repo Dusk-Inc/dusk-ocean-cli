@@ -58,6 +58,7 @@ func AddAppLibraryToWorkspace(fs afero.Fs, appName string, name string) error {
 				},
 			},
 			Services: []workspace.WorkspaceService{},
+			Testing:  []workspace.WorkspaceTest{},
 		})
 		return workspace.WriteWorkspaceConfig(fs, config)
 	}
@@ -144,6 +145,16 @@ func CollectLibraryDependents(config workspace.WorkspaceConfig, root string, nam
 				})
 			}
 		}
+		for _, test := range app.Testing {
+			if hasLibraryDep(test.Deps, name, source) {
+				targets = append(targets, workspace.Target{
+					Kind: workspace.TargetTest,
+					App:  app.Name,
+					Name: test.Name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "testing", test.Name),
+				})
+			}
+		}
 	}
 	for _, lib := range config.Libraries {
 		if hasLibraryDep(lib.Deps, name, source) {
@@ -175,6 +186,10 @@ func RemoveLibraryDeps(config workspace.WorkspaceConfig, name string, source str
 		for libIndex := range config.Apps[appIndex].Libraries {
 			depsList := config.Apps[appIndex].Libraries[libIndex].Deps
 			config.Apps[appIndex].Libraries[libIndex].Deps = filterLibraryDeps(depsList, name, source)
+		}
+		for testIndex := range config.Apps[appIndex].Testing {
+			depsList := config.Apps[appIndex].Testing[testIndex].Deps
+			config.Apps[appIndex].Testing[testIndex].Deps = filterLibraryDeps(depsList, name, source)
 		}
 	}
 	for libIndex := range config.Libraries {

@@ -55,6 +55,21 @@ func PromptForAppLib(appName string) (string, error) {
 	return SelectFromList("Select library", items)
 }
 
+func PromptForTest(appName string) (string, error) {
+	tests, err := tree.GetAppTests(appName)
+	if err != nil {
+		return "", err
+	}
+	if len(tests) == 0 {
+		return "", fmt.Errorf("no tests found for app: %s", appName)
+	}
+	items := make([]string, 0, len(tests))
+	for _, entry := range tests {
+		items = append(items, entry.Name)
+	}
+	return SelectFromList("Select test", items)
+}
+
 func PromptForLanguage(rootPath string) (string, error) {
 	entries, err := os.ReadDir(rootPath)
 	if err != nil {
@@ -118,6 +133,10 @@ func PromptForTarget(config workspace.WorkspaceConfig, root string) (workspace.T
 	if len(serviceApps) > 0 {
 		options = append(options, "service")
 	}
+	testApps := workspace.AppNamesWithTests(config)
+	if len(testApps) > 0 {
+		options = append(options, "test")
+	}
 	if len(options) == 0 {
 		return workspace.Target{}, fmt.Errorf("no targets available")
 	}
@@ -178,6 +197,25 @@ func PromptForTarget(config workspace.WorkspaceConfig, root string) (workspace.T
 			Kind: workspace.TargetProject,
 			Name: name,
 			Path: filepath.Join(root, "repos", "projects", name),
+		}, nil
+	case "test":
+		appName, err := SelectFromList("Select app", testApps)
+		if err != nil {
+			return workspace.Target{}, err
+		}
+		testNames := workspace.TestNames(config, appName)
+		if len(testNames) == 0 {
+			return workspace.Target{}, fmt.Errorf("no tests found for app: %s", appName)
+		}
+		name, err := SelectFromList("Select test", testNames)
+		if err != nil {
+			return workspace.Target{}, err
+		}
+		return workspace.Target{
+			Kind: workspace.TargetTest,
+			App:  appName,
+			Name: name,
+			Path: filepath.Join(root, "repos", "apps", appName, "testing", name),
 		}, nil
 	case "global library":
 		globalLibs := workspace.GlobalLibraryNames(config)

@@ -6,6 +6,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/apptesting"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/libraries"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/projects"
@@ -40,8 +41,12 @@ var checkAppCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(appServices) == 0 && len(libs) == 0 {
-			return fmt.Errorf("no services or libs found for app: %s", appName)
+		tests, err := tree.GetAppTests(appName)
+		if err != nil {
+			return err
+		}
+		if len(appServices) == 0 && len(libs) == 0 && len(tests) == 0 {
+			return fmt.Errorf("no services, libs, or tests found for app: %s", appName)
 		}
 
 		passThrough, err := collectPassThroughArgs(cmd, args)
@@ -72,6 +77,15 @@ var checkAppCmd = &cobra.Command{
 		}
 		for _, lib := range libs {
 			node, err := libraries.MakeAppLibNode(config, appName, lib.Name)
+			if err != nil {
+				return err
+			}
+			if err := deps.RunCheckWithDependencies(cmd, root, config, node, built, passThrough); err != nil {
+				return err
+			}
+		}
+		for _, test := range tests {
+			node, err := apptesting.MakeTestNode(config, appName, test.Name)
 			if err != nil {
 				return err
 			}
@@ -258,6 +272,54 @@ var checkPkgCmd = &cobra.Command{
 	},
 }
 
+var checkTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Test a testing project",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		appName, err := cmd.Flags().GetString("in")
+		if err != nil {
+			return err
+		}
+		if appName == "" {
+			selected, err := prompts.PromptForApp()
+			if err != nil {
+				return err
+			}
+			appName = selected
+		}
+		if name == "" {
+			selected, err := prompts.PromptForTest(appName)
+			if err != nil {
+				return err
+			}
+			name = selected
+		}
+
+		passThrough, err := collectPassThroughArgs(cmd, args)
+		if err != nil {
+			return err
+		}
+		root, err := tree.GetRoot()
+		if err != nil {
+			return err
+		}
+		fs := afero.NewOsFs()
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		node, err := apptesting.MakeTestNode(config, appName, name)
+		if err != nil {
+			return err
+		}
+		return deps.RunCheckWithDependencies(cmd, root, config, node, map[string]struct{}{}, passThrough)
+	},
+}
+
 func init() {
 	checkAppCmd.Flags().String("name", "", "Name of the app")
 	checkLibCmd.Flags().String("name", "", "Name of the library")
@@ -265,6 +327,8 @@ func init() {
 	checkServiceCmd.Flags().String("name", "", "Name of the service")
 	checkServiceCmd.Flags().String("in", "", "App name for the service")
 	checkPkgCmd.Flags().String("name", "", "Name of the project")
+	checkTestCmd.Flags().String("name", "", "Name of the test")
+	checkTestCmd.Flags().String("in", "", "App name for the test")
 }
 
 func collectPassThroughArgs(cmd *cobra.Command, args []string) ([]string, error) {

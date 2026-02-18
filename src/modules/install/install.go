@@ -25,6 +25,7 @@ const (
 	targetAppLib    targetKind = workspace.TargetAppLib
 	targetGlobalLib targetKind = workspace.TargetGlobalLib
 	targetProject   targetKind = workspace.TargetProject
+	targetTest      targetKind = workspace.TargetTest
 
 	dependencyGlobalLib dependencyKind = "global-lib"
 	dependencyAppLib    dependencyKind = "app-lib"
@@ -54,6 +55,11 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 		dependencyProject:   true,
 	},
 	targetService: {
+		dependencyAppLib:    true,
+		dependencyGlobalLib: true,
+		dependencyProject:   true,
+	},
+	targetTest: {
 		dependencyAppLib:    true,
 		dependencyGlobalLib: true,
 		dependencyProject:   true,
@@ -127,7 +133,7 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	if err != nil {
 		return err
 	}
-	target, err := workspace.ResolveTargetFromCwd(afero.NewOsFs(), root, cwd)
+	target, err := workspace.ResolveTarget(afero.NewOsFs(), root, cwd)
 	if err != nil {
 		return err
 	}
@@ -175,7 +181,7 @@ func resolveDependency(root string, target installTarget, name string, config wo
 
 	var matches []installDependency
 
-	if target.Kind == targetAppLib || target.Kind == targetService {
+	if target.Kind == targetAppLib || target.Kind == targetService || target.Kind == targetTest {
 		if target.App != "" {
 			appLibPath := filepath.Join(root, "repos", "apps", target.App, "libs", name)
 			if tree.DirExists(afero.NewOsFs(), appLibPath) {
@@ -220,7 +226,7 @@ func resolveDependency(root string, target installTarget, name string, config wo
 	}
 
 	if len(matches) == 0 {
-		if target.Kind == targetService || target.Kind == targetAppLib {
+		if target.Kind == targetService || target.Kind == targetAppLib || target.Kind == targetTest {
 			servicePath := filepath.Join(root, "repos", "apps", target.App, "services", name)
 			if tree.DirExists(afero.NewOsFs(), servicePath) {
 				return installDependency{}, fmt.Errorf("services cannot be dependencies")
@@ -249,6 +255,8 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 			return fmt.Errorf("invalid dependency for app library")
 		case targetService:
 			return fmt.Errorf("invalid dependency for service")
+		case targetTest:
+			return fmt.Errorf("invalid dependency for test")
 		default:
 			return fmt.Errorf("unsupported install target")
 		}
@@ -363,6 +371,20 @@ func registerDependency(config workspace.WorkspaceConfig, target installTarget, 
 			return workspace.WorkspaceConfig{}, err
 		}
 		config.Apps[appIndex].Libraries[libIndex].Deps = append(depsList, makeInstallDep(dependency))
+	case targetTest:
+		appIndex := workspace.FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return workspace.WorkspaceConfig{}, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		testIndex := workspace.FindAppTestIndex(config.Apps[appIndex], target.Name)
+		if testIndex == -1 {
+			return workspace.WorkspaceConfig{}, fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+		depsList := config.Apps[appIndex].Testing[testIndex].Deps
+		if containsDep(depsList, dependency.name, depSourceForInstall(dependency)) {
+			return workspace.WorkspaceConfig{}, fmt.Errorf("dependency already registered: %s", dependency.name)
+		}
+		config.Apps[appIndex].Testing[testIndex].Deps = append(depsList, makeInstallDep(dependency))
 	case targetGlobalLib:
 		libIndex := workspace.FindGlobalLibraryIndex(config, target.Name)
 		if libIndex == -1 {
@@ -397,7 +419,7 @@ func registerDependency(config workspace.WorkspaceConfig, target installTarget, 
 }
 
 func ensureNoCycles(config workspace.WorkspaceConfig, target installTarget, dependency installDependency) error {
-	if target.Kind == targetService {
+	if target.Kind == targetService || target.Kind == targetTest {
 		return nil
 	}
 	graph, err := deps.BuildDependencyGraph(config)
@@ -427,6 +449,8 @@ func installTargetKey(target installTarget) string {
 		return deps.ServiceKey(target.App, target.Name)
 	case targetAppLib:
 		return deps.AppLibKey(target.App, target.Name)
+	case targetTest:
+		return fmt.Sprintf("test:%s:%s", target.App, target.Name)
 	case targetGlobalLib:
 		return deps.GlobalLibKey(target.Name)
 	case targetProject:

@@ -16,6 +16,8 @@ func FormatTargetLabel(target workspace.Target) string {
 		return fmt.Sprintf("global library %s", target.Name)
 	case workspace.TargetProject:
 		return fmt.Sprintf("project %s", target.Name)
+	case workspace.TargetTest:
+		return fmt.Sprintf("test %s/%s", target.App, target.Name)
 	default:
 		return target.Name
 	}

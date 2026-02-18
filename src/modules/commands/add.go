@@ -367,6 +367,117 @@ var addPkgCmd = &cobra.Command{
 	},
 }
 
+var addTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Add a testing project to an app",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		apps, err := tree.GetApps()
+		if err != nil {
+			return err
+		}
+		if len(apps) == 0 {
+			return fmt.Errorf("no apps found")
+		}
+
+		appItems := make([]string, 0, len(apps))
+		for _, app := range apps {
+			appItems = append(appItems, app.Name)
+		}
+		appPrompt := promptui.Select{
+			Label: "Select app",
+			Items: appItems,
+		}
+		_, appName, err := appPrompt.Run()
+		if err != nil {
+			return err
+		}
+
+		namePrompt := promptui.Prompt{
+			Label: "Test name",
+			Validate: func(input string) error {
+				value := strings.TrimSpace(input)
+				if value == "" {
+					return fmt.Errorf("test name is required")
+				}
+				if strings.ContainsAny(value, " \t\n") {
+					return fmt.Errorf("test name cannot include spaces")
+				}
+				for _, ch := range value {
+					if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+						return fmt.Errorf("test name must only use letters, numbers, dashes, and underscores")
+					}
+				}
+				return nil
+			},
+		}
+		testName, err := namePrompt.Run()
+		if err != nil {
+			return err
+		}
+		testName = strings.TrimSpace(testName)
+
+		templates, err := tree.ListTemplatesByType("test")
+		if err != nil {
+			return err
+		}
+		if len(templates) == 0 {
+			return fmt.Errorf("no test templates found")
+		}
+
+		templatePrompt := promptui.Select{
+			Label: "Select template",
+			Items: templates,
+		}
+		_, templateName, err := templatePrompt.Run()
+		if err != nil {
+			return err
+		}
+
+		fs := afero.NewOsFs()
+		destPath := filepath.Join("repos", "apps", appName, "testing", testName)
+		if _, err := fs.Stat(destPath); err == nil {
+			return fmt.Errorf("test already exists: %s", testName)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
+		templatePath := filepath.Join("repos", "templates", templateName)
+		if _, err := fs.Stat(templatePath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("missing template: %s", templateName)
+			}
+			return err
+		}
+
+		placeholders, err := collectPlaceholders(fs, templatePath)
+		if err != nil {
+			return err
+		}
+		replacements := map[string]string{
+			"test_name": testName,
+			"app_name":  appName,
+		}
+		missing := make([]string, 0, len(placeholders))
+		for _, placeholder := range placeholders {
+			if _, ok := replacements[placeholder]; ok {
+				continue
+			}
+			missing = append(missing, placeholder)
+		}
+		prompted, err := promptPlaceholderValues(missing)
+		if err != nil {
+			return err
+		}
+		for key, value := range prompted {
+			replacements[key] = value
+		}
+		if err := scaffold.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
+			return err
+		}
+		return workspace.AddTestToWorkspace(fs, appName, testName)
+	},
+}
+
 func init() {
 	addAppCmd.Flags().String("name", "", "Name of the app")
 }

@@ -240,8 +240,9 @@ func addAppToWorkspace(fs afero.Fs, name string) error {
 	}
 	config.Apps = append(config.Apps, workspace.WorkspaceApp{
 		Name:      name,
-		Services: []workspace.WorkspaceService{},
+		Services:  []workspace.WorkspaceService{},
 		Libraries: []workspace.WorkspaceLibrary{},
+		Testing:   []workspace.WorkspaceTest{},
 	})
 	return workspace.WriteWorkspaceConfig(fs, config)
 }

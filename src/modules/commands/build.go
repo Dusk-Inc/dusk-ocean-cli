@@ -6,6 +6,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/apptesting"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/deps"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/libraries"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/modules/projects"
@@ -40,8 +41,12 @@ var buildAppCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(appServices) == 0 && len(libs) == 0 {
-			return fmt.Errorf("no services or libs found for app: %s", appName)
+		tests, err := tree.GetAppTests(appName)
+		if err != nil {
+			return err
+		}
+		if len(appServices) == 0 && len(libs) == 0 && len(tests) == 0 {
+			return fmt.Errorf("no services, libs, or tests found for app: %s", appName)
 		}
 
 		root, err := tree.GetRoot()
@@ -67,6 +72,15 @@ var buildAppCmd = &cobra.Command{
 		}
 		for _, lib := range libs {
 			node, err := libraries.MakeAppLibNode(config, appName, lib.Name)
+			if err != nil {
+				return err
+			}
+			if err := deps.RunBuildWithDependencies(cmd, root, config, node, built); err != nil {
+				return err
+			}
+		}
+		for _, test := range tests {
+			node, err := apptesting.MakeTestNode(config, appName, test.Name)
 			if err != nil {
 				return err
 			}
@@ -239,6 +253,50 @@ var buildPkgCmd = &cobra.Command{
 	},
 }
 
+var buildTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Build a testing project",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		appName, err := cmd.Flags().GetString("in")
+		if err != nil {
+			return err
+		}
+		if appName == "" {
+			selected, err := prompts.PromptForApp()
+			if err != nil {
+				return err
+			}
+			appName = selected
+		}
+		if name == "" {
+			selected, err := prompts.PromptForTest(appName)
+			if err != nil {
+				return err
+			}
+			name = selected
+		}
+
+		root, err := tree.GetRoot()
+		if err != nil {
+			return err
+		}
+		fs := afero.NewOsFs()
+		config, err := workspace.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		node, err := apptesting.MakeTestNode(config, appName, name)
+		if err != nil {
+			return err
+		}
+		return deps.RunBuildWithDependencies(cmd, root, config, node, map[string]struct{}{})
+	},
+}
+
 func init() {
 	buildAppCmd.Flags().String("name", "", "Name of the app")
 	buildLibCmd.Flags().String("name", "", "Name of the library")
@@ -246,4 +304,6 @@ func init() {
 	buildServiceCmd.Flags().String("name", "", "Name of the service")
 	buildServiceCmd.Flags().String("in", "", "App name for the service")
 	buildPkgCmd.Flags().String("name", "", "Name of the project")
+	buildTestCmd.Flags().String("name", "", "Name of the test")
+	buildTestCmd.Flags().String("in", "", "App name for the test")
 }

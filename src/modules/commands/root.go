@@ -85,11 +85,13 @@ func init() {
 	addCmd.AddCommand(addServiceCmd)
 	addCmd.AddCommand(addLibCmd)
 	addCmd.AddCommand(addPkgCmd)
+	addCmd.AddCommand(addTestCmd)
 
 	removeCmd.AddCommand(removeAppCmd)
 	removeCmd.AddCommand(removeLibCmd)
 	removeCmd.AddCommand(removePkgCmd)
 	removeCmd.AddCommand(removeServiceCmd)
+	removeCmd.AddCommand(removeTestCmd)
 
 	detachCmd.AddCommand(detachAppCmd)
 	detachCmd.AddCommand(detachPkgCmd)
@@ -98,11 +100,13 @@ func init() {
 	buildCmd.AddCommand(buildLibCmd)
 	buildCmd.AddCommand(buildServiceCmd)
 	buildCmd.AddCommand(buildPkgCmd)
+	buildCmd.AddCommand(buildTestCmd)
 
 	checkCmd.AddCommand(checkAppCmd)
 	checkCmd.AddCommand(checkLibCmd)
 	checkCmd.AddCommand(checkPkgCmd)
 	checkCmd.AddCommand(checkServiceCmd)
+	checkCmd.AddCommand(checkTestCmd)
 
 	runCmd.AddCommand(runAppCmd)
 	runCmd.AddCommand(runServiceCmd)

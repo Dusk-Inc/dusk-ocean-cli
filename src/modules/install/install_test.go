@@ -44,6 +44,18 @@ func TestValidateInstallFlow(t *testing.T) {
 				target: installTarget{Kind: targetService, App: "app", Name: "svc"},
 				dep:    installDependency{kind: dependencyProject, name: "p"},
 			},
+			{
+				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
+				dep:    installDependency{kind: dependencyAppLib, app: "app", name: "lib"},
+			},
+			{
+				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
+				dep:    installDependency{kind: dependencyGlobalLib, name: "g"},
+			},
+			{
+				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
+				dep:    installDependency{kind: dependencyProject, name: "p"},
+			},
 		}
 		for _, entry := range cases {
 			if err := validateInstallFlow(entry.target, entry.dep); err != nil {
@@ -131,6 +143,22 @@ func TestEnsureNoCycles(t *testing.T) {
 		dep := installDependency{kind: dependencyGlobalLib, name: "a"}
 		if err := ensureNoCycles(config, target, dep); err != nil {
 			t.Fatalf("expected no cycle check for service, got %v", err)
+		}
+	})
+
+	t.Run("boundary__test_target__skips_cycle_check", func(t *testing.T) {
+		config := workspace.MakeConfig(
+			[]workspace.WorkspaceLibrary{
+				workspace.MakeLibrary("a", "b"),
+				workspace.MakeLibrary("b"),
+			},
+			nil,
+			nil,
+		)
+		target := installTarget{Kind: targetTest, App: "app", Name: "suite"}
+		dep := installDependency{kind: dependencyGlobalLib, name: "a"}
+		if err := ensureNoCycles(config, target, dep); err != nil {
+			t.Fatalf("expected no cycle check for test, got %v", err)
 		}
 	})
 }

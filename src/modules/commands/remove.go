@@ -280,6 +280,64 @@ var removeServiceCmd = &cobra.Command{
 	},
 }
 
+var removeTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Remove a testing project from an app",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		appName, err := cmd.Flags().GetString("in")
+		if err != nil {
+			return err
+		}
+		if appName == "" {
+			selected, err := prompts.PromptForApp()
+			if err != nil {
+				return err
+			}
+			appName = selected
+		}
+		if name == "" {
+			selected, err := prompts.PromptForTest(appName)
+			if err != nil {
+				return err
+			}
+			name = selected
+		}
+
+		prompt := promptui.Prompt{
+			Label:     fmt.Sprintf("Remove test %q from app %q? This action is permanent", name, appName),
+			IsConfirm: true,
+		}
+		confirm, err := prompt.Run()
+		if err != nil {
+			return err
+		}
+		if strings.ToLower(confirm) != "y" {
+			return fmt.Errorf("aborted")
+		}
+
+		root, err := tree.GetRoot()
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(root, "repos", "apps", appName, "testing", name)
+		fs := afero.NewOsFs()
+		if _, err := fs.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("test does not exist: %s", name)
+			}
+			return err
+		}
+		if err := fs.RemoveAll(path); err != nil {
+			return err
+		}
+		return workspace.RemoveTestFromWorkspace(fs, appName, name)
+	},
+}
+
 func init() {
 	removeAppCmd.Flags().String("name", "", "Name of the app")
 	removeLibCmd.Flags().String("name", "", "Name of the library")
@@ -287,4 +345,6 @@ func init() {
 	removePkgCmd.Flags().String("name", "", "Name of the project")
 	removeServiceCmd.Flags().String("name", "", "Name of the service")
 	removeServiceCmd.Flags().String("in", "", "App name for the service")
+	removeTestCmd.Flags().String("name", "", "Name of the test")
+	removeTestCmd.Flags().String("in", "", "App name for the test")
 }
