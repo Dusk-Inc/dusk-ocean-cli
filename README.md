@@ -1,6 +1,13 @@
 # Dusk Ocean CLI
 Dusk Ocean CLI tool is used to manage polyglot mono-repos. 
 
+## Source Layout
+- `src/modules`: feature-level orchestration and command flows.
+- `src/functions`: reusable pure helpers (for example dependency key builders).
+- `src/interfaces`: side-effect boundaries and adapters (for example command runners).
+- `src/models`: shared data shapes used across modules.
+- `src/tokens`: shared constants/enums for domain literals and kinds.
+
 ## Getting Started
 To get started, install the CLI from {{TBD}}, then run:
 ```bash

@@ -1,0 +1,111 @@
+package models
+
+import "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
+
+type WorkspaceConfig struct {
+	Workspace string             `json:"workspace"`
+	Version   string             `json:"version,omitempty"`
+	Ports     WorkspacePorts     `json:"ports"`
+	Apps      []WorkspaceApp     `json:"apps"`
+	Libraries []WorkspaceLibrary `json:"libraries"`
+	Projects  []WorkspaceProject `json:"projects"`
+}
+
+type WorkspacePorts struct {
+	Allowed  WorkspacePortRange      `json:"allowed"`
+	Reserved []WorkspaceReservedPort `json:"reserved"`
+}
+
+type WorkspacePortRange struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
+}
+
+type WorkspaceReservedPort struct {
+	Name string `json:"name"`
+	Port int    `json:"port"`
+}
+
+type WorkspaceApp struct {
+	Name      string             `json:"name"`
+	Services  []WorkspaceService `json:"services"`
+	Libraries []WorkspaceLibrary `json:"libraries"`
+	Testing   []WorkspaceTest    `json:"testing"`
+}
+
+type WorkspaceImage struct {
+	Name string `json:"name"`
+	Tag  string `json:"tag"`
+}
+
+type WorkspaceService struct {
+	Name       string         `json:"name"`
+	Port       string         `json:"port"`
+	Image      WorkspaceImage `json:"image"`
+	Dockerfile string         `json:"Dockerfile"`
+	Deps       []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceLibrary struct {
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceProject struct {
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceTest struct {
+	Name string         `json:"name"`
+	Deps []WorkspaceDep `json:"deps"`
+}
+
+type WorkspaceDep struct {
+	Lib  string `json:"lib"`
+	From string `json:"from"`
+}
+
+type RepoConfig struct {
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	Type      string `json:"type"`
+	Build     string `json:"build"`
+	Test      string `json:"test"`
+	Add       string `json:"add"`
+	Install   string `json:"install"`
+	Uninstall string `json:"uninstall"`
+	Tasks     struct {
+		Build     string `json:"build"`
+		Test      string `json:"test"`
+		Add       string `json:"add"`
+		Install   string `json:"install"`
+		Uninstall string `json:"uninstall"`
+	} `json:"tasks"`
+}
+
+type TargetKind string
+
+const (
+	TargetService   TargetKind = tokens.TargetServiceKind
+	TargetAppLib    TargetKind = tokens.TargetAppLibKind
+	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
+	TargetProject   TargetKind = tokens.TargetProjectKind
+	TargetTest      TargetKind = tokens.TargetTestKind
+)
+
+type Target struct {
+	Kind TargetKind
+	App  string
+	Name string
+	Path string
+}
+
+type InitOptions struct {
+	Name string
+}
+
+type ComposeSnapshot struct {
+	Images map[string]string
+	Ports  map[string][]string
+}
