@@ -1,5 +1,5 @@
 # Dusk Ocean Requirements
-Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows. Interactive prompt flows are consolidated under the `menu` command.
+Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
 
 ## Requirements
 ### 1 Workspace Initialization
@@ -8,7 +8,7 @@ Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dep
 
 #### Requirements
 - [x] 1.1 Given `dusk-ocean init` is run with `--name`, when `ocean.workspace.json` does not exist, then Dusk Ocean shall create it with the provided workspace name, default allowed ports (`3000-3999`), and empty apps and libraries lists.
-- [ ] 1.2 Given `dusk-ocean init` is run, when baseline directories are missing, then Dusk Ocean shall create `.ocean`, `.ocean/results`, `.ocean/hashes`, `repos`, `repos/apps`, `repos/libs`, and app-template directories under `repos/templates/apps` (including `services/`, `jobs/`, `libs/`, and `docs/` subfolders).
+- [ ] 1.2 Given `dusk-ocean init` is run, when baseline directories are missing, then Dusk Ocean shall create `.ocean`, `.ocean/results`, `.ocean/hashes`, `repos`, `repos/apps`, `repos/libs`, and template directories under `repos/templates/apps` (including `services/`, `jobs/`, `libs/`, and `docs/` subfolders).
 - [x] 1.3 Given new scaffold directories are created during init, when directory creation completes, then Dusk Ocean shall create `.gitkeep` files for tracked empty folders except `.ocean` folders.
 - [x] 1.4 Given `.gitignore` is missing or does not contain `.ocean`, when init runs, then Dusk Ocean shall create/update `.gitignore` and ensure exactly one `.ocean` entry is present.
 - [x] 1.5 Given `--name` is missing, when init is executed, then Dusk Ocean shall reject the command with a required-flag error.
@@ -29,18 +29,20 @@ Most commands require execution from a valid workspace root.
 
 ### 3 Menu: Prompt Interface
 #### Context
-`dusk-ocean menu create` and `dusk-ocean menu remove` are the only interactive, prompt-gated flows. All other commands are fully expressible via flags.
+`dusk-ocean menu` provides a guided, interactive interface for all CLI commands. Each menu entry describes the command and collects required inputs via prompts. Scaffolding (`menu create`) and repo deletion (`menu remove`) are exclusively available through the menu and have no flag-based equivalents. All other commands are accessible both through the menu and directly via flags.
 
 #### Requirements
-- [ ] 3.1 Given `dusk-ocean menu create` selects app type, when prompts complete, then Dusk Ocean shall scaffold `repos/apps/<name>/` with `services/`, `jobs/`, `libs/`, and `docs/` subdirectories and register it in workspace config.
-- [ ] 3.2 Given `dusk-ocean menu create` selects library type, when the user selects workspace-level or app-adjacent placement and provides a name, then Dusk Ocean shall scaffold `repos/libs/<name>/` or `repos/apps/<app>/libs/<name>/` accordingly and register it in workspace config.
-- [ ] 3.3 Given template files include `{{placeholder}}` tokens, when scaffolding occurs, then Dusk Ocean shall prompt for replacement values and apply them to both file names and file contents.
-- [ ] 3.4 Given `dusk-ocean menu remove` is executed, when the user selects a target and confirms deletion, then Dusk Ocean shall delete the target directory and unregister it from workspace config.
-- [ ] 3.5 Given `menu remove` targets a library that has dependents, when deletion is confirmed, then Dusk Ocean shall run uninstall tasks for all dependent repos before removing the library and pruning dependency references from workspace config.
-- [ ] 3.6 Given user confirmation is not `y` in any `menu remove` flow, when the prompt resolves, then Dusk Ocean shall abort without mutation.
+- [ ] 3.1 Given `dusk-ocean menu` is executed, when the user selects a command, then Dusk Ocean shall present a description of the selected command and prompt for all required inputs before executing.
+- [ ] 3.2 Given `dusk-ocean menu create` selects app type, when prompts complete, then Dusk Ocean shall scaffold `repos/apps/<name>/` with `services/`, `jobs/`, `libs/`, and `docs/` subdirectories and register it in workspace config.
+- [ ] 3.3 Given `dusk-ocean menu create` selects library type, when the user selects workspace-level or app-adjacent placement and provides a name, then Dusk Ocean shall scaffold `repos/libs/<name>/` or `repos/apps/<app>/libs/<name>/` accordingly and register it in workspace config.
+- [ ] 3.4 Given template files include `{{placeholder}}` tokens, when scaffolding occurs, then Dusk Ocean shall prompt for replacement values and apply them to both file names and file contents.
+- [ ] 3.5 Given `dusk-ocean menu remove` is executed, when the user selects a target and confirms deletion, then Dusk Ocean shall delete the target directory and unregister it from workspace config.
+- [ ] 3.6 Given `menu remove` targets a library that has dependents, when deletion is confirmed, then Dusk Ocean shall run uninstall tasks for all dependent repos before removing the library and pruning dependency references from workspace config.
+- [ ] 3.7 Given user confirmation is not `y` in any `menu remove` flow, when the prompt resolves, then Dusk Ocean shall abort without mutation.
 
 #### Constraints
-- `menu` flows are the only commands that use interactive prompts. All other commands must be fully expressible via flags.
+- Scaffolding (`menu create`) and repo deletion (`menu remove`) are only available through the menu and have no flag-based equivalents.
+- All other commands available through the menu must also be fully executable via flags.
 - Repository type names shall reject whitespace and only allow configured character sets.
 
 ### 4 Build and Check Execution with Dependency Order
