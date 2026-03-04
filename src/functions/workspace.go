@@ -57,22 +57,26 @@ type WorkspaceService struct {
 	Port       string         `json:"port"`
 	Image      WorkspaceImage `json:"image"`
 	Dockerfile string         `json:"Dockerfile"`
+	Scopes     []string       `json:"scopes,omitempty"`
 	Deps       []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceLibrary struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceProject struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceTest struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceDep struct {
@@ -81,14 +85,15 @@ type WorkspaceDep struct {
 }
 
 type RepoConfig struct {
-	Name      string `json:"name"`
-	Language  string `json:"language"`
-	Type      string `json:"type"`
-	Build     string `json:"build"`
-	Test      string `json:"test"`
-	Add       string `json:"add"`
-	Install   string `json:"install"`
-	Uninstall string `json:"uninstall"`
+	Name      string   `json:"name"`
+	Language  string   `json:"language"`
+	Type      string   `json:"type"`
+	Build     string   `json:"build"`
+	Test      string   `json:"test"`
+	Add       string   `json:"add"`
+	Install   string   `json:"install"`
+	Uninstall string   `json:"uninstall"`
+	Scopes    []string `json:"scopes,omitempty"`
 	Tasks     struct {
 		Build     string `json:"build"`
 		Test      string `json:"test"`
@@ -450,6 +455,9 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 			config.Apps[i].Libraries = []WorkspaceLibrary{}
 		}
 		for j := range config.Apps[i].Services {
+			if config.Apps[i].Services[j].Scopes == nil {
+				config.Apps[i].Services[j].Scopes = []string{}
+			}
 			if config.Apps[i].Services[j].Deps == nil {
 				config.Apps[i].Services[j].Deps = []WorkspaceDep{}
 			}
@@ -461,6 +469,9 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 			}
 		}
 		for j := range config.Apps[i].Libraries {
+			if config.Apps[i].Libraries[j].Scopes == nil {
+				config.Apps[i].Libraries[j].Scopes = []string{}
+			}
 			if config.Apps[i].Libraries[j].Deps == nil {
 				config.Apps[i].Libraries[j].Deps = []WorkspaceDep{}
 			}
@@ -469,17 +480,26 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 			config.Apps[i].Testing = []WorkspaceTest{}
 		}
 		for j := range config.Apps[i].Testing {
+			if config.Apps[i].Testing[j].Scopes == nil {
+				config.Apps[i].Testing[j].Scopes = []string{}
+			}
 			if config.Apps[i].Testing[j].Deps == nil {
 				config.Apps[i].Testing[j].Deps = []WorkspaceDep{}
 			}
 		}
 	}
 	for i := range config.Libraries {
+		if config.Libraries[i].Scopes == nil {
+			config.Libraries[i].Scopes = []string{}
+		}
 		if config.Libraries[i].Deps == nil {
 			config.Libraries[i].Deps = []WorkspaceDep{}
 		}
 	}
 	for i := range config.Projects {
+		if config.Projects[i].Scopes == nil {
+			config.Projects[i].Scopes = []string{}
+		}
 		if config.Projects[i].Deps == nil {
 			config.Projects[i].Deps = []WorkspaceDep{}
 		}
@@ -763,6 +783,73 @@ func ProjectNames(config WorkspaceConfig) []string {
 	return names
 }
 
+// ResolveTargetByName resolves a workspace target by its repo name across all entity types.
+// Returns an error if no match is found or if the name is ambiguous.
+func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Target, error) {
+	var matches []Target
+
+	for _, lib := range config.Libraries {
+		if lib.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetGlobalLib,
+				Name: name,
+				Path: filepath.Join(root, "repos", "libs", name),
+			})
+		}
+	}
+
+	for _, project := range config.Projects {
+		if project.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetProject,
+				Name: name,
+				Path: filepath.Join(root, "repos", "projects", name),
+			})
+		}
+	}
+
+	for _, app := range config.Apps {
+		for _, service := range app.Services {
+			if service.Name == name {
+				matches = append(matches, Target{
+					Kind: TargetService,
+					App:  app.Name,
+					Name: name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "services", name),
+				})
+			}
+		}
+		for _, lib := range app.Libraries {
+			if lib.Name == name {
+				matches = append(matches, Target{
+					Kind: TargetAppLib,
+					App:  app.Name,
+					Name: name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "libs", name),
+				})
+			}
+		}
+		for _, test := range app.Testing {
+			if test.Name == name {
+				matches = append(matches, Target{
+					Kind: TargetTest,
+					App:  app.Name,
+					Name: name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "testing", name),
+				})
+			}
+		}
+	}
+
+	if len(matches) == 0 {
+		return Target{}, fmt.Errorf("target not found: %s", name)
+	}
+	if len(matches) > 1 {
+		return Target{}, fmt.Errorf("target name is ambiguous: %s (found in multiple repos)", name)
+	}
+	return matches[0], nil
+}
+
 // ResolveTarget resolves a workspace target from a path.
 func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	absRoot, err := filepath.Abs(root)
@@ -1016,18 +1103,34 @@ func makeGlobalDeps(deps ...string) []WorkspaceDep {
 }
 
 func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
-	configPath := filepath.Join(root, "ocean.json")
-	payload, err := afero.ReadFile(fs, configPath)
+	for _, name := range []string{"ocean.config.json", "ocean.json"} {
+		configPath := filepath.Join(root, name)
+		payload, err := afero.ReadFile(fs, configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return RepoConfig{}, err
+		}
+		var config RepoConfig
+		if err := json.Unmarshal(payload, &config); err != nil {
+			return RepoConfig{}, err
+		}
+		config.Language = strings.TrimSpace(config.Language)
+		config.Type = strings.TrimSpace(config.Type)
+		return config, nil
+	}
+	return RepoConfig{}, fmt.Errorf("repo config not found in %s", root)
+}
+
+func WriteRepoConfig(fs afero.Fs, root string, config RepoConfig) error {
+	configPath := filepath.Join(root, "ocean.config.json")
+	payload, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
-		return RepoConfig{}, err
+		return err
 	}
-	var config RepoConfig
-	if err := json.Unmarshal(payload, &config); err != nil {
-		return RepoConfig{}, err
-	}
-	config.Language = strings.TrimSpace(config.Language)
-	config.Type = strings.TrimSpace(config.Type)
-	return config, nil
+	payload = append(payload, '\n')
+	return afero.WriteFile(fs, configPath, payload, 0o644)
 }
 
 func RepoCommand(config RepoConfig, kind string) (string, error) {
@@ -1372,4 +1475,334 @@ func FindDuplicatePorts(services map[string]map[string]any) []string {
 	}
 	sort.Strings(dupes)
 	return dupes
+}
+
+// FindTargetScopes returns the scope list for a resolved Target from workspace config.
+func FindTargetScopes(config WorkspaceConfig, target Target) []string {
+	switch target.Kind {
+	case TargetGlobalLib:
+		idx := FindGlobalLibraryIndex(config, target.Name)
+		if idx == -1 {
+			return nil
+		}
+		return config.Libraries[idx].Scopes
+	case TargetProject:
+		idx := FindProjectIndex(config, target.Name)
+		if idx == -1 {
+			return nil
+		}
+		return config.Projects[idx].Scopes
+	case TargetService:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return nil
+		}
+		svcIdx := FindServiceIndex(config.Apps[appIdx], target.Name)
+		if svcIdx == -1 {
+			return nil
+		}
+		return config.Apps[appIdx].Services[svcIdx].Scopes
+	case TargetAppLib:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return nil
+		}
+		libIdx := FindAppLibraryIndex(config.Apps[appIdx], target.Name)
+		if libIdx == -1 {
+			return nil
+		}
+		return config.Apps[appIdx].Libraries[libIdx].Scopes
+	case TargetTest:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return nil
+		}
+		testIdx := FindAppTestIndex(config.Apps[appIdx], target.Name)
+		if testIdx == -1 {
+			return nil
+		}
+		return config.Apps[appIdx].Testing[testIdx].Scopes
+	}
+	return nil
+}
+
+// HasCommonScope returns true if slices a and b share at least one element.
+func HasCommonScope(a, b []string) bool {
+	set := make(map[string]struct{}, len(a))
+	for _, s := range a {
+		set[s] = struct{}{}
+	}
+	for _, s := range b {
+		if _, ok := set[s]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// AddScopeToWorkspaceTarget appends a scope to a target's entry in the workspace config.
+// It is a no-op if the scope is already present.
+func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
+	switch target.Kind {
+	case TargetGlobalLib:
+		idx := FindGlobalLibraryIndex(config, target.Name)
+		if idx == -1 {
+			return config, fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Libraries[idx].Scopes, scope) {
+			config.Libraries[idx].Scopes = append(config.Libraries[idx].Scopes, scope)
+		}
+	case TargetProject:
+		idx := FindProjectIndex(config, target.Name)
+		if idx == -1 {
+			return config, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Projects[idx].Scopes, scope) {
+			config.Projects[idx].Scopes = append(config.Projects[idx].Scopes, scope)
+		}
+	case TargetService:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		svcIdx := FindServiceIndex(config.Apps[appIdx], target.Name)
+		if svcIdx == -1 {
+			return config, fmt.Errorf("service not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Apps[appIdx].Services[svcIdx].Scopes, scope) {
+			config.Apps[appIdx].Services[svcIdx].Scopes = append(config.Apps[appIdx].Services[svcIdx].Scopes, scope)
+		}
+	case TargetAppLib:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		libIdx := FindAppLibraryIndex(config.Apps[appIdx], target.Name)
+		if libIdx == -1 {
+			return config, fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Apps[appIdx].Libraries[libIdx].Scopes, scope) {
+			config.Apps[appIdx].Libraries[libIdx].Scopes = append(config.Apps[appIdx].Libraries[libIdx].Scopes, scope)
+		}
+	case TargetTest:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		testIdx := FindAppTestIndex(config.Apps[appIdx], target.Name)
+		if testIdx == -1 {
+			return config, fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Apps[appIdx].Testing[testIdx].Scopes, scope) {
+			config.Apps[appIdx].Testing[testIdx].Scopes = append(config.Apps[appIdx].Testing[testIdx].Scopes, scope)
+		}
+	default:
+		return config, fmt.Errorf("unsupported target kind")
+	}
+	return config, nil
+}
+
+// RemoveScopeFromWorkspaceTarget removes a scope from a target's entry in the workspace config.
+// It is a no-op if the scope is not present.
+func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
+	switch target.Kind {
+	case TargetGlobalLib:
+		idx := FindGlobalLibraryIndex(config, target.Name)
+		if idx == -1 {
+			return config, fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+		config.Libraries[idx].Scopes = removeString(config.Libraries[idx].Scopes, scope)
+	case TargetProject:
+		idx := FindProjectIndex(config, target.Name)
+		if idx == -1 {
+			return config, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		config.Projects[idx].Scopes = removeString(config.Projects[idx].Scopes, scope)
+	case TargetService:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		svcIdx := FindServiceIndex(config.Apps[appIdx], target.Name)
+		if svcIdx == -1 {
+			return config, fmt.Errorf("service not registered in workspace: %s", target.Name)
+		}
+		config.Apps[appIdx].Services[svcIdx].Scopes = removeString(config.Apps[appIdx].Services[svcIdx].Scopes, scope)
+	case TargetAppLib:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		libIdx := FindAppLibraryIndex(config.Apps[appIdx], target.Name)
+		if libIdx == -1 {
+			return config, fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+		config.Apps[appIdx].Libraries[libIdx].Scopes = removeString(config.Apps[appIdx].Libraries[libIdx].Scopes, scope)
+	case TargetTest:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		testIdx := FindAppTestIndex(config.Apps[appIdx], target.Name)
+		if testIdx == -1 {
+			return config, fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+		config.Apps[appIdx].Testing[testIdx].Scopes = removeString(config.Apps[appIdx].Testing[testIdx].Scopes, scope)
+	default:
+		return config, fmt.Errorf("unsupported target kind")
+	}
+	return config, nil
+}
+
+// FindDepsReliantOnScope returns human-readable descriptions of cross-app dependency
+// relationships that will be broken if scope is removed from target (REQ 7.3).
+func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string) []string {
+	// Only app-libs can be cross-app payload sources; check if target is an app-lib.
+	if target.Kind != TargetAppLib {
+		return nil
+	}
+
+	// Build the scopes target would have after removal.
+	currentScopes := FindTargetScopes(config, target)
+	remainingScopes := removeString(currentScopes, scope)
+
+	var warnings []string
+	for _, app := range config.Apps {
+		for _, svc := range app.Services {
+			if app.Name == target.App {
+				continue // same app, not cross-app
+			}
+			for _, dep := range svc.Deps {
+				if dep.Lib != target.Name {
+					continue
+				}
+				// This service in a different app depends on the target lib.
+				// Check if it currently relies on the scope being removed.
+				dependentScopes := svc.Scopes
+				if HasCommonScope(currentScopes, dependentScopes) && !HasCommonScope(remainingScopes, dependentScopes) {
+					warnings = append(warnings, fmt.Sprintf(
+						"warning: removing scope %q from %s/%s may break cross-app dependency from service %s/%s",
+						scope, target.App, target.Name, app.Name, svc.Name,
+					))
+				}
+			}
+		}
+		for _, lib := range app.Libraries {
+			if app.Name == target.App {
+				continue
+			}
+			for _, dep := range lib.Deps {
+				if dep.Lib != target.Name {
+					continue
+				}
+				dependentScopes := lib.Scopes
+				if HasCommonScope(currentScopes, dependentScopes) && !HasCommonScope(remainingScopes, dependentScopes) {
+					warnings = append(warnings, fmt.Sprintf(
+						"warning: removing scope %q from %s/%s may break cross-app dependency from library %s/%s",
+						scope, target.App, target.Name, app.Name, lib.Name,
+					))
+				}
+			}
+		}
+		for _, test := range app.Testing {
+			if app.Name == target.App {
+				continue
+			}
+			for _, dep := range test.Deps {
+				if dep.Lib != target.Name {
+					continue
+				}
+				dependentScopes := test.Scopes
+				if HasCommonScope(currentScopes, dependentScopes) && !HasCommonScope(remainingScopes, dependentScopes) {
+					warnings = append(warnings, fmt.Sprintf(
+						"warning: removing scope %q from %s/%s may break cross-app dependency from test %s/%s",
+						scope, target.App, target.Name, app.Name, test.Name,
+					))
+				}
+			}
+		}
+	}
+	return warnings
+}
+
+// AddScope adds a scope name to a target in both workspace config and ocean.config.json (REQ 7.1).
+func AddScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	target, err := ResolveTargetByName(config, root, targetName)
+	if err != nil {
+		return err
+	}
+	updatedConfig, err := AddScopeToWorkspaceTarget(config, target, scopeName)
+	if err != nil {
+		return err
+	}
+	if err := WriteWorkspaceConfig(fs, updatedConfig); err != nil {
+		return err
+	}
+	repoConfig, err := ReadRepoConfig(fs, target.Path)
+	if err != nil {
+		repoConfig = RepoConfig{}
+	}
+	if !containsString(repoConfig.Scopes, scopeName) {
+		repoConfig.Scopes = append(repoConfig.Scopes, scopeName)
+	}
+	return WriteRepoConfig(fs, target.Path, repoConfig)
+}
+
+// RemoveScope removes a scope name from a target in both workspace config and ocean.config.json (REQ 7.2/7.3).
+func RemoveScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	target, err := ResolveTargetByName(config, root, targetName)
+	if err != nil {
+		return err
+	}
+	for _, warning := range FindDepsReliantOnScope(config, target, scopeName) {
+		fmt.Fprintln(cmd.OutOrStdout(), warning)
+	}
+	updatedConfig, err := RemoveScopeFromWorkspaceTarget(config, target, scopeName)
+	if err != nil {
+		return err
+	}
+	if err := WriteWorkspaceConfig(fs, updatedConfig); err != nil {
+		return err
+	}
+	repoConfig, err := ReadRepoConfig(fs, target.Path)
+	if err != nil {
+		return err
+	}
+	repoConfig.Scopes = removeString(repoConfig.Scopes, scopeName)
+	return WriteRepoConfig(fs, target.Path, repoConfig)
+}
+
+func containsString(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, s string) []string {
+	out := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != s {
+			out = append(out, v)
+		}
+	}
+	return out
 }

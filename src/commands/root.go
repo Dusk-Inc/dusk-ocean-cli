@@ -3,6 +3,7 @@ package cmd
 import
 (
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+	"fmt"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -22,12 +23,46 @@ var rootCmd = &cobra.Command{
 
 var addCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Use to scaffold new components (apps, services, libs)",
+	Short: "Scaffold new components, or wire a local dependency with --payload and --target",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload, err := cmd.Flags().GetString("payload")
+		if err != nil {
+			return err
+		}
+		target, err := cmd.Flags().GetString("target")
+		if err != nil {
+			return err
+		}
+		if payload == "" && target == "" {
+			return cmd.Help()
+		}
+		if payload == "" || target == "" {
+			return fmt.Errorf("both --payload and --target are required")
+		}
+		return functions.WireLocalDependency(cmd, afero.NewOsFs(), payload, target)
+	},
 }
 
 var removeCmd = &cobra.Command{
 	Use:   "remove",
-	Short: "Use to remove apps, services, libs from the repo.",
+	Short: "Remove apps, services, libs, or unwire a dependency with --payload and --target",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload, err := cmd.Flags().GetString("payload")
+		if err != nil {
+			return err
+		}
+		target, err := cmd.Flags().GetString("target")
+		if err != nil {
+			return err
+		}
+		if payload == "" && target == "" {
+			return cmd.Help()
+		}
+		if payload == "" || target == "" {
+			return fmt.Errorf("both --payload and --target are required")
+		}
+		return functions.UnwireLocalDependency(cmd, afero.NewOsFs(), payload, target)
+	},
 }
 
 var detachCmd = &cobra.Command{
@@ -80,6 +115,14 @@ func init() {
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(menuCmd)
+	rootCmd.AddCommand(addScopeCmd)
+	rootCmd.AddCommand(removeScopeCmd)
+	rootCmd.AddCommand(renameCmd)
+	rootCmd.AddCommand(hashCmd)
+
+	menuCmd.AddCommand(menuCreateCmd)
+	menuCmd.AddCommand(menuRemoveCmd)
 
 	addCmd.AddCommand(addAppCmd)
 	addCmd.AddCommand(addServiceCmd)
@@ -112,4 +155,8 @@ func init() {
 	runCmd.AddCommand(runServiceCmd)
 
 	initCmd.Flags().String("name", "", "Workspace name")
+	addCmd.Flags().String("payload", "", "Library to wire as a dependency")
+	addCmd.Flags().String("target", "", "Target repo to receive the dependency")
+	removeCmd.Flags().String("payload", "", "Library to unwire from the target")
+	removeCmd.Flags().String("target", "", "Target repo to remove the dependency from")
 }

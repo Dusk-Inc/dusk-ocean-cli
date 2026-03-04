@@ -6,5 +6,6 @@
         "build": "go build ./...",
         "test": "go test ./...",
         "install": "go mod download"
-    }
+    },
+    "scopes": []
 }

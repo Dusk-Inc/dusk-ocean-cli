@@ -168,6 +168,75 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
+// WireLocalDependency wires a local dependency by name using --payload and --target flags (REQ 5.1).
+func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+
+	target, err := ResolveTargetByName(config, root, targetName)
+	if err != nil {
+		return err
+	}
+
+	dependency, err := resolveDependency(root, target, payloadName, config)
+	if err != nil {
+		return err
+	}
+
+	// REQ 7.4 / REQ 5.3: cross-app app-lib dependency requires shared scopes.
+	if dependency.kind == dependencyAppLib && target.App != dependency.app {
+		payloadLookup := Target{Kind: TargetAppLib, App: dependency.app, Name: dependency.name}
+		payloadScopes := FindTargetScopes(config, payloadLookup)
+		targetScopes := FindTargetScopes(config, target)
+		if len(payloadScopes) == 0 {
+			return fmt.Errorf("scope violation: %s has no declared scopes; cannot be used across app boundaries", payloadName)
+		}
+		if !HasCommonScope(payloadScopes, targetScopes) {
+			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, targetName)
+		}
+	}
+
+	if err := validateInstallFlow(target, dependency); err != nil {
+		return err
+	}
+
+	// REQ 5.2: payload and target cannot be the same repo.
+	targetKey := installTargetKey(target)
+	depKey := installDependencyKey(dependency)
+	if targetKey != "" && targetKey == depKey {
+		return fmt.Errorf("payload and target cannot be the same")
+	}
+
+	addCmd, err := ReadRepoCommand(fs, dependency.path, "add")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(addCmd) == "" {
+		return fmt.Errorf("add command missing for %s", dependency.name)
+	}
+	dependency.installCmd = addCmd
+
+	updatedConfig, err := registerDependency(config, target, dependency)
+	if err != nil {
+		return err
+	}
+
+	execCmd := exec.Command("bash", "-lc", dependency.installCmd)
+	execCmd.Dir = target.Path
+	execCmd.Stdout = cmd.OutOrStdout()
+	execCmd.Stderr = cmd.ErrOrStderr()
+	if err := execCmd.Run(); err != nil {
+		return err
+	}
+	return WriteWorkspaceConfig(fs, updatedConfig)
+}
+
 func resolveDependency(root string, target installTarget, name string, config WorkspaceConfig) (installDependency, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {

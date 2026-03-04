@@ -65,6 +65,24 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 	return nil
 }
 
+// RunInstall resolves a repo by name and runs its install task (REQ 6.1/6.2).
+func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	target, err := ResolveTargetByName(config, root, repoName)
+	if err != nil {
+		return err
+	}
+	label := FormatTargetLabel(target)
+	return runInstall(cmd, fs, label, target.Path)
+}
+
 func runInstall(cmd *cobra.Command, fs afero.Fs, label string, targetPath string) error {
 	installCmd, err := ReadRepoCommand(fs, targetPath, "install")
 	if err != nil {

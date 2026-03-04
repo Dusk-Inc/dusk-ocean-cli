@@ -50,13 +50,18 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err := RunBuild(cmd, label, path, hashPath); err != nil {
 			return err
 		}
+		_ = SetManifestBuildRun(afero.NewOsFs(), root, key)
 		built[key] = struct{}{}
 	}
 	label, path, hashPath, err := NodeBuildInfo(root, target)
 	if err != nil {
 		return err
 	}
-	return RunBuild(cmd, label, path, hashPath)
+	if err := RunBuild(cmd, label, path, hashPath); err != nil {
+		return err
+	}
+	_ = SetManifestBuildRun(afero.NewOsFs(), root, nodeKey(target))
+	return nil
 }
 
 func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceConfig, target Node, built map[string]struct{}, passThrough []string) error {
@@ -76,13 +81,18 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err := RunBuild(cmd, label, path, hashPath); err != nil {
 			return err
 		}
+		_ = SetManifestBuildRun(afero.NewOsFs(), root, key)
 		built[key] = struct{}{}
 	}
 	label, path, hashPath, err := NodeCheckInfo(root, target)
 	if err != nil {
 		return err
 	}
-	return RunCheck(cmd, label, path, hashPath, passThrough, root)
+	if err := RunCheck(cmd, label, path, hashPath, passThrough, root); err != nil {
+		return err
+	}
+	_ = SetManifestCheckRun(afero.NewOsFs(), root, nodeKey(target))
+	return nil
 }
 
 func RunUninstallForTargets(cmd *cobra.Command, fs afero.Fs, dependencyPath string, dependencyName string, targets []Target, options UninstallOptions) error {

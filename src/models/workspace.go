@@ -43,22 +43,26 @@ type WorkspaceService struct {
 	Port       string         `json:"port"`
 	Image      WorkspaceImage `json:"image"`
 	Dockerfile string         `json:"Dockerfile"`
+	Scopes     []string       `json:"scopes,omitempty"`
 	Deps       []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceLibrary struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceProject struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceTest struct {
-	Name string         `json:"name"`
-	Deps []WorkspaceDep `json:"deps"`
+	Name   string         `json:"name"`
+	Scopes []string       `json:"scopes,omitempty"`
+	Deps   []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceDep struct {
@@ -67,14 +71,15 @@ type WorkspaceDep struct {
 }
 
 type RepoConfig struct {
-	Name      string `json:"name"`
-	Language  string `json:"language"`
-	Type      string `json:"type"`
-	Build     string `json:"build"`
-	Test      string `json:"test"`
-	Add       string `json:"add"`
-	Install   string `json:"install"`
-	Uninstall string `json:"uninstall"`
+	Name      string   `json:"name"`
+	Language  string   `json:"language"`
+	Type      string   `json:"type"`
+	Build     string   `json:"build"`
+	Test      string   `json:"test"`
+	Add       string   `json:"add"`
+	Install   string   `json:"install"`
+	Uninstall string   `json:"uninstall"`
+	Scopes    []string `json:"scopes,omitempty"`
 	Tasks     struct {
 		Build     string `json:"build"`
 		Test      string `json:"test"`

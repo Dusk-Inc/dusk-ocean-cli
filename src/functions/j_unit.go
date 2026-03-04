@@ -38,16 +38,8 @@ func WriteCheckResults(fs afero.Fs, root string, targetPath string, label string
 	return afero.WriteFile(fs, filepath.Join(resultsDir, fileName), payload, 0o644)
 }
 
-func makeResultsDir(root string, targetPath string) (string, error) {
-	relPath, err := filepath.Rel(root, targetPath)
-	if err != nil {
-		return "", err
-	}
-	parts := strings.Split(relPath, string(filepath.Separator))
-	if len(parts) > 0 && parts[0] == "repos" {
-		parts = parts[1:]
-	}
-	return filepath.Join(append([]string{root, ".ocean"}, parts...)...), nil
+func makeResultsDir(root string, _ string) (string, error) {
+	return filepath.Join(root, ".ocean", "results"), nil
 }
 
 func findJUnitReport(fs afero.Fs, root string, targetPath string, startedAt time.Time) (string, error) {
