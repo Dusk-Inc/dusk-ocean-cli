@@ -50,7 +50,9 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err := RunBuild(cmd, label, path, hashPath); err != nil {
 			return err
 		}
-		_ = SetManifestBuildRun(afero.NewOsFs(), root, key)
+		if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, dep); err == nil {
+			_ = SetManifestBuildHash(afero.NewOsFs(), root, key, treeHash)
+		}
 		built[key] = struct{}{}
 	}
 	label, path, hashPath, err := NodeBuildInfo(root, target)
@@ -60,7 +62,10 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 	if err := RunBuild(cmd, label, path, hashPath); err != nil {
 		return err
 	}
-	_ = SetManifestBuildRun(afero.NewOsFs(), root, nodeKey(target))
+	targetKey := nodeKey(target)
+	if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, target); err == nil {
+		_ = SetManifestBuildHash(afero.NewOsFs(), root, targetKey, treeHash)
+	}
 	return nil
 }
 
@@ -81,7 +86,9 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err := RunBuild(cmd, label, path, hashPath); err != nil {
 			return err
 		}
-		_ = SetManifestBuildRun(afero.NewOsFs(), root, key)
+		if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, dep); err == nil {
+			_ = SetManifestBuildHash(afero.NewOsFs(), root, key, treeHash)
+		}
 		built[key] = struct{}{}
 	}
 	label, path, hashPath, err := NodeCheckInfo(root, target)
@@ -91,7 +98,10 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 	if err := RunCheck(cmd, label, path, hashPath, passThrough, root); err != nil {
 		return err
 	}
-	_ = SetManifestCheckRun(afero.NewOsFs(), root, nodeKey(target))
+	targetKey := nodeKey(target)
+	if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, target); err == nil {
+		_ = SetManifestCheckHash(afero.NewOsFs(), root, targetKey, treeHash)
+	}
 	return nil
 }
 

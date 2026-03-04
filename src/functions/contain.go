@@ -206,7 +206,65 @@ func copyFile(fs afero.Fs, src string, dst string) error {
 	return err
 }
 
-// ContainService stages the build context and runs docker build + push for a service (REQ 10).
+// readContainCommand reads the contain task string from the service's ocean.config.json.
+func readContainCommand(targetPath string) (string, error) {
+	return ReadRepoCommand(afero.NewOsFs(), targetPath, "contain")
+}
+
+// resolveImagePath returns the image path for the service. Uses the service's ImagePath
+// workspace config field if set; otherwise falls back to the ServiceImageReference composite.
+func resolveImagePath(fs afero.Fs, config WorkspaceConfig, appName, serviceName string) string {
+	appIdx := FindAppIndex(config, appName)
+	if appIdx != -1 {
+		svcIdx := FindServiceIndex(config.Apps[appIdx], serviceName)
+		if svcIdx != -1 {
+			if ip := strings.TrimSpace(config.Apps[appIdx].Services[svcIdx].ImagePath); ip != "" {
+				return ip
+			}
+		}
+	}
+	img, _ := ServiceImageReference(fs, appName, serviceName)
+	return img
+}
+
+// resolveContainerFilePath returns the absolute path to the service container file.
+// Checks ContainerFile first, falls back to Dockerfile for backward compatibility.
+// A bare filename (no directory component) resolves to repos/containers/<name>.
+// A value with path separators is treated as workspace-root-relative.
+// Falls back to Dockerfile inside the staged service directory when both fields are empty.
+func resolveContainerFilePath(config WorkspaceConfig, root, stagingPath, appName, serviceName string) string {
+	appIdx := FindAppIndex(config, appName)
+	if appIdx != -1 {
+		svcIdx := FindServiceIndex(config.Apps[appIdx], serviceName)
+		if svcIdx != -1 {
+			svc := config.Apps[appIdx].Services[svcIdx]
+			value := strings.TrimSpace(svc.ContainerFile)
+			if value == "" {
+				value = strings.TrimSpace(svc.Dockerfile)
+			}
+			if value != "" {
+				if filepath.Base(value) == value {
+					return filepath.Join(root, "repos", "containers", value)
+				}
+				return filepath.Join(root, value)
+			}
+		}
+	}
+	relServicePath := filepath.Join("repos", "apps", appName, "services", serviceName)
+	return filepath.Join(stagingPath, relServicePath, "Dockerfile")
+}
+
+// substituteOceanPlaceholders replaces reserved {{ocean:*}} tokens in the task string
+// with their runtime values before execution (REQ 10.9).
+func substituteOceanPlaceholders(task, serviceName, port, imagePath, containerFile string) string {
+	task = strings.ReplaceAll(task, "{{ocean:service_name}}", serviceName)
+	task = strings.ReplaceAll(task, "{{ocean:port}}", port)
+	task = strings.ReplaceAll(task, "{{ocean:image_path}}", imagePath)
+	task = strings.ReplaceAll(task, "{{ocean:container_file}}", containerFile)
+	return task
+}
+
+// ContainService stages the build context and runs the service's contain task (REQ 10).
 func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -224,9 +282,41 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 		return err
 	}
 
-	imageName, err := ServiceImageReference(fs, resolvedApp, resolvedSvc)
+	// REQ 10.1: read contain task from ocean.config.json.
+	servicePath := filepath.Join(root, "repos", "apps", resolvedApp, "services", resolvedSvc)
+	containTask, err := readContainCommand(servicePath)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(containTask) == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "contain skipped for service %s/%s: no contain task\n", resolvedApp, resolvedSvc)
+		return nil
+	}
+
+	// REQ 10.7/10.8: hash-based caching.
+	serviceNode, err := MakeServiceNode(config, resolvedApp, resolvedSvc)
+	if err != nil {
+		return err
+	}
+	_, _, buildHashPath, err := NodeBuildInfo(root, serviceNode)
+	if err != nil {
+		return err
+	}
+	containHashPath := MakeContainHashPath(buildHashPath)
+
+	newHash, err := CalcContainTreeHash(fs, root, config, resolvedApp, resolvedSvc)
+	if err != nil {
+		return err
+	}
+	prevHash, hasPrev, err := ReadHashFile(fs, containHashPath)
+	if err != nil {
+		return err
+	}
+	// REQ 10.7: skip if dependency-tree hash unchanged.
+	if hasPrev && prevHash == newHash {
+		fmt.Fprintf(cmd.OutOrStdout(), "contain skipped for service %s/%s: no changes\n", resolvedApp, resolvedSvc)
+		key := ServiceKey(resolvedApp, resolvedSvc)
+		return SetManifestContainHash(fs, root, key, newHash)
 	}
 
 	// REQ 10.5/10.6: stage build context.
@@ -235,42 +325,42 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 		return err
 	}
 
-	// Resolve Dockerfile path.
-	dockerfilePath := resolveDockerfilePath(config, root, stagingPath, resolvedApp, resolvedSvc)
+	// Resolve container file and image path for placeholder substitution.
+	containerFile := resolveContainerFilePath(config, root, stagingPath, resolvedApp, resolvedSvc)
+	imagePath := resolveImagePath(fs, config, resolvedApp, resolvedSvc)
 
-	// REQ 10.1: docker build.
-	buildCmd := exec.Command("docker", "build", "-t", imageName, "-f", dockerfilePath, ".")
-	buildCmd.Dir = stagingPath
-	buildCmd.Stdout = cmd.OutOrStdout()
-	buildCmd.Stderr = cmd.ErrOrStderr()
-	buildCmd.Stdin = cmd.InOrStdin()
-	if err := buildCmd.Run(); err != nil {
-		// REQ 10.4: surface build error, do not push.
-		_ = fs.RemoveAll(stagingPath)
-		return err
-	}
-
-	// REQ 10.1: docker push.
-	pushCmd := exec.Command("docker", "push", imageName)
-	pushCmd.Stdout = cmd.OutOrStdout()
-	pushCmd.Stderr = cmd.ErrOrStderr()
-	pushCmd.Stdin = cmd.InOrStdin()
-	pushErr := pushCmd.Run()
-
-	_ = fs.RemoveAll(stagingPath)
-	return pushErr
-}
-
-// resolveDockerfilePath returns the absolute path to the service Dockerfile.
-// Uses WorkspaceService.Dockerfile if set, otherwise defaults to Dockerfile in the service directory.
-func resolveDockerfilePath(config WorkspaceConfig, root string, stagingPath string, appName string, serviceName string) string {
-	appIdx := FindAppIndex(config, appName)
+	// Resolve port from workspace config.
+	port := ""
+	appIdx := FindAppIndex(config, resolvedApp)
 	if appIdx != -1 {
-		svcIdx := FindServiceIndex(config.Apps[appIdx], serviceName)
-		if svcIdx != -1 && strings.TrimSpace(config.Apps[appIdx].Services[svcIdx].Dockerfile) != "" {
-			return filepath.Join(root, config.Apps[appIdx].Services[svcIdx].Dockerfile)
+		svcIdx := FindServiceIndex(config.Apps[appIdx], resolvedSvc)
+		if svcIdx != -1 {
+			port = config.Apps[appIdx].Services[svcIdx].Port
 		}
 	}
-	relServicePath := filepath.Join("repos", "apps", appName, "services", serviceName)
-	return filepath.Join(stagingPath, relServicePath, "Dockerfile")
+
+	// REQ 10.9: substitute ocean: placeholders.
+	task := substituteOceanPlaceholders(containTask, resolvedSvc, port, imagePath, containerFile)
+
+	// REQ 10.1: execute contain task from staging directory.
+	execCmd := exec.Command("bash", "-lc", task)
+	execCmd.Dir = stagingPath
+	execCmd.Stdout = cmd.OutOrStdout()
+	execCmd.Stderr = cmd.ErrOrStderr()
+	execCmd.Stdin = cmd.InOrStdin()
+	runErr := execCmd.Run()
+
+	_ = fs.RemoveAll(stagingPath)
+
+	// REQ 10.4: surface error; do not update hash or manifest.
+	if runErr != nil {
+		return runErr
+	}
+
+	// REQ 10.8: on success, persist contain hash and update manifest.
+	if err := WriteHashFile(fs, containHashPath, newHash); err != nil {
+		return err
+	}
+	key := ServiceKey(resolvedApp, resolvedSvc)
+	return SetManifestContainHash(fs, root, key, newHash)
 }

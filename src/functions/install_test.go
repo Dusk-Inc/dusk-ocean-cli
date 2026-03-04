@@ -2,6 +2,7 @@ package functions
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,10 +29,6 @@ func TestValidateInstallFlow(t *testing.T) {
 				dep:    installDependency{kind: dependencyGlobalLib, name: "g"},
 			},
 			{
-				target: installTarget{Kind: targetAppLib, App: "app", Name: "lib"},
-				dep:    installDependency{kind: dependencyProject, name: "p"},
-			},
-			{
 				target: installTarget{Kind: targetService, App: "app", Name: "svc"},
 				dep:    installDependency{kind: dependencyAppLib, app: "app", name: "lib"},
 			},
@@ -40,20 +37,12 @@ func TestValidateInstallFlow(t *testing.T) {
 				dep:    installDependency{kind: dependencyGlobalLib, name: "g"},
 			},
 			{
-				target: installTarget{Kind: targetService, App: "app", Name: "svc"},
-				dep:    installDependency{kind: dependencyProject, name: "p"},
-			},
-			{
 				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
 				dep:    installDependency{kind: dependencyAppLib, app: "app", name: "lib"},
 			},
 			{
 				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
 				dep:    installDependency{kind: dependencyGlobalLib, name: "g"},
-			},
-			{
-				target: installTarget{Kind: targetTest, App: "app", Name: "suite"},
-				dep:    installDependency{kind: dependencyProject, name: "p"},
 			},
 		}
 		for _, entry := range cases {
@@ -84,6 +73,42 @@ func TestValidateInstallFlow(t *testing.T) {
 		dep := installDependency{kind: dependencyProject, name: "proj"}
 		if err := validateInstallFlow(target, dep); err == nil {
 			t.Fatalf("expected error")
+		}
+	})
+
+	t.Run("complement__project_dependency_on_service__returns_error", func(t *testing.T) {
+		target := installTarget{Kind: targetService, App: "app", Name: "svc"}
+		dep := installDependency{kind: dependencyProject, name: "proj"}
+		err := validateInstallFlow(target, dep)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !strings.Contains(err.Error(), "projects cannot be used as dependencies") {
+			t.Fatalf("expected project-specific error, got: %v", err)
+		}
+	})
+
+	t.Run("complement__project_dependency_on_app_lib__returns_error", func(t *testing.T) {
+		target := installTarget{Kind: targetAppLib, App: "app", Name: "lib"}
+		dep := installDependency{kind: dependencyProject, name: "proj"}
+		err := validateInstallFlow(target, dep)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !strings.Contains(err.Error(), "projects cannot be used as dependencies") {
+			t.Fatalf("expected project-specific error, got: %v", err)
+		}
+	})
+
+	t.Run("complement__project_dependency_on_test__returns_error", func(t *testing.T) {
+		target := installTarget{Kind: targetTest, App: "app", Name: "suite"}
+		dep := installDependency{kind: dependencyProject, name: "proj"}
+		err := validateInstallFlow(target, dep)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if !strings.Contains(err.Error(), "projects cannot be used as dependencies") {
+			t.Fatalf("expected project-specific error, got: %v", err)
 		}
 	})
 

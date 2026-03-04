@@ -47,17 +47,14 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 	targetAppLib: {
 		dependencyAppLib:    true,
 		dependencyGlobalLib: true,
-		dependencyProject:   true,
 	},
 	targetService: {
 		dependencyAppLib:    true,
 		dependencyGlobalLib: true,
-		dependencyProject:   true,
 	},
 	targetTest: {
 		dependencyAppLib:    true,
 		dependencyGlobalLib: true,
-		dependencyProject:   true,
 	},
 }
 
@@ -310,6 +307,10 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 		return fmt.Errorf("unsupported install target")
 	}
 	if !allowedDeps[dependency.kind] {
+		// REQ 15.4: projects cannot be used as dependencies.
+		if dependency.kind == dependencyProject {
+			return fmt.Errorf("projects cannot be used as dependencies")
+		}
 		switch target.Kind {
 		case targetGlobalLib:
 			return fmt.Errorf("invalid dependency for global library")

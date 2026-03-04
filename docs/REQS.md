@@ -40,10 +40,14 @@ Most commands require execution from a valid workspace root.
 - [x] 3.6 Given `menu remove` targets a library that has dependents, when deletion is confirmed, then Dusk Ocean shall run uninstall tasks for all dependent repos before removing the library and pruning dependency references from workspace config.
 - [x] 3.7 Given user confirmation is not `y` in any `menu remove` flow, when the prompt resolves, then Dusk Ocean shall abort without mutation.
 
+- [ ] 3.8 Given `dusk-ocean menu create` selects service type, when the service scaffold prompt completes, then Dusk Ocean shall ask whether to assign a container file to the service: (a) select an existing file from `repos/containers/`, (b) provide a custom container file path, or (c) none; the selection shall be recorded as the service's `container_file` in workspace config.
+- [ ] 3.9 Given a scaffold template contains a placeholder prefixed with `ocean:` (e.g. `{{ocean:port}}`), when scaffolding occurs, then Dusk Ocean shall treat it as a reserved system placeholder, shall NOT prompt the user for a replacement value, and shall preserve it verbatim in the generated file for runtime substitution by Dusk Ocean.
+
 #### Constraints
 - Scaffolding (`menu create`) and repo deletion (`menu remove`) are only available through the menu and have no flag-based equivalents.
 - All other commands available through the menu must also be fully executable via flags.
 - Repository type names shall reject whitespace and only allow configured character sets.
+- Reserved placeholder tokens (prefixed with `ocean:`) shall take precedence over user-prompted placeholders; a token matching both forms shall always be treated as reserved.
 
 ### 4 Build and Check Execution with Dependency Order
 #### Context
@@ -122,38 +126,27 @@ Most commands require execution from a valid workspace root.
 
 ### 10 Container Publication
 #### Context
-`contain` builds and publishes service container images via flags, without interactive prompts. Before building, `contain` stages a minimal build context under `.ocean/stage/` by copying the service directory and its transitive local dependencies, mirroring their paths relative to the workspace root. Files matching patterns in `.oceanignore` are excluded. Files listed in `.oceaninclude` are copied to the staging root.
+`contain` builds and publishes service container images via flags, without interactive prompts. Rather than enforcing a specific containerization tool, Dusk Ocean executes the service's `contain` task (defined in `ocean.config.json`) after staging the build context. Before executing, Dusk Ocean substitutes reserved Dusk placeholders in the task command with runtime values. Before building, `contain` stages a minimal build context under `.ocean/stage/` by copying the service directory and its transitive local dependencies, mirroring their paths relative to the workspace root. Files matching patterns in `.oceanignore` are excluded. Files listed in `.oceaninclude` are copied to the staging root. Dusk Ocean computes a dependency-tree hash before contain; if the hash is unchanged since the last contain run, the build is skipped and the manifest is left marked clean.
+
+Each service may declare two container-related fields in workspace config: `container_file` (path to the container build recipe, e.g. a Dockerfile or Containerfile) and `image_path` (full explicit registry path for the built image). These values are available as Dusk placeholders at contain-time.
 
 #### Requirements
-- [x] 10.1 Given `dusk-ocean contain --service <name>` is executed, when the service name matches exactly one service across all apps in workspace config, then Dusk Ocean shall resolve the image reference, stage the build context, run `docker build -t <image> -f <dockerfile> .` from the staging directory, then run `docker push <image>`.
+- [x] 10.1 Given `dusk-ocean contain --service <name>` is executed, when the service name matches exactly one service across all apps in workspace config, then Dusk Ocean shall resolve the service's `image_path` and `container_file`, stage the build context, substitute Dusk placeholders in the `contain` task command, and execute that command from the staging directory; if no `contain` task is defined, Dusk Ocean shall skip and print a skip message.
 - [x] 10.2 Given `--service <name>` matches services in more than one app, when resolution runs, then Dusk Ocean shall fail with an ambiguity error instructing the user to add `--app <name>`.
-- [x] 10.3 Given `dusk-ocean contain --app <name> --service <name>` is executed, when both flags are provided, then Dusk Ocean shall resolve the image reference from the specified app/service pair and proceed with build and push.
-- [x] 10.4 Given the local image build fails, when contain executes, then Dusk Ocean shall surface the build error and not attempt push.
+- [x] 10.3 Given `dusk-ocean contain --app <name> --service <name>` is executed, when both flags are provided, then Dusk Ocean shall resolve the service's `image_path` and `container_file` from the specified app/service pair and proceed with placeholder substitution and task execution.
+- [x] 10.4 Given the `contain` task exits with a non-zero code, when contain executes, then Dusk Ocean shall surface the error and shall not mark the manifest entry as clean.
 - [x] 10.5 Given `contain` is executed, when staging the build context, then Dusk Ocean shall copy the service directory and each local dependency directory (resolved transitively from the workspace dep graph) into `.ocean/stage/`, preserving their paths relative to the workspace root, and shall exclude any files or directories matching patterns listed in `.oceanignore`; if `.oceanignore` is absent, the absence shall be logged and no patterns shall be applied.
 - [x] 10.6 Given an `.oceaninclude` file exists at the workspace root, when staging the build context, then Dusk Ocean shall copy each file listed in `.oceaninclude` (relative paths from workspace root) to the staging root directory.
+- [x] 10.7 Given `contain` executes, when the dependency-tree hash matches the previously recorded contain hash, then Dusk Ocean shall skip execution and set `contain_run` to `true` in the manifest without running the `contain` task.
+- [x] 10.8 Given `contain` executes, when the dependency-tree hash differs from the previously recorded contain hash (or no prior hash exists), then Dusk Ocean shall run the `contain` task and, upon success, update the contain hash and set `contain_run` to `true` in the manifest.
+- [x] 10.9 Given the `contain` task command contains Dusk placeholder tokens, when contain executes, then Dusk Ocean shall substitute the following tokens before invoking the command: `{{ocean:service_name}}` with the service name, `{{ocean:port}}` with the service's configured port, `{{ocean:image_path}}` with the service's `image_path` workspace config value, and `{{ocean:container_file}}` with the resolved absolute path to the service's `container_file`.
 
 #### Constraints
-- Container build/push shall stream command output directly to CLI stdout/stderr.
-- The staging directory is removed after `docker push` completes or after a build failure.
-
-### 12 Hash Command and Build Manifest
-#### Context
-`hash` computes directory hashes for all registered repositories (or a specified target) without executing any build or test tasks. Results are written to `.ocean/manifest.json`, which records each repository's current hash, whether that hash has changed since it was last recorded (dirty), and whether a build or check has been run since the current hash was established. The manifest gives scripts and agent workflows a fast, queryable signal for which repos need attention without re-running expensive operations.
-
-#### Requirements
-- [x] 12.1 Given `dusk-ocean hash` is executed without flags, when the command runs, then Dusk Ocean shall compute the directory hash for every registered repository and write the results to `.ocean/manifest.json`.
-- [x] 12.2 Given `dusk-ocean hash --target <repo>` is executed, when the target exists in workspace config, then Dusk Ocean shall compute and update the hash entry for only that repository in the manifest, leaving all other entries unchanged.
-- [x] 12.3 Given a hash is computed for a repository, when the computed hash differs from the previously recorded hash in the manifest, then Dusk Ocean shall mark the repository as dirty and reset `build_run` and `check_run` to `false` in the manifest entry.
-- [x] 12.4 Given a hash is computed for a repository, when the computed hash matches the previously recorded hash, then Dusk Ocean shall preserve the existing `build_run` and `check_run` values in the manifest.
-- [x] 12.5 Given a `build` command completes successfully for a repository, when a manifest entry exists for that repository, then Dusk Ocean shall set `build_run` to `true` in the manifest entry.
-- [x] 12.6 Given a `check` command completes successfully for a repository, when a manifest entry exists for that repository, then Dusk Ocean shall set `check_run` to `true` in the manifest entry.
-- [x] 12.7 Given `.ocean/manifest.json` does not exist, when `hash` executes, then Dusk Ocean shall create the file with initial entries for all computed repositories, with `dirty` set to `true`, `build_run` set to `false`, and `check_run` set to `false`.
-
-#### Constraints
-- The `hash` command shall not invoke any build or test task.
-- `dirty` shall be `true` if and only if the computed hash differs from the previously stored hash; a missing prior entry shall be treated as a hash mismatch.
-- Manifest writes shall be atomic (write to a temp file, then rename) to prevent partial reads.
-- The manifest format is JSON: a top-level object keyed by repository name, each value containing `hash` (string), `dirty` (bool), `build_run` (bool), and `check_run` (bool).
+- The `contain` task command shall have its stdout and stderr streamed directly to the CLI.
+- The staging directory shall be removed after the `contain` task completes or fails.
+- Services with no `contain` task are skipped; absence shall be logged.
+- A bare filename for `container_file` (no directory component) shall resolve to `repos/containers/<name>`; a value containing path separators shall be treated as workspace-root-relative.
+- `contain_run` in the manifest shall follow the same dirty/reset semantics as `build_run` and `check_run` (see Section 12).
 
 ### 11 Utility Commands
 #### Context
@@ -161,3 +154,72 @@ The CLI provides a version visibility command.
 
 #### Requirements
 - [x] 11.1 Given `dusk-ocean version` is executed, when the command runs, then Dusk Ocean shall print the configured CLI version string.
+
+### 12 Hash Command and Build Manifest
+#### Context
+`hash` registers repositories in `.ocean/manifest.json` without executing any build or test tasks. Each manifest entry records per-operation dependency-tree hashes (`build_hash`, `check_hash`, `contain_hash`) that are set when the corresponding operation completes successfully. To determine whether an operation is stale, the current dependency-tree hash is computed and compared against the stored value. The manifest gives scripts and agent workflows a fast, queryable signal for which repos need attention without re-running expensive operations.
+
+#### Requirements
+- [x] 12.1 Given `dusk-ocean hash` is executed without flags, when the command runs, then Dusk Ocean shall ensure a manifest entry exists for every registered repository in `.ocean/manifest.json`, without overwriting existing entries.
+- [x] 12.2 Given `dusk-ocean hash --target <repo>` is executed, when the target exists in workspace config, then Dusk Ocean shall ensure a manifest entry exists for only that repository, leaving all other entries unchanged.
+- [x] 12.3 Given a `build` command is about to execute for a repository, when the current dependency-tree hash matches the stored `build_hash` in the manifest, then Dusk Ocean shall skip the build.
+- [x] 12.4 Given a `check` command is about to execute for a repository, when the current dependency-tree hash matches the stored `check_hash` in the manifest, then Dusk Ocean shall skip the check.
+- [x] 12.5 Given a `build` command completes successfully for a repository, when a manifest entry exists for that repository, then Dusk Ocean shall store the dependency-tree hash as `build_hash` in the manifest entry.
+- [x] 12.6 Given a `check` command completes successfully for a repository, when a manifest entry exists for that repository, then Dusk Ocean shall store the dependency-tree hash as `check_hash` in the manifest entry.
+- [x] 12.7 Given `.ocean/manifest.json` does not exist, when `hash` executes, then Dusk Ocean shall create the file with initial entries for all registered repositories, with `build_hash`, `check_hash`, and `contain_hash` set to empty strings.
+- [x] 12.8 Given a `contain` command completes successfully for a service, when a manifest entry exists for that service, then Dusk Ocean shall store the dependency-tree hash as `contain_hash` in the manifest entry.
+
+#### Constraints
+- The `hash` command shall not invoke any build or test task.
+- Staleness is determined by comparing the current dependency-tree hash against the stored operation hash; a missing or empty hash is treated as stale.
+- Manifest writes shall be atomic (write to a temp file, then rename) to prevent partial reads.
+- The manifest format is JSON: a top-level object keyed by repository name, each value containing `kind` (string), `app` (string, optional), `name` (string), `build_hash` (string), `check_hash` (string), and `contain_hash` (string).
+
+### 13 Library Move
+#### Context
+`dusk-ocean move` relocates a library repository from one location to another within the workspace. Supported moves are: app-scoped library to another app's library scope, app-scoped library to global library (`repos/libs/`), and global library to app-scoped library. The command updates the physical directory, workspace config, hash store paths, and all dependency references. Scope declarations are not altered automatically; the user is responsible for adjusting scopes after a move, though Dusk Ocean surfaces warnings when a move creates scope violations.
+
+#### Requirements
+- [x] 13.1 Given `dusk-ocean move --library <name> --from-app <app> --to-app <app>` is executed, when the library exists in the source app, then Dusk Ocean shall move the library directory from `repos/apps/<from-app>/libs/<name>/` to `repos/apps/<to-app>/libs/<name>/`, update workspace config to re-register it under the destination app, update all dependency references throughout workspace config, and update hash store paths.
+- [x] 13.2 Given `dusk-ocean move --library <name> --from-app <app> --to-global` is executed, when the library exists in the source app, then Dusk Ocean shall move the directory to `repos/libs/<name>/`, re-register it as a global library in workspace config, update all dependency references, and update hash store paths.
+- [x] 13.3 Given `dusk-ocean move --library <name> --from-global --to-app <app>` is executed, when the library exists as a global library, then Dusk Ocean shall move the directory to `repos/apps/<app>/libs/<name>/`, re-register it as an app-scoped library in workspace config, update all dependency references, and update hash store paths.
+- [x] 13.4 Given a move would result in a name conflict at the destination, when validation runs, then Dusk Ocean shall reject with a name-conflict error.
+- [x] 13.5 Given a library is moved from global scope to an app scope, when dependent repos in other apps relied on the library without a shared scope, then Dusk Ocean shall print a warning listing the affected dependency relationships that now violate scope constraints.
+
+#### Constraints
+- Move shall be atomic with respect to workspace config: directory rename and config update shall not leave the workspace in a partially-moved state on failure.
+- Move shall not add or remove scopes automatically; scope adjustments are the user's responsibility, with violations surfaced per 13.5.
+
+### 14 Application Run
+#### Context
+`dusk-ocean run` executes a user-defined `run` task for an application or service. Before executing the run task, Dusk Ocean performs hash-based pre-flight checks for build, check, and contain across all repos in the target's dependency tree. Any stale tasks are executed in dependency order (build → check → contain) before the run task begins. If any pre-flight task fails, the run task is not invoked.
+
+#### Requirements
+- [x] 14.1 Given `dusk-ocean run --app <name>` is executed, when the app defines a `run` task, then Dusk Ocean shall perform pre-flight hash checks for build, check, and contain across all repos in the dependency tree and execute any stale tasks in dependency order before invoking the `run` task.
+- [x] 14.2 Given a pre-flight build hash is stale for one or more repos, when `run` executes, then Dusk Ocean shall run `build` for the affected repo(s) in dependency order before proceeding.
+- [x] 14.3 Given a pre-flight check hash is stale for one or more repos, when `run` executes, then Dusk Ocean shall run `check` for the affected repo(s) in dependency order before proceeding.
+- [x] 14.4 Given a pre-flight contain hash is stale for one or more services and a `contain` task is defined, when `run` executes, then Dusk Ocean shall run `contain` for the affected service(s) before proceeding.
+- [x] 14.5 Given any pre-flight task (build, check, or contain) exits with a non-zero code, when `run` is executing, then Dusk Ocean shall abort and not invoke the `run` task.
+- [x] 14.6 Given a repo has no `run` task, when `dusk-ocean run` targets that repo, then Dusk Ocean shall skip and print a skip message.
+
+#### Constraints
+- Pre-flight checks shall respect the same dependency ordering used by build and check (Section 4).
+- The run command shall be available both via flags and through the menu interface.
+
+### 15 Projects
+#### Context
+Projects are standalone repositories that live under `repos/projects/` and are registered in `ocean.workspace.json`. Unlike apps and libraries, projects are not intended to be declared as dependencies of other repositories in the workspace. They represent self-contained tools, CLIs, research repos, or other non-library, non-application work. Projects participate in the standard build/check/install workflow and may themselves depend on global libraries.
+
+#### Requirements
+- [x] 15.1 Given `dusk-ocean add project` is executed, when a project name is provided and the name does not already exist under `repos/projects/`, then Dusk Ocean shall scaffold the project directory from the selected template and register it in workspace config under the `projects` list.
+- [x] 15.2 Given `dusk-ocean menu remove` selects project type, when the user confirms deletion, then Dusk Ocean shall delete `repos/projects/<name>/` and unregister the project from workspace config.
+- [x] 15.3 Given a project is registered in workspace config, when `build`, `check`, or `install` commands are executed, then Dusk Ocean shall include the project in dependency-ordered task execution according to its declared dependencies.
+- [x] 15.4 Given a project is declared as a dependency target by any app, service, or library, when validation runs, then Dusk Ocean shall reject the operation with an error indicating projects cannot be used as dependencies.
+- [x] 15.5 Given a project declares a dependency on a global library in workspace config, when the dependency is added, then Dusk Ocean shall permit the dependency if scope constraints are satisfied.
+
+#### Constraints
+- Projects shall not appear as a valid dependency source for apps, services, or libraries.
+- Project names shall reject whitespace and follow the same character constraints applied to other repository types.
+- Projects live exclusively under `repos/projects/` and shall not be co-located in `repos/apps/` or `repos/libs/`.
+
+

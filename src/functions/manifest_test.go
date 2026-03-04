@@ -67,13 +67,10 @@ func TestReadManifest(t *testing.T) {
 		original := Manifest{
 			Repos: map[string]ManifestEntry{
 				"lib:global:my-lib": {
-					Kind:     "global-lib",
-					Name:     "my-lib",
-					Hash:     "abc123def456",
-					Dirty:    false,
-					BuildRun: true,
-					CheckRun: false,
-					HashedAt: "2026-01-01T00:00:00Z",
+					Kind:      "global-lib",
+					Name:      "my-lib",
+					BuildHash: "abc123",
+					CheckHash: "def456",
 				},
 			},
 		}
@@ -88,17 +85,14 @@ func TestReadManifest(t *testing.T) {
 		if !ok {
 			t.Fatalf("entry not found after roundtrip")
 		}
-		if entry.Hash != "abc123def456" {
-			t.Fatalf("hash mismatch: got %s", entry.Hash)
+		if entry.BuildHash != "abc123" {
+			t.Fatalf("build_hash mismatch: got %s", entry.BuildHash)
+		}
+		if entry.CheckHash != "def456" {
+			t.Fatalf("check_hash mismatch: got %s", entry.CheckHash)
 		}
 		if entry.Name != "my-lib" {
 			t.Fatalf("name mismatch: got %s", entry.Name)
-		}
-		if !entry.BuildRun {
-			t.Fatalf("expected build_run=true")
-		}
-		if entry.CheckRun {
-			t.Fatalf("expected check_run=false")
 		}
 	})
 }
@@ -126,7 +120,7 @@ func TestHashAllRepos(t *testing.T) {
 		}
 	})
 
-	t.Run("domain__hash_all_repos__new_entry_has_dirty_true_and_runs_false", func(t *testing.T) {
+	t.Run("domain__hash_all_repos__new_entry_has_empty_hashes", func(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
 		cmd := makeTestCmd(&bytes.Buffer{})
 
@@ -138,31 +132,31 @@ func TestHashAllRepos(t *testing.T) {
 			t.Fatalf("read manifest: %v", err)
 		}
 		entry := m.Repos["lib:global:lib-a"]
-		if !entry.Dirty {
-			t.Fatalf("expected dirty=true for new entry")
+		if entry.BuildHash != "" {
+			t.Fatalf("expected empty build_hash for new entry, got %s", entry.BuildHash)
 		}
-		if entry.BuildRun {
-			t.Fatalf("expected build_run=false for new entry")
+		if entry.CheckHash != "" {
+			t.Fatalf("expected empty check_hash for new entry, got %s", entry.CheckHash)
 		}
-		if entry.CheckRun {
-			t.Fatalf("expected check_run=false for new entry")
+		if entry.ContainHash != "" {
+			t.Fatalf("expected empty contain_hash for new entry, got %s", entry.ContainHash)
 		}
 	})
 
-	t.Run("domain__hash_all_repos__unchanged_hash_preserves_build_and_check_run", func(t *testing.T) {
+	t.Run("domain__hash_all_repos__does_not_overwrite_existing_entries", func(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
 		cmd := makeTestCmd(&bytes.Buffer{})
 
-		// First hash pass — creates new dirty entries.
+		// First pass — creates entries.
 		if err := HashAllRepos(cmd, fs, root, config); err != nil {
 			t.Fatalf("first hash: %v", err)
 		}
 		// Simulate a successful build for the lib.
-		if err := SetManifestBuildRun(fs, root, "lib:global:lib-a"); err != nil {
-			t.Fatalf("set build_run: %v", err)
+		if err := SetManifestBuildHash(fs, root, "lib:global:lib-a", "hash-after-build"); err != nil {
+			t.Fatalf("set build_hash: %v", err)
 		}
 
-		// Second hash pass — files unchanged, hash must match.
+		// Second pass — entries already exist, must not overwrite.
 		if err := HashAllRepos(cmd, fs, root, config); err != nil {
 			t.Fatalf("second hash: %v", err)
 		}
@@ -171,50 +165,8 @@ func TestHashAllRepos(t *testing.T) {
 			t.Fatalf("read manifest: %v", err)
 		}
 		entry := m.Repos["lib:global:lib-a"]
-		if entry.Dirty {
-			t.Fatalf("expected dirty=false when hash unchanged")
-		}
-		if !entry.BuildRun {
-			t.Fatalf("expected build_run=true to be preserved when hash unchanged")
-		}
-	})
-
-	t.Run("domain__hash_all_repos__changed_hash_resets_runs_and_marks_dirty", func(t *testing.T) {
-		fs, root, config := setupManifestWorkspace(t)
-		cmd := makeTestCmd(&bytes.Buffer{})
-
-		// First hash pass.
-		if err := HashAllRepos(cmd, fs, root, config); err != nil {
-			t.Fatalf("first hash: %v", err)
-		}
-		// Simulate a completed build.
-		if err := SetManifestBuildRun(fs, root, "lib:global:lib-a"); err != nil {
-			t.Fatalf("set build_run: %v", err)
-		}
-
-		// Mutate the lib source to force a different hash.
-		libPath := filepath.Join(root, "repos", "libs", "lib-a")
-		if err := afero.WriteFile(fs, filepath.Join(libPath, "lib.go"), []byte("lib-changed"), 0o644); err != nil {
-			t.Fatalf("modify source: %v", err)
-		}
-
-		// Second hash pass — lib-a hash must change.
-		if err := HashAllRepos(cmd, fs, root, config); err != nil {
-			t.Fatalf("second hash: %v", err)
-		}
-		m, err := ReadManifest(fs, root)
-		if err != nil {
-			t.Fatalf("read manifest: %v", err)
-		}
-		entry := m.Repos["lib:global:lib-a"]
-		if !entry.Dirty {
-			t.Fatalf("expected dirty=true after source change")
-		}
-		if entry.BuildRun {
-			t.Fatalf("expected build_run=false after hash change")
-		}
-		if entry.CheckRun {
-			t.Fatalf("expected check_run=false after hash change")
+		if entry.BuildHash != "hash-after-build" {
+			t.Fatalf("expected build_hash to be preserved, got %s", entry.BuildHash)
 		}
 	})
 }
@@ -222,41 +174,49 @@ func TestHashAllRepos(t *testing.T) {
 // --- HashSingleRepo ---
 
 func TestHashSingleRepo(t *testing.T) {
-	t.Run("domain__hash_single_repo__updates_only_target_entry", func(t *testing.T) {
+	t.Run("domain__hash_single_repo__creates_entry_for_target", func(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
 		cmd := makeTestCmd(&bytes.Buffer{})
 
-		// Pre-populate both entries so we can verify only one changes.
-		if err := HashAllRepos(cmd, fs, root, config); err != nil {
-			t.Fatalf("initial hash: %v", err)
-		}
-
-		// Mutate only lib-a source.
-		libPath := filepath.Join(root, "repos", "libs", "lib-a")
-		if err := afero.WriteFile(fs, filepath.Join(libPath, "lib.go"), []byte("lib-v2"), 0o644); err != nil {
-			t.Fatalf("modify source: %v", err)
-		}
-
-		m0, _ := ReadManifest(fs, root)
-		svcHashBefore := m0.Repos["service:app-a:svc-a"].Hash
-
-		// Hash only lib-a.
 		if err := HashSingleRepo(cmd, fs, root, config, "lib-a"); err != nil {
 			t.Fatalf("single hash: %v", err)
 		}
 
-		m1, err := ReadManifest(fs, root)
+		m, err := ReadManifest(fs, root)
 		if err != nil {
 			t.Fatalf("read manifest: %v", err)
 		}
-		// lib-a entry must be updated (dirty, new hash).
-		libEntry := m1.Repos["lib:global:lib-a"]
-		if !libEntry.Dirty {
-			t.Fatalf("expected lib-a to be dirty after source change")
+		entry, ok := m.Repos["lib:global:lib-a"]
+		if !ok {
+			t.Fatalf("expected entry for lib:global:lib-a")
 		}
-		// svc-a entry must be unchanged.
-		if m1.Repos["service:app-a:svc-a"].Hash != svcHashBefore {
-			t.Fatalf("svc-a hash should not change when only lib-a was targeted")
+		if entry.Kind != "global-lib" {
+			t.Fatalf("expected kind=global-lib, got %s", entry.Kind)
+		}
+		if entry.Name != "lib-a" {
+			t.Fatalf("expected name=lib-a, got %s", entry.Name)
+		}
+	})
+
+	t.Run("domain__hash_single_repo__does_not_overwrite_existing_entry", func(t *testing.T) {
+		fs, root, config := setupManifestWorkspace(t)
+		cmd := makeTestCmd(&bytes.Buffer{})
+
+		// Create entry and set a build hash.
+		if err := HashSingleRepo(cmd, fs, root, config, "lib-a"); err != nil {
+			t.Fatalf("first hash: %v", err)
+		}
+		if err := SetManifestBuildHash(fs, root, "lib:global:lib-a", "existing-hash"); err != nil {
+			t.Fatalf("set build_hash: %v", err)
+		}
+
+		// Hash again — must not reset the build hash.
+		if err := HashSingleRepo(cmd, fs, root, config, "lib-a"); err != nil {
+			t.Fatalf("second hash: %v", err)
+		}
+		m, _ := ReadManifest(fs, root)
+		if m.Repos["lib:global:lib-a"].BuildHash != "existing-hash" {
+			t.Fatalf("expected build_hash preserved, got %s", m.Repos["lib:global:lib-a"].BuildHash)
 		}
 	})
 
@@ -271,76 +231,112 @@ func TestHashSingleRepo(t *testing.T) {
 	})
 }
 
-// --- SetManifestBuildRun ---
+// --- SetManifestBuildHash ---
 
-func TestSetManifestBuildRun(t *testing.T) {
-	t.Run("domain__set_manifest_build_run__sets_build_run_true", func(t *testing.T) {
+func TestSetManifestBuildHash(t *testing.T) {
+	t.Run("domain__set_manifest_build_hash__stores_hash", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/root"
 		m := Manifest{
 			Repos: map[string]ManifestEntry{
-				"lib:global:lib-a": {Kind: "global-lib", Name: "lib-a", BuildRun: false},
+				"lib:global:lib-a": {Kind: "global-lib", Name: "lib-a"},
 			},
 		}
 		if err := WriteManifest(fs, root, m); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
 
-		if err := SetManifestBuildRun(fs, root, "lib:global:lib-a"); err != nil {
+		if err := SetManifestBuildHash(fs, root, "lib:global:lib-a", "build-hash-123"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		got, _ := ReadManifest(fs, root)
-		if !got.Repos["lib:global:lib-a"].BuildRun {
-			t.Fatalf("expected build_run=true")
+		if got.Repos["lib:global:lib-a"].BuildHash != "build-hash-123" {
+			t.Fatalf("expected build_hash=build-hash-123, got %s", got.Repos["lib:global:lib-a"].BuildHash)
 		}
 	})
 
-	t.Run("complement__set_manifest_build_run__no_op_when_entry_absent", func(t *testing.T) {
+	t.Run("complement__set_manifest_build_hash__no_op_when_entry_absent", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/root"
-		// Write a manifest with no entries.
 		if err := WriteManifest(fs, root, Manifest{Repos: map[string]ManifestEntry{}}); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
-		if err := SetManifestBuildRun(fs, root, "lib:global:ghost"); err != nil {
+		if err := SetManifestBuildHash(fs, root, "lib:global:ghost", "some-hash"); err != nil {
 			t.Fatalf("expected no-op, got error: %v", err)
 		}
 	})
 }
 
-// --- SetManifestCheckRun ---
+// --- SetManifestCheckHash ---
 
-func TestSetManifestCheckRun(t *testing.T) {
-	t.Run("domain__set_manifest_check_run__sets_check_run_true", func(t *testing.T) {
+func TestSetManifestCheckHash(t *testing.T) {
+	t.Run("domain__set_manifest_check_hash__stores_hash", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/root"
 		m := Manifest{
 			Repos: map[string]ManifestEntry{
-				"service:app-a:svc-a": {Kind: "service", App: "app-a", Name: "svc-a", CheckRun: false},
+				"service:app-a:svc-a": {Kind: "service", App: "app-a", Name: "svc-a"},
 			},
 		}
 		if err := WriteManifest(fs, root, m); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
 
-		if err := SetManifestCheckRun(fs, root, "service:app-a:svc-a"); err != nil {
+		if err := SetManifestCheckHash(fs, root, "service:app-a:svc-a", "check-hash-456"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		got, _ := ReadManifest(fs, root)
-		if !got.Repos["service:app-a:svc-a"].CheckRun {
-			t.Fatalf("expected check_run=true")
+		if got.Repos["service:app-a:svc-a"].CheckHash != "check-hash-456" {
+			t.Fatalf("expected check_hash=check-hash-456, got %s", got.Repos["service:app-a:svc-a"].CheckHash)
 		}
 	})
 
-	t.Run("complement__set_manifest_check_run__no_op_when_entry_absent", func(t *testing.T) {
+	t.Run("complement__set_manifest_check_hash__no_op_when_entry_absent", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/root"
 		if err := WriteManifest(fs, root, Manifest{Repos: map[string]ManifestEntry{}}); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
-		if err := SetManifestCheckRun(fs, root, "service:app-a:ghost"); err != nil {
+		if err := SetManifestCheckHash(fs, root, "service:app-a:ghost", "some-hash"); err != nil {
+			t.Fatalf("expected no-op, got error: %v", err)
+		}
+	})
+}
+
+// --- SetManifestContainHash ---
+
+func TestSetManifestContainHash(t *testing.T) {
+	t.Run("domain__set_manifest_contain_hash__stores_hash", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		m := Manifest{
+			Repos: map[string]ManifestEntry{
+				"service:app-a:svc-a": {Kind: "service", App: "app-a", Name: "svc-a"},
+			},
+		}
+		if err := WriteManifest(fs, root, m); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		if err := SetManifestContainHash(fs, root, "service:app-a:svc-a", "contain-hash-789"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got, _ := ReadManifest(fs, root)
+		if got.Repos["service:app-a:svc-a"].ContainHash != "contain-hash-789" {
+			t.Fatalf("expected contain_hash=contain-hash-789, got %s", got.Repos["service:app-a:svc-a"].ContainHash)
+		}
+	})
+
+	t.Run("complement__set_manifest_contain_hash__no_op_when_entry_absent", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		if err := WriteManifest(fs, root, Manifest{Repos: map[string]ManifestEntry{}}); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := SetManifestContainHash(fs, root, "service:app-a:ghost", "some-hash"); err != nil {
 			t.Fatalf("expected no-op, got error: %v", err)
 		}
 	})

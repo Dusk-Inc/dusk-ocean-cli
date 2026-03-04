@@ -85,6 +85,28 @@ func AddApp(fs afero.Fs, name string) error {
 	if err := CopyDir(fs, templatePath, appPath); err != nil {
 		return err
 	}
+
+	appConfig := struct {
+		Name     string `json:"name"`
+		Language string `json:"language"`
+		Type     string `json:"type"`
+		Tasks    struct {
+			Run string `json:"run"`
+		} `json:"tasks"`
+	}{
+		Name:     name,
+		Language: "",
+		Type:     "app",
+	}
+	payload, err := json.MarshalIndent(appConfig, "", "    ")
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+	if err := afero.WriteFile(fs, filepath.Join(appPath, "ocean.config.json"), payload, 0o644); err != nil {
+		return err
+	}
+
 	return addAppToWorkspace(fs, name)
 }
 

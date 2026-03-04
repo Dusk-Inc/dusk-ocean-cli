@@ -641,8 +641,10 @@ func runMenuCheck(cmd *cobra.Command) error {
 	return fmt.Errorf("unsupported target type")
 }
 
-// runMenuRun shows a run-type selector and starts the selected app or services (REQ 3.1).
+// runMenuRun shows a run-type selector and executes the run task with pre-flight checks (REQ 14).
 func runMenuRun(cmd *cobra.Command) error {
+	fs := afero.NewOsFs()
+
 	runTypePrompt := promptui.Select{
 		Label: "Run type",
 		Items: []string{tokens.MenuTypeApp, tokens.MenuTypeService},
@@ -657,72 +659,15 @@ func runMenuRun(cmd *cobra.Command) error {
 		return err
 	}
 
-	root, err := functions.GetRoot()
-	if err != nil {
-		return err
-	}
-	appPath := filepath.Join(root, "repos", "apps", appName)
-
-	composeArgs := []string{"compose", "-f", "docker-compose.yml", "-f", "docker-compose.dev.yml"}
-
 	if runType == tokens.MenuTypeService {
-		services, err := functions.GetAppServices(appName)
+		serviceName, err := functions.PromptForService(appName)
 		if err != nil {
 			return err
 		}
-		if len(services) == 0 {
-			return fmt.Errorf("no services found for app: %s", appName)
-		}
-
-		items := make([]string, 0, len(services)+1)
-		for _, service := range services {
-			items = append(items, service.Name)
-		}
-		items = append(items, "confirm")
-
-		selected := []string{}
-		selectedSet := map[string]bool{}
-		for {
-			prompt := promptui.Select{
-				Label: "Select services",
-				Items: items,
-			}
-			_, name, err := prompt.Run()
-			if err != nil {
-				return err
-			}
-			if name == "confirm" {
-				if len(selected) == 0 {
-					return fmt.Errorf("select at least one service")
-				}
-				break
-			}
-			if selectedSet[name] {
-				selectedSet[name] = false
-				next := make([]string, 0, len(selected)-1)
-				for _, entry := range selected {
-					if entry != name {
-						next = append(next, entry)
-					}
-				}
-				selected = next
-			} else {
-				selectedSet[name] = true
-				selected = append(selected, name)
-			}
-		}
-		composeArgs = append(composeArgs, "up")
-		composeArgs = append(composeArgs, selected...)
-	} else {
-		composeArgs = append(composeArgs, "up")
+		return functions.RunService(cmd, fs, appName, serviceName)
 	}
 
-	execCmd := exec.Command("docker", composeArgs...)
-	execCmd.Dir = appPath
-	execCmd.Stdout = cmd.OutOrStdout()
-	execCmd.Stderr = cmd.ErrOrStderr()
-	execCmd.Stdin = cmd.InOrStdin()
-	return execCmd.Run()
+	return functions.RunApp(cmd, fs, appName)
 }
 
 // runMenuInstall delegates to the existing interactive install prompt (REQ 3.1).
@@ -747,31 +692,7 @@ func runMenuContain(cmd *cobra.Command) error {
 		return err
 	}
 
-	root, err := functions.GetRoot()
-	if err != nil {
-		return err
-	}
-	servicePath := filepath.Join(root, "repos", "apps", appName, "services", serviceName)
-
-	imageName, err := functions.ServiceImageReference(afero.NewOsFs(), appName, serviceName)
-	if err != nil {
-		return err
-	}
-
-	buildCmd := exec.Command("docker", "build", "-t", imageName, ".")
-	buildCmd.Dir = servicePath
-	buildCmd.Stdout = cmd.OutOrStdout()
-	buildCmd.Stderr = cmd.ErrOrStderr()
-	buildCmd.Stdin = cmd.InOrStdin()
-	if err := buildCmd.Run(); err != nil {
-		return err
-	}
-
-	pushCmd := exec.Command("docker", "push", imageName)
-	pushCmd.Stdout = cmd.OutOrStdout()
-	pushCmd.Stderr = cmd.ErrOrStderr()
-	pushCmd.Stdin = cmd.InOrStdin()
-	return pushCmd.Run()
+	return functions.ContainService(cmd, afero.NewOsFs(), appName, serviceName)
 }
 
 // runMenuRefresh prompts for hash-clearing preference and runs a full workspace refresh (REQ 3.1).

@@ -39,12 +39,14 @@ type WorkspaceImage struct {
 }
 
 type WorkspaceService struct {
-	Name       string         `json:"name"`
-	Port       string         `json:"port"`
-	Image      WorkspaceImage `json:"image"`
-	Dockerfile string         `json:"Dockerfile"`
-	Scopes     []string       `json:"scopes,omitempty"`
-	Deps       []WorkspaceDep `json:"deps"`
+	Name          string         `json:"name"`
+	Port          string         `json:"port"`
+	Image         WorkspaceImage `json:"image"`
+	Dockerfile    string         `json:"Dockerfile"`
+	ContainerFile string         `json:"container_file,omitempty"`
+	ImagePath     string         `json:"image_path,omitempty"`
+	Scopes        []string       `json:"scopes,omitempty"`
+	Deps          []WorkspaceDep `json:"deps"`
 }
 
 type WorkspaceLibrary struct {
@@ -86,6 +88,8 @@ type RepoConfig struct {
 		Add       string `json:"add"`
 		Install   string `json:"install"`
 		Uninstall string `json:"uninstall"`
+		Contain   string `json:"contain"`
+		Run       string `json:"run"`
 	} `json:"tasks"`
 }
 

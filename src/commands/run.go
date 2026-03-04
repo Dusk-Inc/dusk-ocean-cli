@@ -1,149 +1,49 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
-	"os/exec"
-	"path/filepath"
 
-	"github.com/manifoldco/promptui"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-
 )
 
 var runAppCmd = &cobra.Command{
 	Use:   "app",
-	Short: "Run an app locally",
+	Short: "Run an app with pre-flight build, check, and contain",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appName, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
 		if appName == "" {
-			selected, err := functions.PromptForApp()
-			if err != nil {
-				return err
-			}
-			appName = selected
+			return fmt.Errorf("--name is required")
 		}
-		noDev, err := cmd.Flags().GetBool("no-dev")
-		if err != nil {
-			return err
-		}
-
-		root, err := functions.GetRoot()
-		if err != nil {
-			return err
-		}
-		appPath := filepath.Join(root, "repos", "apps", appName)
-
-		composeArgs := []string{"compose", "-f", "docker-functions.yml"}
-		if !noDev {
-			composeArgs = append(composeArgs, "-f", "docker-functions.dev.yml")
-		}
-		composeArgs = append(composeArgs, "up")
-
-		execCmd := exec.Command("docker", composeArgs...)
-		execCmd.Dir = appPath
-		execCmd.Stdout = cmd.OutOrStdout()
-		execCmd.Stderr = cmd.ErrOrStderr()
-		execCmd.Stdin = cmd.InOrStdin()
-		return execCmd.Run()
+		return functions.RunApp(cmd, afero.NewOsFs(), appName)
 	},
 }
 
 var runServiceCmd = &cobra.Command{
 	Use:   "service",
-	Short: "Run one or more services within an app",
+	Short: "Run a service with pre-flight build, check, and contain",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appName, err := cmd.Flags().GetString("in")
+		serviceName, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
-		if appName == "" {
-			selected, err := functions.PromptForApp()
-			if err != nil {
-				return err
-			}
-			appName = selected
-		}
-		noDev, err := cmd.Flags().GetBool("no-dev")
+		appName, err := cmd.Flags().GetString("app")
 		if err != nil {
 			return err
 		}
-
-		services, err := functions.GetAppServices(appName)
-		if err != nil {
-			return err
+		if serviceName == "" {
+			return fmt.Errorf("--name is required")
 		}
-		if len(services) == 0 {
-			return fmt.Errorf("no services found for app: %s", appName)
-		}
-
-		items := make([]string, 0, len(services)+1)
-		for _, service := range services {
-			items = append(items, service.Name)
-		}
-		items = append(items, "confirm")
-
-		selected := []string{}
-		selectedSet := map[string]bool{}
-		for {
-			prompt := promptui.Select{
-				Label: "Select services",
-				Items: items,
-			}
-			_, name, err := prompt.Run()
-			if err != nil {
-				return err
-			}
-			if name == "confirm" {
-				if len(selected) == 0 {
-					return fmt.Errorf("select at least one service")
-				}
-				break
-			}
-			if selectedSet[name] {
-				selectedSet[name] = false
-				next := make([]string, 0, len(selected)-1)
-				for _, entry := range selected {
-					if entry != name {
-						next = append(next, entry)
-					}
-				}
-				selected = next
-			} else {
-				selectedSet[name] = true
-				selected = append(selected, name)
-			}
-		}
-
-		root, err := functions.GetRoot()
-		if err != nil {
-			return err
-		}
-		appPath := filepath.Join(root, "repos", "apps", appName)
-
-		composeArgs := []string{"compose", "-f", "docker-functions.yml"}
-		if !noDev {
-			composeArgs = append(composeArgs, "-f", "docker-functions.dev.yml")
-		}
-		composeArgs = append(composeArgs, "up")
-		composeArgs = append(composeArgs, selected...)
-
-		execCmd := exec.Command("docker", composeArgs...)
-		execCmd.Dir = appPath
-		execCmd.Stdout = cmd.OutOrStdout()
-		execCmd.Stderr = cmd.ErrOrStderr()
-		execCmd.Stdin = cmd.InOrStdin()
-		return execCmd.Run()
+		return functions.RunService(cmd, afero.NewOsFs(), appName, serviceName)
 	},
 }
 
 func init() {
 	runAppCmd.Flags().String("name", "", "Name of the app")
-	runAppCmd.Flags().Bool("no-dev", false, "Run without docker-functions.dev.yml")
-	runServiceCmd.Flags().String("in", "", "App name for the service")
-	runServiceCmd.Flags().Bool("no-dev", false, "Run without docker-functions.dev.yml")
+	runServiceCmd.Flags().String("name", "", "Name of the service")
+	runServiceCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
 }

@@ -39,7 +39,7 @@ Full-stack or microservice-based applications. Each app contains:
 Libraries shared across the entire monorepo. Use a `-ts`, `-py`, or `-go` suffix when names collide across languages.
 
 #### Projects (`repos/projects/<name>`)
-Codebases intended for open-source distribution or external consumption. Use a language suffix when names collide.
+Standalone repositories for self-contained tools, CLIs, research repos, or other non-library, non-application work. Projects participate in the standard build/check/install workflow and may depend on global libraries, but cannot be used as dependencies by other repositories. Use a language suffix when names collide.
 
 ### Workspace Configuration (`ocean.workspace.json`)
 Tracks all registered apps, services, libraries, and projects along with their local dependency graphs.
@@ -62,6 +62,8 @@ Tracks all registered apps, services, libraries, and projects along with their l
                     "port": 3000,
                     "image": { "name": "app-a__svc-a", "tag": "dev" },
                     "Dockerfile": "ts.Dockerfile",
+                    "container_file": "ts.Dockerfile",
+                    "image_path": "registry.example.com/app-a/svc-a",
                     "deps": [
                         { "lib": "lib-a", "from": "global" }
                     ]
@@ -93,10 +95,10 @@ Tracks all registered apps, services, libraries, and projects along with their l
 }
 ```
 
-Each `deps` entry specifies the library name (`lib`) and where it comes from (`from`). The `from` value is either `"global"`, the app name for app-scoped libs, or `"project"` for project deps.
+Each `deps` entry specifies the library name (`lib`) and where it comes from (`from`). The `from` value is either `"global"` for workspace-level libraries or the app name for app-scoped libraries. Projects may depend on global libraries but cannot themselves be used as dependencies.
 
 ### Repository Configuration (`ocean.config.json`)
-Every service, library, and project has an `ocean.config.json` at its root. This is the language-agnostic task definition file.
+Every app, service, library, and project has an `ocean.config.json` at its root. This is the language-agnostic task definition file.
 
 ```json
 {
@@ -108,7 +110,9 @@ Every service, library, and project has an `ocean.config.json` at its root. This
         "test": "pnpm test",
         "install": "pnpm install",
         "add": "pnpm add --workspace {{name}}",
-        "uninstall": "pnpm remove {{name}}"
+        "uninstall": "pnpm remove {{name}}",
+        "contain": "",
+        "run": ""
     }
 }
 ```
@@ -116,13 +120,15 @@ Every service, library, and project has an `ocean.config.json` at its root. This
 - `build` and `test`: invoked by `dusk-ocean build` and `dusk-ocean check`.
 - `install`: invoked by `dusk-ocean install` to run the package manager (e.g. `pnpm install`).
 - `add` and `uninstall`: invoked when wiring or unwiring this library as a local dependency in another repo.
+- `contain`: invoked by `dusk-ocean contain` to build and publish a service container image.
+- `run`: invoked by `dusk-ocean run` to execute the app or service after pre-flight checks.
 
-### Build and Check Caching
-To avoid redundant work, Dusk Ocean hashes each repository's source directory and compares it to the stored hash in `.ocean/hashes/`:
-- If the hash is unchanged, the build or check step is skipped.
-- If the hash has changed, the command executes and the new hash is saved.
-- For `check`, if the source changed and a `build` task exists, Ocean rebuilds first, then runs the check.
-- After a successful build or check, the result is recorded in `.ocean/manifest.json` (`build_run` / `check_run`).
+### Build, Check, and Contain Caching
+To avoid redundant work, Dusk Ocean computes a dependency-tree hash for each repository and compares it to the stored per-operation hash in `.ocean/manifest.json`:
+- If the dependency-tree hash matches the stored `build_hash`, `check_hash`, or `contain_hash`, the corresponding operation is skipped.
+- If the hash differs (or is missing), the operation executes and the new hash is saved on success.
+- For `check`, if the hash changed and a `build` task exists, Ocean rebuilds first, then runs the check.
+- The `contain` operation uses the same hash-based skip logic applied to the service's dependency tree.
 
 ## Commands
 
@@ -155,6 +161,7 @@ dusk-ocean add --payload <lib-name> --target <repo-name>
 ```
 Rules:
 - A repo cannot depend on itself.
+- Projects cannot be used as dependencies by apps, services, or libraries.
 - Cross-app dependencies require both repos to share at least one scope name (see `add-scope`).
 
 ### `remove` — Dependency Unwiring
@@ -216,16 +223,37 @@ dusk-ocean refresh --clear-hashes  # remove hash records first to force a full r
 Skips install or build for nodes that have no corresponding task. Fails on dependency graph cycles. Cleans up stale hash files for repos no longer in workspace config.
 
 ### `contain`
-Stage a minimal Docker build context and publish a service image.
+Stage a minimal build context and execute the service's `contain` task to build and publish a container image.
 ```bash
 dusk-ocean contain --service <name>
 dusk-ocean contain --service <name> --app <app>  # required when service name is ambiguous
 ```
-Before running `docker build`, Ocean copies the service directory and all of its transitive local dependencies into `.ocean/stage/`, preserving their paths relative to the workspace root. The staging directory is always removed after build+push (or after a build failure).
+Rather than enforcing a specific containerization tool, Dusk Ocean executes the service's `contain` task (defined in `ocean.config.json`) after staging the build context. Before executing, Dusk Ocean substitutes reserved placeholders (`{{ocean:service_name}}`, `{{ocean:port}}`, `{{ocean:image_path}}`, `{{ocean:container_file}}`) in the task command with runtime values. Ocean copies the service directory and all of its transitive local dependencies into `.ocean/stage/`, preserving their paths relative to the workspace root. The staging directory is always removed after the contain task completes or fails.
+
+Each service may declare `container_file` (path to the container build recipe) and `image_path` (full registry path for the built image) in workspace config. A bare filename for `container_file` resolves to `repos/containers/<name>`; a value with path separators is treated as workspace-root-relative.
+
+Dusk Ocean computes a dependency-tree hash before contain; if the hash matches the stored `contain_hash` in the manifest, the build is skipped.
 
 Two workspace-root files control staging:
 - `.oceanignore`: gitignore-format patterns for files to exclude (e.g. `node_modules/`). Absence is logged; no patterns are applied.
 - `.oceaninclude`: one workspace-relative path per line; files are copied to the staging root (e.g. `go.work`, `pnpm-workspace.yaml`). Absence is logged; no files are copied.
+
+### `move`
+Relocate a library repository from one location to another within the workspace. Updates the physical directory, workspace config, hash store paths, and all dependency references.
+```bash
+dusk-ocean move --library <name> --from-app <app> --to-app <app>    # move between apps
+dusk-ocean move --library <name> --from-app <app> --to-global       # move app lib to global
+dusk-ocean move --library <name> --from-global --to-app <app>       # move global lib to app
+```
+Fails if the destination name conflicts with an existing repository. When a move creates scope violations (e.g. moving a global library into an app scope when other apps depended on it), Dusk Ocean prints a warning listing the affected relationships. Scope declarations are not altered automatically.
+
+### `run`
+Execute a user-defined `run` task for an app or service. Before running, Dusk Ocean performs hash-based pre-flight checks for build, check, and contain across all repos in the target's dependency tree. Stale tasks are executed in dependency order (build → check → contain) before the run task begins. If any pre-flight task fails, the run is aborted.
+```bash
+dusk-ocean run app     --name <app-name>
+dusk-ocean run service --name <service-name> [--app <app>]
+```
+For an app, pre-flight checks are performed for each service in the app. If no `run` task is defined, the command skips with a message.
 
 ### `hash`
 Compute directory hashes for all registered repositories (or a single target) and write the results to `.ocean/manifest.json`. Does not build or test anything.
@@ -238,13 +266,14 @@ The manifest records per-repo:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `hash` | string | SHA-256 hex digest of the source directory |
-| `dirty` | bool | `true` when the hash differs from the previous record |
-| `build_run` | bool | `true` when a build succeeded after the current hash was established |
-| `check_run` | bool | `true` when a check succeeded after the current hash was established |
-| `hashed_at` | string | RFC 3339 UTC timestamp of the last hash computation |
+| `kind` | string | Repository type (e.g. `"service"`, `"library"`, `"project"`) |
+| `app` | string | Parent app name (empty for global libraries and projects) |
+| `name` | string | Repository name |
+| `build_hash` | string | Dependency-tree hash at last successful build |
+| `check_hash` | string | Dependency-tree hash at last successful check |
+| `contain_hash` | string | Dependency-tree hash at last successful contain |
 
-`build_run` and `check_run` are automatically updated by `dusk-ocean build` and `dusk-ocean check` on success. When the source hash changes, both flags are reset to `false`. This lets scripts and agent workflows query `.ocean/manifest.json` to determine which repos need attention without re-running expensive operations.
+`build_hash`, `check_hash`, and `contain_hash` are set by `dusk-ocean build`, `dusk-ocean check`, and `dusk-ocean contain` respectively on success. Staleness is determined by comparing the current dependency-tree hash against the stored operation hash; a missing or empty hash is treated as stale. This lets scripts and agent workflows query `.ocean/manifest.json` to determine which repos need attention without re-running expensive operations.
 
 ### `version`
 Print the configured CLI version string.

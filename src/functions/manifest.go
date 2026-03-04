@@ -5,27 +5,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-// ManifestEntry records the hash state of a single repository.
+// ManifestEntry records per-operation hashes for a single repository.
+// Each operation (build, check, contain) stores the dependency-tree hash at
+// the time it last succeeded. To determine whether an operation is stale,
+// compute the current tree hash and compare it to the stored value.
 //
 // Schema (.ocean/manifest.json):
 //
 //	{
 //	  "repos": {
 //	    "<node-key>": {
-//	      "kind":      "<NodeKind>",        // e.g. "service", "global-lib", "app-lib", "project", "app-test"
-//	      "app":       "<app-name>",        // owning app; omitted for global libs and projects
-//	      "name":      "<repo-name>",       // repo name within its kind/app scope
-//	      "hash":      "<sha256-hex>",      // directory content hash at last hash run
-//	      "dirty":     true | false,        // true when hash differs from the previous recorded hash
-//	      "build_run": true | false,        // true when build completed successfully after the current hash was set
-//	      "check_run": true | false,        // true when check completed successfully after the current hash was set
-//	      "hashed_at": "<RFC3339-UTC>"      // timestamp of the last hash computation
+//	      "kind":         "<NodeKind>",     // e.g. "service", "global-lib", "app-lib", "project", "app-test"
+//	      "app":          "<app-name>",     // owning app; omitted for global libs and projects
+//	      "name":         "<repo-name>",    // repo name within its kind/app scope
+//	      "build_hash":   "<sha256-hex>",   // tree hash at last successful build
+//	      "check_hash":   "<sha256-hex>",   // tree hash at last successful check
+//	      "contain_hash": "<sha256-hex>"    // tree hash at last successful contain
 //	    },
 //	    ...
 //	  }
@@ -34,14 +34,12 @@ import (
 // Node keys use the format produced by nodeKey(): "service:<app>:<name>",
 // "lib:global:<name>", "lib:app:<app>:<name>", "project:<name>", "test:<app>:<name>".
 type ManifestEntry struct {
-	Kind     string `json:"kind"`
-	App      string `json:"app,omitempty"`
-	Name     string `json:"name"`
-	Hash     string `json:"hash"`
-	Dirty    bool   `json:"dirty"`
-	BuildRun bool   `json:"build_run"`
-	CheckRun bool   `json:"check_run"`
-	HashedAt string `json:"hashed_at"`
+	Kind        string `json:"kind"`
+	App         string `json:"app,omitempty"`
+	Name        string `json:"name"`
+	BuildHash   string `json:"build_hash"`
+	CheckHash   string `json:"check_hash"`
+	ContainHash string `json:"contain_hash"`
 }
 
 // Manifest is the in-memory representation of .ocean/manifest.json.
@@ -92,22 +90,15 @@ func WriteManifest(fs afero.Fs, root string, m Manifest) error {
 	return fs.Rename(tmpPath, path)
 }
 
-// HashAllRepos computes directory hashes for every registered repository and updates
-// .ocean/manifest.json (REQ 12.1/12.7).
+// HashAllRepos ensures manifest entries exist for every registered repository (REQ 12.1/12.7).
 func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
-	ignorePatterns, err := ReadGitignorePatterns(fs, root)
-	if err != nil {
-		return err
-	}
 	m, err := ReadManifest(fs, root)
 	if err != nil {
 		return err
 	}
 	nodes := CollectWorkspaceNodes(config)
 	for _, node := range nodes {
-		if err := hashNode(fs, root, node, &m, ignorePatterns); err != nil {
-			return err
-		}
+		ensureManifestEntry(node, &m)
 	}
 	if err := WriteManifest(fs, root, m); err != nil {
 		return err
@@ -116,8 +107,7 @@ func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config Workspace
 	return nil
 }
 
-// HashSingleRepo computes the hash for one repo by name and updates the manifest (REQ 12.2).
-// Uses ResolveTargetByName for disambiguation when the same name appears in multiple scopes.
+// HashSingleRepo ensures a manifest entry exists for one repo by name (REQ 12.2).
 func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, targetName string) error {
 	target, err := ResolveTargetByName(config, root, targetName)
 	if err != nil {
@@ -127,86 +117,58 @@ func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config Workspa
 	if err != nil {
 		return err
 	}
-	ignorePatterns, err := ReadGitignorePatterns(fs, root)
-	if err != nil {
-		return err
-	}
 	m, err := ReadManifest(fs, root)
 	if err != nil {
 		return err
 	}
-	if err := hashNode(fs, root, node, &m, ignorePatterns); err != nil {
-		return err
-	}
+	ensureManifestEntry(node, &m)
 	if err := WriteManifest(fs, root, m); err != nil {
 		return err
 	}
 	key := nodeKey(node)
-	entry := m.Repos[key]
-	status := "clean"
-	if entry.Dirty {
-		status = "dirty"
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "hashed %s: %s (%s)\n", key, entry.Hash[:8], status)
+	fmt.Fprintf(cmd.OutOrStdout(), "registered %s\n", key)
 	return nil
 }
 
-// SetManifestBuildRun marks build_run=true for the given repo key in the manifest (REQ 12.5).
+// SetManifestBuildHash stores the dependency-tree hash for a successful build (REQ 12.5).
 // No-op if the manifest is absent or the key is not present.
-func SetManifestBuildRun(fs afero.Fs, root string, key string) error {
+func SetManifestBuildHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
-		e.BuildRun = true
+		e.BuildHash = hash
 		return e
 	})
 }
 
-// SetManifestCheckRun marks check_run=true for the given repo key in the manifest (REQ 12.6).
+// SetManifestCheckHash stores the dependency-tree hash for a successful check (REQ 12.6).
 // No-op if the manifest is absent or the key is not present.
-func SetManifestCheckRun(fs afero.Fs, root string, key string) error {
+func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
-		e.CheckRun = true
+		e.CheckHash = hash
 		return e
 	})
 }
 
-// hashNode computes and upserts one node's entry in the provided manifest.
-// The caller is responsible for calling WriteManifest to persist changes.
-// If the repo directory does not exist on disk the node is silently skipped.
-func hashNode(fs afero.Fs, root string, node Node, m *Manifest, ignorePatterns []string) error {
+// SetManifestContainHash stores the dependency-tree hash for a successful contain (REQ 12.8).
+// No-op if the manifest is absent or the key is not present.
+func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) error {
+	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
+		e.ContainHash = hash
+		return e
+	})
+}
+
+// ensureManifestEntry creates a manifest entry for a node if one does not already exist.
+// Existing entries are left unchanged.
+func ensureManifestEntry(node Node, m *Manifest) {
 	key := nodeKey(node)
-	_, srcPath, _, err := NodeBuildInfo(root, node)
-	if err != nil {
-		return err
+	if _, ok := m.Repos[key]; ok {
+		return
 	}
-	if !DirExists(fs, srcPath) {
-		return nil
+	m.Repos[key] = ManifestEntry{
+		Kind: string(node.Kind),
+		App:  node.App,
+		Name: node.Name,
 	}
-	newHash, err := CalcDirHash(fs, srcPath, ignorePatterns)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	prev, hasPrev := m.Repos[key]
-	entry := ManifestEntry{
-		Kind:     string(node.Kind),
-		App:      node.App,
-		Name:     node.Name,
-		Hash:     newHash,
-		HashedAt: now,
-	}
-	if !hasPrev || prev.Hash != newHash {
-		// New entry or hash changed: mark dirty and reset run flags (REQ 12.3/12.7).
-		entry.Dirty = true
-		entry.BuildRun = false
-		entry.CheckRun = false
-	} else {
-		// Hash unchanged: preserve run flags (REQ 12.4).
-		entry.Dirty = false
-		entry.BuildRun = prev.BuildRun
-		entry.CheckRun = prev.CheckRun
-	}
-	m.Repos[key] = entry
-	return nil
 }
 
 // updateManifestEntry reads the manifest, applies fn to the named entry, and writes it back.

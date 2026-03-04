@@ -102,6 +102,54 @@ func matchesIgnorePattern(relPath string, isDir bool, pattern string) bool {
 	return false
 }
 
+// CalcRepoHash computes the directory hash for a repository, using .gitignore patterns
+// from the workspace root for ignore filtering. This is the single entry point for
+// computing repo hashes across build, check, and manifest operations.
+func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
+	ignorePatterns, err := ReadGitignorePatterns(fs, root)
+	if err != nil {
+		return "", err
+	}
+	return CalcDirHash(fs, repoPath, ignorePatterns)
+}
+
+// CalcNodeTreeHash computes a combined hash of a node and all its transitive
+// dependency directories. This is the single entry point for computing
+// dependency-tree hashes used by the manifest and operation skip logic.
+func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Node) (string, error) {
+	deps, err := CollectDependencyOrder(config, node)
+	if err != nil {
+		return "", err
+	}
+	nodesToHash := append(deps, node)
+
+	ignorePatterns, _ := ReadGitignorePatterns(fs, root)
+
+	combined := sha256.New()
+	for _, n := range nodesToHash {
+		_, srcPath, _, err := NodeBuildInfo(root, n)
+		if err != nil {
+			return "", err
+		}
+		h, err := CalcDirHash(fs, srcPath, ignorePatterns)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(combined, "%s:%s\n", nodeKey(n), h)
+	}
+	return hex.EncodeToString(combined.Sum(nil)), nil
+}
+
+// CalcContainTreeHash computes a dependency-tree hash for a service.
+// Convenience wrapper around CalcNodeTreeHash for the contain command (REQ 10.7/10.8).
+func CalcContainTreeHash(fs afero.Fs, root string, config WorkspaceConfig, appName, serviceName string) (string, error) {
+	serviceNode, err := MakeServiceNode(config, appName, serviceName)
+	if err != nil {
+		return "", err
+	}
+	return CalcNodeTreeHash(fs, root, config, serviceNode)
+}
+
 func ReadHashFile(fs afero.Fs, path string) (string, bool, error) {
 	payload, err := afero.ReadFile(fs, path)
 	if err != nil {
@@ -125,6 +173,17 @@ func MakeBuildHashPath(checkHashPath string) string {
 	for i, part := range parts {
 		if part == "check" {
 			parts[i] = "build"
+			break
+		}
+	}
+	return filepath.Join(parts...)
+}
+
+func MakeContainHashPath(buildHashPath string) string {
+	parts := strings.Split(filepath.Clean(buildHashPath), string(filepath.Separator))
+	for i, part := range parts {
+		if part == "build" {
+			parts[i] = "contain"
 			break
 		}
 	}

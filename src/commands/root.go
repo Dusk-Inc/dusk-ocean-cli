@@ -9,7 +9,7 @@ import
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "Dusk-Inc Ocean",
+	Use:   "dusk-ocean",
 	Short: "Dusk Ocean CLI - Manage the Dusk Inc Monorepo",
 	Long:  `A polyglot monorepo tool for scaffolding, testing, and deploying functions.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -119,6 +119,7 @@ func init() {
 	rootCmd.AddCommand(addScopeCmd)
 	rootCmd.AddCommand(removeScopeCmd)
 	rootCmd.AddCommand(renameCmd)
+	rootCmd.AddCommand(moveCmd)
 	rootCmd.AddCommand(hashCmd)
 
 	menuCmd.AddCommand(menuCreateCmd)

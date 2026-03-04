@@ -12,115 +12,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-type WorkspaceConfig struct {
-	Workspace string             `json:"workspace"`
-	Version   string             `json:"version,omitempty"`
-	Ports     WorkspacePorts     `json:"ports"`
-	Apps      []WorkspaceApp     `json:"apps"`
-	Libraries []WorkspaceLibrary `json:"libraries"`
-	Projects  []WorkspaceProject `json:"projects"`
-}
-
-type WorkspacePorts struct {
-	Allowed  WorkspacePortRange      `json:"allowed"`
-	Reserved []WorkspaceReservedPort `json:"reserved"`
-}
-
-type WorkspacePortRange struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
-}
-
-type WorkspaceReservedPort struct {
-	Name string `json:"name"`
-	Port int    `json:"port"`
-}
-
-type WorkspaceApp struct {
-	Name      string             `json:"name"`
-	Services  []WorkspaceService `json:"services"`
-	Libraries []WorkspaceLibrary `json:"libraries"`
-	Testing   []WorkspaceTest    `json:"testing"`
-}
-
-type WorkspaceImage struct {
-	Name string `json:"name"`
-	Tag  string `json:"tag"`
-}
-
-type WorkspaceService struct {
-	Name       string         `json:"name"`
-	Port       string         `json:"port"`
-	Image      WorkspaceImage `json:"image"`
-	Dockerfile string         `json:"Dockerfile"`
-	Scopes     []string       `json:"scopes,omitempty"`
-	Deps       []WorkspaceDep `json:"deps"`
-}
-
-type WorkspaceLibrary struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
-}
-
-type WorkspaceProject struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
-}
-
-type WorkspaceTest struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
-}
-
-type WorkspaceDep struct {
-	Lib  string `json:"lib"`
-	From string `json:"from"`
-}
-
-type RepoConfig struct {
-	Name      string   `json:"name"`
-	Language  string   `json:"language"`
-	Type      string   `json:"type"`
-	Build     string   `json:"build"`
-	Test      string   `json:"test"`
-	Add       string   `json:"add"`
-	Install   string   `json:"install"`
-	Uninstall string   `json:"uninstall"`
-	Scopes    []string `json:"scopes,omitempty"`
-	Tasks     struct {
-		Build     string `json:"build"`
-		Test      string `json:"test"`
-		Add       string `json:"add"`
-		Install   string `json:"install"`
-		Uninstall string `json:"uninstall"`
-	} `json:"tasks"`
-}
-
-const defaultImageTag = "dev"
-
-type TargetKind string
-
-const (
-	TargetService   TargetKind = "service"
-	TargetAppLib    TargetKind = "app-lib"
-	TargetGlobalLib TargetKind = "global-lib"
-	TargetProject   TargetKind = "project"
-	TargetTest      TargetKind = "test"
+// Type aliases re-exported from models so callers using the functions package
+// continue to work without changes.
+type (
+	WorkspaceConfig       = models.WorkspaceConfig
+	WorkspacePorts        = models.WorkspacePorts
+	WorkspacePortRange    = models.WorkspacePortRange
+	WorkspaceReservedPort = models.WorkspaceReservedPort
+	WorkspaceApp          = models.WorkspaceApp
+	WorkspaceImage        = models.WorkspaceImage
+	WorkspaceService      = models.WorkspaceService
+	WorkspaceLibrary      = models.WorkspaceLibrary
+	WorkspaceProject      = models.WorkspaceProject
+	WorkspaceTest         = models.WorkspaceTest
+	WorkspaceDep          = models.WorkspaceDep
+	RepoConfig            = models.RepoConfig
+	TargetKind            = models.TargetKind
+	Target                = models.Target
+	InitOptions           = models.InitOptions
 )
 
-type Target struct {
-	Kind TargetKind
-	App  string
-	Name string
-	Path string
-}
+const (
+	TargetService   = models.TargetService
+	TargetAppLib    = models.TargetAppLib
+	TargetGlobalLib = models.TargetGlobalLib
+	TargetProject   = models.TargetProject
+	TargetTest      = models.TargetTest
+)
+
+const defaultImageTag = "dev"
 
 func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
 	cwd, err := os.Getwd()
@@ -151,9 +76,6 @@ func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
 	return absRoot, nil
 }
 
-type InitOptions struct {
-	Name string
-}
 
 func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []WorkspaceProject) WorkspaceConfig {
 	return WorkspaceConfig{
@@ -1160,6 +1082,10 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 			return config.Tasks.Uninstall, nil
 		}
 		return config.Uninstall, nil
+	case "contain":
+		return config.Tasks.Contain, nil
+	case "run":
+		return config.Tasks.Run, nil
 	default:
 		return "", fmt.Errorf("unsupported command kind: %s", kind)
 	}
@@ -1191,11 +1117,7 @@ func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath stri
 	if err != nil {
 		return err
 	}
-	ignorePatterns, err := ReadGitignorePatterns(afero.NewOsFs(), root)
-	if err != nil {
-		return err
-	}
-	newHash, err := CalcDirHash(afero.NewOsFs(), targetPath, ignorePatterns)
+	newHash, err := CalcRepoHash(afero.NewOsFs(), root, targetPath)
 	if err != nil {
 		return err
 	}
@@ -1229,11 +1151,7 @@ func RunCheck(cmd *cobra.Command, label string, targetPath string, hashPath stri
 		return nil
 	}
 
-	ignorePatterns, err := ReadGitignorePatterns(afero.NewOsFs(), root)
-	if err != nil {
-		return err
-	}
-	newHash, err := CalcDirHash(afero.NewOsFs(), targetPath, ignorePatterns)
+	newHash, err := CalcRepoHash(afero.NewOsFs(), root, targetPath)
 	if err != nil {
 		return err
 	}
