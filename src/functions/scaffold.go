@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -155,7 +156,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 			return err
 		}
 		payload = append(payload, '\n')
-		if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.json"), payload, 0o644); err != nil {
+		if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.config.json"), payload, 0o644); err != nil {
 			return err
 		}
 		return WireServiceToCompose(fs, appPath, appName, serviceName, dockerfile)
@@ -264,6 +265,22 @@ func addAppToWorkspace(fs afero.Fs, name string) error {
 		Testing:   []WorkspaceTest{},
 	})
 	return WriteWorkspaceConfig(fs, config)
+}
+
+func RunSetupTask(fs afero.Fs, repoPath string, root string, stdout io.Writer, stderr io.Writer) error {
+	config, err := ReadRepoConfig(fs, repoPath)
+	if err != nil {
+		return nil
+	}
+	setupCmd, err := RepoCommand(config, "setup")
+	if err != nil || strings.TrimSpace(setupCmd) == "" {
+		return nil
+	}
+	cmd := exec.Command("sh", "-c", setupCmd)
+	cmd.Dir = filepath.Join(root, repoPath)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
 }
 
 func removeAppFromWorkspace(fs afero.Fs, name string) error {

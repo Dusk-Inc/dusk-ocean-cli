@@ -3,6 +3,7 @@
     "language": "go",
     "type": "project",
     "tasks": {
+        "prebuild": "go run ./scripts/bump",
         "build": "go build ./...",
         "test": "go test ./...",
         "install": "go mod download"

@@ -566,7 +566,7 @@ func createGlobalLibDir(t *testing.T, fs afero.Fs, root string, language string,
 		t.Fatalf("mkdir: %v", err)
 	}
 	payload := []byte("{\"language\": \"" + language + "\"}\n")
-	if err := afero.WriteFile(fs, filepath.Join(path, "ocean.json"), payload, 0o644); err != nil {
+	if err := afero.WriteFile(fs, filepath.Join(path, "ocean.config.json"), payload, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }

@@ -21,8 +21,8 @@ func writeOceanConfig(t *testing.T, fs afero.Fs, repoPath string, content string
 	if err := fs.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", repoPath, err)
 	}
-	if err := afero.WriteFile(fs, repoPath+"/ocean.json", []byte(content), 0o644); err != nil {
-		t.Fatalf("write ocean.json: %v", err)
+	if err := afero.WriteFile(fs, repoPath+"/ocean.config.json", []byte(content), 0o644); err != nil {
+		t.Fatalf("write ocean.config.json: %v", err)
 	}
 }
 

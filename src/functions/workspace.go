@@ -1025,24 +1025,18 @@ func makeGlobalDeps(deps ...string) []WorkspaceDep {
 }
 
 func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
-	for _, name := range []string{"ocean.config.json", "ocean.json"} {
-		configPath := filepath.Join(root, name)
-		payload, err := afero.ReadFile(fs, configPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return RepoConfig{}, err
-		}
-		var config RepoConfig
-		if err := json.Unmarshal(payload, &config); err != nil {
-			return RepoConfig{}, err
-		}
-		config.Language = strings.TrimSpace(config.Language)
-		config.Type = strings.TrimSpace(config.Type)
-		return config, nil
+	configPath := filepath.Join(root, "ocean.config.json")
+	payload, err := afero.ReadFile(fs, configPath)
+	if err != nil {
+		return RepoConfig{}, err
 	}
-	return RepoConfig{}, fmt.Errorf("repo config not found in %s", root)
+	var config RepoConfig
+	if err := json.Unmarshal(payload, &config); err != nil {
+		return RepoConfig{}, err
+	}
+	config.Language = strings.TrimSpace(config.Language)
+	config.Type = strings.TrimSpace(config.Type)
+	return config, nil
 }
 
 func WriteRepoConfig(fs afero.Fs, root string, config RepoConfig) error {
@@ -1086,6 +1080,10 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 		return config.Tasks.Contain, nil
 	case "run":
 		return config.Tasks.Run, nil
+	case "setup":
+		return config.Tasks.Setup, nil
+	case "prebuild":
+		return config.Tasks.Prebuild, nil
 	default:
 		return "", fmt.Errorf("unsupported command kind: %s", kind)
 	}
@@ -1130,6 +1128,17 @@ func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath stri
 		return nil
 	}
 
+	prebuildCmd, _ := ReadRepoCommand(afero.NewOsFs(), targetPath, "prebuild")
+	if strings.TrimSpace(prebuildCmd) != "" {
+		preCmd := exec.Command("bash", "-lc", prebuildCmd)
+		preCmd.Dir = targetPath
+		preCmd.Stdout = cmd.OutOrStdout()
+		preCmd.Stderr = cmd.ErrOrStderr()
+		if err := preCmd.Run(); err != nil {
+			return err
+		}
+	}
+
 	execCmd := exec.Command("bash", "-lc", buildCmd)
 	execCmd.Dir = targetPath
 	execCmd.Stdout = cmd.OutOrStdout()
@@ -1138,7 +1147,11 @@ func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath stri
 		return err
 	}
 
-	return WriteHashFile(afero.NewOsFs(), hashPath, newHash)
+	postHash, err := CalcRepoHash(afero.NewOsFs(), root, targetPath)
+	if err != nil {
+		return err
+	}
+	return WriteHashFile(afero.NewOsFs(), hashPath, postHash)
 }
 
 func RunCheck(cmd *cobra.Command, label string, targetPath string, hashPath string, passThrough []string, root string) error {

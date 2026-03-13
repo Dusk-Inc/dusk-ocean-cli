@@ -5,7 +5,6 @@ import (
 	tokens "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -20,7 +19,7 @@ type menuEntry struct {
 }
 
 var menuEntries = []menuEntry{
-	{tokens.MenuOpCreate, "Scaffold a new app or library"},
+	{tokens.MenuOpCreate, "Scaffold a new component"},
 	{tokens.MenuOpRemove, "Delete an existing repo"},
 	{tokens.MenuOpBuild, "Build a component"},
 	{tokens.MenuOpCheck, "Run tests for a component"},
@@ -83,11 +82,11 @@ var menuCmd = &cobra.Command{
 
 var menuCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Scaffold a new app or library (interactive, menu-only)",
+	Short: "Scaffold a new component (interactive, menu-only)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		typePrompt := promptui.Select{
 			Label: "Create type",
-			Items: []string{tokens.MenuTypeApp, tokens.MenuTypeLibrary},
+			Items: []string{tokens.MenuTypeApp, tokens.MenuTypeService, tokens.MenuTypeLibrary, tokens.MenuTypeProject},
 		}
 		_, createType, err := typePrompt.Run()
 		if err != nil {
@@ -99,8 +98,12 @@ var menuCreateCmd = &cobra.Command{
 		switch createType {
 		case tokens.MenuTypeApp:
 			return runMenuCreateApp(fs)
+		case tokens.MenuTypeService:
+			return addServiceCmd.RunE(cmd, args)
 		case tokens.MenuTypeLibrary:
-			return runMenuCreateLibrary(cmd, fs)
+			return addLibCmd.RunE(cmd, args)
+		case tokens.MenuTypeProject:
+			return addPkgCmd.RunE(cmd, args)
 		}
 		return nil
 	},
@@ -168,126 +171,6 @@ func runMenuCreateApp(fs afero.Fs) error {
 		return err
 	}
 	return functions.AddApp(fs, strings.TrimSpace(name))
-}
-
-// runMenuCreateLibrary scaffolds a new global or app-adjacent library (REQ 3.3, 3.4).
-func runMenuCreateLibrary(cmd *cobra.Command, fs afero.Fs) error {
-	locationPrompt := promptui.Select{
-		Label: "Add library to",
-		Items: []string{tokens.MenuLibGlobal, tokens.MenuTypeApp},
-	}
-	_, location, err := locationPrompt.Run()
-	if err != nil {
-		return err
-	}
-
-	appName := ""
-	if location == tokens.MenuTypeApp {
-		selected, err := functions.PromptForApp()
-		if err != nil {
-			return err
-		}
-		appName = selected
-	}
-
-	templateItems, err := functions.ListTemplatesByType("library")
-	if err != nil {
-		return err
-	}
-	if len(templateItems) == 0 {
-		return fmt.Errorf("no library templates found")
-	}
-	templatePrompt := promptui.Select{
-		Label: "Select template",
-		Items: templateItems,
-	}
-	_, templateName, err := templatePrompt.Run()
-	if err != nil {
-		return err
-	}
-
-	namePrompt := promptui.Prompt{
-		Label: "Library name",
-		Validate: func(input string) error {
-			value := strings.TrimSpace(input)
-			if value == "" {
-				return fmt.Errorf("library name is required")
-			}
-			if strings.ContainsAny(value, " \t\n") {
-				return fmt.Errorf("library name cannot include spaces")
-			}
-			for _, ch := range value {
-				if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
-					return fmt.Errorf("library name must only use letters, numbers, dashes, and underscores")
-				}
-			}
-			return nil
-		},
-	}
-	libName, err := namePrompt.Run()
-	if err != nil {
-		return err
-	}
-	libName = strings.TrimSpace(libName)
-
-	var destPath string
-	if location == tokens.MenuTypeApp {
-		destPath = filepath.Join("repos", "apps", appName, "libs", libName)
-	} else {
-		destPath = filepath.Join("repos", "libs", libName)
-	}
-
-	if _, err := fs.Stat(destPath); err == nil {
-		return fmt.Errorf("library already exists: %s", libName)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	templatePath := filepath.Join("repos", "templates", templateName)
-	if _, err := fs.Stat(templatePath); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("missing template: %s", templateName)
-		}
-		return err
-	}
-
-	placeholders, err := collectPlaceholders(fs, templatePath)
-	if err != nil {
-		return err
-	}
-	replacements, err := promptPlaceholderValues(placeholders)
-	if err != nil {
-		return err
-	}
-	if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
-		return err
-	}
-
-	templateConfig, err := functions.ReadRepoConfig(fs, templatePath)
-	if err != nil {
-		return err
-	}
-	if templateConfig.Language == "go" {
-		root, err := functions.GetRoot()
-		if err != nil {
-			return err
-		}
-		goModPath := filepath.Join(root, destPath, "go.mod")
-		if info, err := os.Stat(goModPath); err == nil && !info.IsDir() {
-			goCmd := exec.Command("go", "work", "use", filepath.Join(root, destPath))
-			goCmd.Stdout = cmd.OutOrStdout()
-			goCmd.Stderr = cmd.ErrOrStderr()
-			goCmd.Dir = root
-			if err := goCmd.Run(); err != nil {
-				return err
-			}
-		}
-	}
-
-	if location == tokens.MenuTypeApp {
-		return functions.AddAppLibraryToWorkspace(fs, appName, libName)
-	}
-	return functions.AddGlobalLibraryToWorkspace(fs, libName)
 }
 
 // runMenuRemoveApp removes an app (REQ 3.5).

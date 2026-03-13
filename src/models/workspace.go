@@ -90,6 +90,8 @@ type RepoConfig struct {
 		Uninstall string `json:"uninstall"`
 		Contain   string `json:"contain"`
 		Run       string `json:"run"`
+		Setup     string `json:"setup"`
+		Prebuild  string `json:"prebuild"`
 	} `json:"tasks"`
 }
 

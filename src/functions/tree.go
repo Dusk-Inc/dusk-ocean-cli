@@ -145,7 +145,7 @@ func ListTemplatesByType(kind string) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		configPath := filepath.Join(templateRoot, entry.Name(), "ocean.json")
+		configPath := filepath.Join(templateRoot, entry.Name(), "ocean.config.json")
 		payload, err := os.ReadFile(configPath)
 		if err != nil {
 			continue

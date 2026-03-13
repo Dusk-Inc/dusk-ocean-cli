@@ -5,7 +5,6 @@ import
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -157,7 +156,11 @@ var addServiceCmd = &cobra.Command{
 				return err
 			}
 		}
-		return functions.AddService(fs, appName, serviceName, template, dockerfileName, replacements)
+		if err := functions.AddService(fs, appName, serviceName, template, dockerfileName, replacements); err != nil {
+			return err
+		}
+		servicePath := filepath.Join("repos", "apps", appName, "services", serviceName)
+		return functions.RunSetupTask(fs, servicePath, root, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	},
 }
 
@@ -273,21 +276,8 @@ var addLibCmd = &cobra.Command{
 			return err
 		}
 
-		templateConfig, err := functions.ReadRepoConfig(fs, templatePath)
-		if err != nil {
+		if err := functions.RunSetupTask(fs, destPath, root, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
-		}
-		if templateConfig.Language == "go" {
-			goModPath := filepath.Join(root, destPath, "go.mod")
-			if info, err := os.Stat(goModPath); err == nil && !info.IsDir() {
-				goCmd := exec.Command("go", "work", "use", filepath.Join(root, destPath))
-				goCmd.Stdout = cmd.OutOrStdout()
-				goCmd.Stderr = cmd.ErrOrStderr()
-				goCmd.Dir = root
-				if err := goCmd.Run(); err != nil {
-					return err
-				}
-			}
 		}
 
 		if location == "app" {
