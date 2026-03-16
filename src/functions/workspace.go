@@ -1092,7 +1092,7 @@ func isTemplateName(value string) bool {
 	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }
 
-func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath string) error {
+func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath string, root string) error {
 	buildCmd, err := readBuildCommand(targetPath)
 	if err != nil {
 		return err
@@ -1102,10 +1102,6 @@ func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath stri
 		return nil
 	}
 
-	root, err := GetRoot()
-	if err != nil {
-		return err
-	}
 	newHash, err := CalcRepoHash(afero.NewOsFs(), root, targetPath)
 	if err != nil {
 		return err

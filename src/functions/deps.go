@@ -47,7 +47,7 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err != nil {
 			return err
 		}
-		if err := RunBuild(cmd, label, path, hashPath); err != nil {
+		if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
 			return err
 		}
 		if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, dep); err == nil {
@@ -59,7 +59,7 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 	if err != nil {
 		return err
 	}
-	if err := RunBuild(cmd, label, path, hashPath); err != nil {
+	if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
 		return err
 	}
 	targetKey := nodeKey(target)
@@ -83,7 +83,7 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 		if err != nil {
 			return err
 		}
-		if err := RunBuild(cmd, label, path, hashPath); err != nil {
+		if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
 			return err
 		}
 		if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, dep); err == nil {
