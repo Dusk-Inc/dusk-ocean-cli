@@ -159,7 +159,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.config.json"), payload, 0o644); err != nil {
 			return err
 		}
-		return WireServiceToCompose(fs, appPath, appName, serviceName, dockerfile)
+		return registerService(fs, appName, serviceName, dockerfile)
 	}
 
 	templatePath := filepath.Join("repos", "templates", template)
@@ -173,7 +173,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 	if err := CopyDirWithReplacements(fs, templatePath, servicePath, replacements); err != nil {
 		return err
 	}
-	return WireServiceToCompose(fs, appPath, appName, serviceName, dockerfile)
+	return registerService(fs, appName, serviceName, dockerfile)
 }
 
 var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
@@ -215,35 +215,9 @@ func RemoveApp(fs afero.Fs, name string) error {
 	return removeAppFromWorkspace(fs, name)
 }
 
-func WireServiceToCompose(fs afero.Fs, appPath string, appName string, serviceName string, dockerfile string) error {
+func registerService(fs afero.Fs, appName string, serviceName string, dockerfile string) error {
 	port, err := NextServicePort(fs, appName)
 	if err != nil {
-		return err
-	}
-	imageName, err := ServiceImageReference(fs, appName, serviceName)
-	if err != nil {
-		return err
-	}
-	if err := AddServiceToCompose(fs, filepath.Join(appPath, "docker-compose.yml"), serviceName, map[string]any{
-		"image": imageName,
-		"ports": []string{fmt.Sprintf("%s:%s", port, port)},
-	}); err != nil {
-		return err
-	}
-	if err := AddServiceToCompose(fs, filepath.Join(appPath, "docker-compose.dev.yml"), serviceName, map[string]any{
-		"deploy": map[string]any{
-			"resources": map[string]any{
-				"limits": map[string]any{
-					"cpus":   "0.50",
-					"memory": "128M",
-				},
-				"reservations": map[string]any{
-					"cpus":   "0.25",
-					"memory": "64M",
-				},
-			},
-		},
-	}); err != nil {
 		return err
 	}
 	image := DefaultServiceImage(appName, serviceName)

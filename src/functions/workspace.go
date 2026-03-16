@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -145,14 +144,6 @@ func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 				}
 			}
 		}
-	}
-
-	appTemplatePath := filepath.Join("repos", "templates", "apps")
-	if err := ensureFile(fs, out, filepath.Join(appTemplatePath, "docker-compose.yml"), ""); err != nil {
-		return err
-	}
-	if err := ensureFile(fs, out, filepath.Join(appTemplatePath, "docker-compose.dev.yml"), ""); err != nil {
-		return err
 	}
 
 	return ensureGitIgnore(fs)
@@ -1258,154 +1249,6 @@ func shellQuote(value string) string {
 		return value
 	}
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
-}
-
-type ComposeSnapshot struct {
-	Images map[string]string
-	Ports  map[string][]string
-}
-
-func ValidateComposeConsistency(fs afero.Fs, root string) error {
-	apps, err := GetApps()
-	if err != nil {
-		return err
-	}
-	var problems []string
-	for _, app := range apps {
-		appPath := filepath.Join(root, "repos", "apps", app.Name)
-		paths := []string{
-			filepath.Join(appPath, "docker-compose.yml"),
-			filepath.Join(appPath, "docker-compose.dev.yml"),
-			filepath.Join(appPath, "docker-compose.hashi.yml"),
-		}
-		snapshots := map[string]ComposeSnapshot{}
-		for _, path := range paths {
-			if _, err := fs.Stat(path); err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return err
-			}
-			services, err := ReadComposeServices(fs, path)
-			if err != nil {
-				return err
-			}
-			snapshots[path] = SnapshotServices(services)
-			dupPorts := FindDuplicatePorts(services)
-			if len(dupPorts) > 0 {
-				for _, entry := range dupPorts {
-					problems = append(problems, fmt.Sprintf("%s has duplicate port %s", path, entry))
-				}
-			}
-		}
-		images, ports := MergeSnapshots(snapshots)
-		for name, image := range images {
-			if image == "" {
-				continue
-			}
-			for path, snapshot := range snapshots {
-				if value, ok := snapshot.Images[name]; ok && value != "" && value != image {
-					problems = append(problems, fmt.Sprintf("%s has mismatched image for %s", path, name))
-				}
-			}
-		}
-		for name, portSet := range ports {
-			if len(portSet) == 0 {
-				continue
-			}
-			for path, snapshot := range snapshots {
-				if value, ok := snapshot.Ports[name]; ok && len(value) > 0 && !PortsEqual(value, portSet) {
-					problems = append(problems, fmt.Sprintf("%s has mismatched ports for %s", path, name))
-				}
-			}
-		}
-	}
-	if len(problems) > 0 {
-		sort.Strings(problems)
-		return fmt.Errorf(strings.Join(problems, "\n"))
-	}
-	return nil
-}
-
-func SnapshotServices(services map[string]map[string]any) ComposeSnapshot {
-	images := map[string]string{}
-	ports := map[string][]string{}
-	for name, service := range services {
-		images[name] = ReadServiceImage(service)
-		ports[name] = NormalizePorts(ReadServicePorts(service))
-	}
-	return ComposeSnapshot{
-		Images: images,
-		Ports:  ports,
-	}
-}
-
-func NormalizePorts(ports []string) []string {
-	out := make([]string, 0, len(ports))
-	for _, port := range ports {
-		value := strings.TrimSpace(port)
-		if value != "" {
-			out = append(out, value)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func MergeSnapshots(snapshots map[string]ComposeSnapshot) (map[string]string, map[string][]string) {
-	images := map[string]string{}
-	ports := map[string][]string{}
-	for _, snapshot := range snapshots {
-		for name, image := range snapshot.Images {
-			if image == "" {
-				continue
-			}
-			if existing, ok := images[name]; !ok || existing == "" {
-				images[name] = image
-			}
-		}
-		for name, portSet := range snapshot.Ports {
-			if len(portSet) == 0 {
-				continue
-			}
-			if _, ok := ports[name]; !ok {
-				ports[name] = portSet
-			}
-		}
-	}
-	return images, ports
-}
-
-func PortsEqual(a []string, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func FindDuplicatePorts(services map[string]map[string]any) []string {
-	seen := map[string]string{}
-	var dupes []string
-	for name, service := range services {
-		for _, port := range NormalizePorts(ReadServicePorts(service)) {
-			host := ReadHostPort(port)
-			if host == "" {
-				continue
-			}
-			if existing, ok := seen[host]; ok && existing != name {
-				dupes = append(dupes, host)
-			} else {
-				seen[host] = name
-			}
-		}
-	}
-	sort.Strings(dupes)
-	return dupes
 }
 
 // FindTargetScopes returns the scope list for a resolved Target from workspace config.

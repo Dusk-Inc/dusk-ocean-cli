@@ -116,7 +116,3 @@ type InitOptions struct {
 	Name string
 }
 
-type ComposeSnapshot struct {
-	Images map[string]string
-	Ports  map[string][]string
-}

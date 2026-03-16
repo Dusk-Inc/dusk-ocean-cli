@@ -27,10 +27,6 @@ var refreshCmd = &cobra.Command{
 			}
 		}
 
-		if err := functions.ValidateComposeConsistency(fs, root); err != nil {
-			return err
-		}
-
 		config, err := functions.ReadWorkspaceConfig(fs)
 		if err != nil {
 			return err

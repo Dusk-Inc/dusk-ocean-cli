@@ -37,8 +37,6 @@ func TestInitWorkspace(t *testing.T) {
 			filepath.Join("repos", "templates", "apps", "libs"),
 			filepath.Join("repos", "templates", "apps", "jobs"),
 			filepath.Join("repos", "templates", "apps", "testing"),
-			filepath.Join("repos", "templates", "apps", "docker-compose.yml"),
-			filepath.Join("repos", "templates", "apps", "docker-compose.dev.yml"),
 		}
 
 		for _, path := range paths {
