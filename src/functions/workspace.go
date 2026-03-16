@@ -37,6 +37,7 @@ type (
 )
 
 const (
+	TargetApp       = models.TargetApp
 	TargetService   = models.TargetService
 	TargetAppLib    = models.TargetAppLib
 	TargetGlobalLib = models.TargetGlobalLib
@@ -722,6 +723,13 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 	}
 
 	for _, app := range config.Apps {
+		if app.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetApp,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", name),
+			})
+		}
 		for _, service := range app.Services {
 			if service.Name == name {
 				matches = append(matches, Target{

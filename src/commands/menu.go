@@ -27,6 +27,7 @@ var menuEntries = []menuEntry{
 	{tokens.MenuOpInstall, "Wire a local library dependency"},
 	{tokens.MenuOpUninstall, "Unwire a local library dependency"},
 	{tokens.MenuOpContain, "Build and push a Docker container image"},
+	{tokens.MenuOpRename, "Rename a repository"},
 	{tokens.MenuOpRefresh, "Install, build, and test the workspace"},
 	{tokens.MenuOpVersion, "Show the CLI version"},
 }
@@ -70,6 +71,8 @@ var menuCmd = &cobra.Command{
 			return runMenuUninstall(cmd)
 		case tokens.MenuOpContain:
 			return runMenuContain(cmd)
+		case tokens.MenuOpRename:
+			return runMenuRename(cmd)
 		case tokens.MenuOpRefresh:
 			return runMenuRefresh(cmd)
 		case tokens.MenuOpVersion:
@@ -414,6 +417,98 @@ func confirmRemoval(label string) (bool, error) {
 		return false, err
 	}
 	return strings.ToLower(answer) == tokens.ConfirmYes, nil
+}
+
+// runMenuRename prompts for a repository type, target, and new name, then executes the rename (REQ 8.4).
+func runMenuRename(cmd *cobra.Command) error {
+	typePrompt := promptui.Select{
+		Label: "Rename type",
+		Items: []string{tokens.MenuTypeApp, tokens.MenuTypeService, tokens.MenuTypeLibrary, tokens.MenuTypeProject},
+	}
+	_, renameType, err := typePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	var repoName string
+	var inApp string
+
+	switch renameType {
+	case tokens.MenuTypeApp:
+		repoName, err = functions.PromptForApp()
+		if err != nil {
+			return err
+		}
+
+	case tokens.MenuTypeService:
+		inApp, err = functions.PromptForApp()
+		if err != nil {
+			return err
+		}
+		repoName, err = functions.PromptForService(inApp)
+		if err != nil {
+			return err
+		}
+
+	case tokens.MenuTypeLibrary:
+		locationPrompt := promptui.Select{
+			Label: "Library location",
+			Items: []string{tokens.MenuLibGlobal, tokens.MenuTypeApp},
+		}
+		_, location, err := locationPrompt.Run()
+		if err != nil {
+			return err
+		}
+		if location == tokens.MenuTypeApp {
+			inApp, err = functions.PromptForApp()
+			if err != nil {
+				return err
+			}
+			repoName, err = functions.PromptForAppLib(inApp)
+			if err != nil {
+				return err
+			}
+		} else {
+			repoName, err = functions.PromptForGlobalLib()
+			if err != nil {
+				return err
+			}
+		}
+
+	case tokens.MenuTypeProject:
+		repoName, err = functions.PromptForProject()
+		if err != nil {
+			return err
+		}
+	}
+
+	newNamePrompt := promptui.Prompt{
+		Label: "New name",
+		Validate: func(input string) error {
+			value := strings.TrimSpace(input)
+			if value == "" {
+				return fmt.Errorf("new name is required")
+			}
+			if strings.ContainsAny(value, " \t\n") {
+				return fmt.Errorf("name cannot include spaces")
+			}
+			for _, ch := range value {
+				if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+					return fmt.Errorf("name must only use letters, numbers, dashes, and underscores")
+				}
+			}
+			return nil
+		},
+	}
+	newName, err := newNamePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	if inApp != "" {
+		return functions.RenameRepo(cmd, afero.NewOsFs(), repoName, strings.TrimSpace(newName), inApp)
+	}
+	return functions.RenameRepo(cmd, afero.NewOsFs(), repoName, strings.TrimSpace(newName))
 }
 
 // runMenuBuild shows a target selector and builds it with dependencies (REQ 3.1).

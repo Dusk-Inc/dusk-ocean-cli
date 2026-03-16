@@ -12,6 +12,14 @@ import (
 // It is a pure function and does not perform any disk I/O.
 func RenameInWorkspaceConfig(config WorkspaceConfig, target Target, oldName string, newName string) (WorkspaceConfig, error) {
 	switch target.Kind {
+	case TargetApp:
+		idx := FindAppIndex(config, oldName)
+		if idx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", oldName)
+		}
+		config.Apps[idx].Name = newName
+		config = renameDepSourceInConfig(config, oldName, newName)
+
 	case TargetGlobalLib:
 		idx := FindGlobalLibraryIndex(config, oldName)
 		if idx == -1 {
@@ -94,6 +102,31 @@ func renameDepsInConfig(config WorkspaceConfig, oldLib string, oldFrom string, n
 	return config
 }
 
+// renameDepSourceInConfig updates all dep.From fields that reference the old app name.
+func renameDepSourceInConfig(config WorkspaceConfig, oldFrom string, newFrom string) WorkspaceConfig {
+	for i := range config.Apps {
+		for j := range config.Apps[i].Libraries {
+			config.Apps[i].Libraries[j].Deps = renameDepSourceInSlice(config.Apps[i].Libraries[j].Deps, oldFrom, newFrom)
+		}
+		for j := range config.Apps[i].Services {
+			config.Apps[i].Services[j].Deps = renameDepSourceInSlice(config.Apps[i].Services[j].Deps, oldFrom, newFrom)
+		}
+		for j := range config.Apps[i].Testing {
+			config.Apps[i].Testing[j].Deps = renameDepSourceInSlice(config.Apps[i].Testing[j].Deps, oldFrom, newFrom)
+		}
+	}
+	return config
+}
+
+func renameDepSourceInSlice(deps []WorkspaceDep, oldFrom string, newFrom string) []WorkspaceDep {
+	for i, dep := range deps {
+		if dep.From == oldFrom {
+			deps[i].From = newFrom
+		}
+	}
+	return deps
+}
+
 func renameDepsInSlice(deps []WorkspaceDep, oldLib string, oldFrom string, newLib string, newFrom string) []WorkspaceDep {
 	for i, dep := range deps {
 		if dep.Lib == oldLib && dep.From == oldFrom {
@@ -115,6 +148,8 @@ func RenameHashFiles(fs afero.Fs, root string, target Target, oldName string, ne
 	var pairs []hashPair
 
 	switch target.Kind {
+	case TargetApp:
+		return renameAppHashDirs(fs, root, oldName, newName)
 	case TargetGlobalLib:
 		pairs = []hashPair{
 			{MakeHashPath(root, "libs", "global", oldName), MakeHashPath(root, "libs", "global", newName)},
@@ -167,8 +202,78 @@ func renameFileIfExists(fs afero.Fs, oldPath string, newPath string) error {
 	return fs.Remove(oldPath)
 }
 
-// RenameRepo renames a repository and propagates changes throughout the workspace (REQ 8.1/8.2/8.3).
-func RenameRepo(cmd *cobra.Command, fs afero.Fs, oldName string, newName string) error {
+// renameAppHashDirs renames app-named subdirectories under each hash category.
+func renameAppHashDirs(fs afero.Fs, root string, oldName string, newName string) error {
+	hashRoot := filepath.Join(root, ".ocean", "hashes")
+	dirs := []string{
+		filepath.Join(hashRoot, "build", "services"),
+		filepath.Join(hashRoot, "build", "libs"),
+		filepath.Join(hashRoot, "build", "tests"),
+		filepath.Join(hashRoot, "check", "services"),
+		filepath.Join(hashRoot, "check", "libs"),
+		filepath.Join(hashRoot, "check", "tests"),
+	}
+	for _, dir := range dirs {
+		oldPath := filepath.Join(dir, oldName)
+		if _, err := fs.Stat(oldPath); err != nil {
+			continue
+		}
+		newPath := filepath.Join(dir, newName)
+		if err := fs.Rename(oldPath, newPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ResolveTargetInApp resolves a service or app library within a specific app (REQ 8.2).
+func ResolveTargetInApp(config WorkspaceConfig, root string, appName string, name string) (Target, error) {
+	appIdx := FindAppIndex(config, appName)
+	if appIdx == -1 {
+		return Target{}, fmt.Errorf("app not found: %s", appName)
+	}
+	var matches []Target
+	for _, svc := range config.Apps[appIdx].Services {
+		if svc.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetService,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "services", name),
+			})
+		}
+	}
+	for _, lib := range config.Apps[appIdx].Libraries {
+		if lib.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetAppLib,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "libs", name),
+			})
+		}
+	}
+	for _, test := range config.Apps[appIdx].Testing {
+		if test.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetTest,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "testing", name),
+			})
+		}
+	}
+	if len(matches) == 0 {
+		return Target{}, fmt.Errorf("target not found in app %s: %s", appName, name)
+	}
+	if len(matches) > 1 {
+		return Target{}, fmt.Errorf("target name is ambiguous in app %s: %s", appName, name)
+	}
+	return matches[0], nil
+}
+
+// RenameRepo renames a repository and propagates changes throughout the workspace (REQ 8.1/8.2/8.3/8.4).
+func RenameRepo(cmd *cobra.Command, fs afero.Fs, oldName string, newName string, appName ...string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -179,15 +284,30 @@ func RenameRepo(cmd *cobra.Command, fs afero.Fs, oldName string, newName string)
 		return err
 	}
 
-	// REQ 8.3: reject if the target does not exist.
-	target, err := ResolveTargetByName(config, root, oldName)
+	// REQ 8.4: reject if the target does not exist.
+	var target Target
+	inApp := ""
+	if len(appName) > 0 {
+		inApp = appName[0]
+	}
+	if inApp != "" {
+		target, err = ResolveTargetInApp(config, root, inApp, oldName)
+	} else {
+		target, err = ResolveTargetByName(config, root, oldName)
+	}
 	if err != nil {
 		return fmt.Errorf("target not found: %s", oldName)
 	}
 
-	// REQ 8.2: reject if new name is already in use.
-	if _, err := ResolveTargetByName(config, root, newName); err == nil {
-		return fmt.Errorf("name conflict: %s is already in use", newName)
+	// REQ 8.3: reject if new name is already in use.
+	if inApp != "" {
+		if _, err := ResolveTargetInApp(config, root, inApp, newName); err == nil {
+			return fmt.Errorf("name conflict: %s is already in use in app %s", newName, inApp)
+		}
+	} else {
+		if _, err := ResolveTargetByName(config, root, newName); err == nil {
+			return fmt.Errorf("name conflict: %s is already in use", newName)
+		}
 	}
 
 	// Update workspace config (pure — no disk I/O).

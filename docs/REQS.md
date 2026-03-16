@@ -107,9 +107,11 @@ Most commands require execution from a valid workspace root.
 `rename` renames a repository and propagates the change to all references throughout the workspace.
 
 #### Requirements
-- [x] 8.1 Given `dusk-ocean rename --repo <old-name> --new-name <new-name>` is executed, when the target exists and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
-- [x] 8.2 Given `rename` is run with a `--new-name` that conflicts with an existing repository name, when validation runs, then Dusk Ocean shall reject with a name-conflict error.
-- [x] 8.3 Given `rename` is run with a `--repo` that does not exist in workspace config, when validation runs, then Dusk Ocean shall reject with a target-not-found error.
+- [x] 8.1 Given `dusk-ocean rename --repo <old-name> --new-name <new-name>` is executed without `--in`, when the target is an app, global library, or project and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
+- [ ] 8.2 Given `dusk-ocean rename --repo <old-name> --new-name <new-name> --in <app-name>` is executed, when the target is a service or app library within the specified app and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
+- [x] 8.3 Given `rename` is run with a `--new-name` that conflicts with an existing repository name, when validation runs, then Dusk Ocean shall reject with a name-conflict error.
+- [x] 8.4 Given `rename` is run with a `--repo` that does not exist in workspace config, when validation runs, then Dusk Ocean shall reject with a target-not-found error.
+- [ ] 8.5 Given `dusk-ocean menu` is executed, when the user selects `rename`, then Dusk Ocean shall prompt the user to select a repository type (app, global library, app library, app service, or project), prompt to select the specific repository within that type, prompt for a new name, and execute the rename operation.
 
 ### 9 Workspace Refresh
 #### Context

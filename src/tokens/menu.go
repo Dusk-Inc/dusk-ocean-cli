@@ -9,6 +9,7 @@ const (
 	MenuOpInstall   = "install"
 	MenuOpUninstall = "uninstall"
 	MenuOpContain   = "contain"
+	MenuOpRename    = "rename"
 	MenuOpRefresh   = "refresh"
 	MenuOpVersion   = "version"
 

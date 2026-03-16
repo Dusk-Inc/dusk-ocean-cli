@@ -3,6 +3,7 @@ package tokens
 const (
 	DefaultImageTag = "dev"
 
+	TargetAppKind       = "app"
 	TargetServiceKind   = "service"
 	TargetAppLibKind    = "app-lib"
 	TargetGlobalLibKind = "global-lib"

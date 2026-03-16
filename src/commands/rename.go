@@ -20,8 +20,15 @@ var renameCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		inApp, err := cmd.Flags().GetString("in")
+		if err != nil {
+			return err
+		}
 		if repo == "" || newName == "" {
 			return fmt.Errorf("--repo and --new-name are required")
+		}
+		if inApp != "" {
+			return functions.RenameRepo(cmd, afero.NewOsFs(), repo, newName, inApp)
 		}
 		return functions.RenameRepo(cmd, afero.NewOsFs(), repo, newName)
 	},
@@ -30,4 +37,5 @@ var renameCmd = &cobra.Command{
 func init() {
 	renameCmd.Flags().String("repo", "", "Current repository name")
 	renameCmd.Flags().String("new-name", "", "New repository name")
+	renameCmd.Flags().String("in", "", "App name (required when renaming a service or app library)")
 }

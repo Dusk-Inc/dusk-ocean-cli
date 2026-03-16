@@ -98,6 +98,7 @@ type RepoConfig struct {
 type TargetKind string
 
 const (
+	TargetApp       TargetKind = tokens.TargetAppKind
 	TargetService   TargetKind = tokens.TargetServiceKind
 	TargetAppLib    TargetKind = tokens.TargetAppLibKind
 	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
