@@ -139,10 +139,10 @@ dusk-ocean init --name <workspace_name>
 ```
 
 ### `menu`
-Interactive prompt interface for scaffolding and deletion. Scaffolding and repo deletion are only available through the menu — there are no flag-based equivalents.
+Guided, interactive interface for all CLI commands. Each menu entry describes the command and collects required inputs via prompts. Scaffolding (`menu create`) and repo deletion (`menu remove`) are exclusively available through the menu and have no flag-based equivalents. All other commands (including `run`, `rename`, `add`, `remove`, etc.) are accessible both through the menu and directly via flags.
 ```bash
 dusk-ocean menu         # top-level command selector
-dusk-ocean menu create  # scaffold a new app or library (prompts for type, name, template)
+dusk-ocean menu create  # scaffold a new app, service, or library (prompts for type, name, template)
 dusk-ocean menu remove  # delete a repo and clean up all references (prompts for confirmation)
 ```
 

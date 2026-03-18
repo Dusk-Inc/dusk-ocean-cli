@@ -197,7 +197,7 @@ The CLI provides a version visibility command.
 `dusk-ocean run` executes a user-defined `run` task for an application or service. Before executing the run task, Dusk Ocean performs hash-based pre-flight checks for build, check, and contain across all repos in the target's dependency tree. Any stale tasks are executed in dependency order (build → check → contain) before the run task begins. If any pre-flight task fails, the run task is not invoked.
 
 #### Requirements
-- [x] 14.1 Given `dusk-ocean run --app <name>` is executed, when the app defines a `run` task, then Dusk Ocean shall perform pre-flight hash checks for build, check, and contain across all repos in the dependency tree and execute any stale tasks in dependency order before invoking the `run` task.
+- [x] 14.1 Given `dusk-ocean run app --name <name>` is executed, when the app defines a `run` task, then Dusk Ocean shall perform pre-flight hash checks for build, check, and contain across all repos in the dependency tree and execute any stale tasks in dependency order before invoking the `run` task.
 - [x] 14.2 Given a pre-flight build hash is stale for one or more repos, when `run` executes, then Dusk Ocean shall run `build` for the affected repo(s) in dependency order before proceeding.
 - [x] 14.3 Given a pre-flight check hash is stale for one or more repos, when `run` executes, then Dusk Ocean shall run `check` for the affected repo(s) in dependency order before proceeding.
 - [x] 14.4 Given a pre-flight contain hash is stale for one or more services and a `contain` task is defined, when `run` executes, then Dusk Ocean shall run `contain` for the affected service(s) before proceeding.
