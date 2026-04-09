@@ -11,16 +11,22 @@ import (
 )
 
 // RegisterRepo brings a directory that already exists at one of the
-// allowed workspace locations under Dusk Ocean management. It writes a
-// starter ocean.config.json to mark the repo as registered, then adds an
+// allowed workspace locations under Dusk Ocean management. It adds an
 // entry to ocean.workspace.json with the supplied (or default "None")
-// remote URL.
+// remote URL, and drops a starter ocean.config.json only if the repo
+// doesn't already have one.
 //
-// Behavior matrix for the target directory:
+// Behavior matrix:
 //
-//	does not exist                  → not-found error
-//	exists, no ocean.config.json    → write starter, register entry
-//	exists, has ocean.config.json   → already-registered error
+//	directory does not exist                                      → not-found error
+//	exists, workspace entry already present                       → already-registered error
+//	exists, no workspace entry, no ocean.config.json on disk      → write starter, register entry
+//	exists, no workspace entry, ocean.config.json already on disk → leave config alone, register entry
+//
+// The workspace registry — not the on-disk ocean.config.json — is the
+// source of truth for "is this repo registered?". A directory may already
+// carry an ocean.config.json because it is itself a dusk-ocean project
+// being added to a sibling workspace; that case must still be registrable.
 //
 // register never clones or moves files; the developer is expected to have
 // placed the repo at the deterministic path before invoking it.
@@ -47,31 +53,75 @@ func RegisterRepo(fs afero.Fs, out io.Writer, kind string, name string, app stri
 		return fmt.Errorf("%s exists and is not a directory", relPath)
 	}
 
-	configPath := filepath.Join(relPath, "ocean.config.json")
-	if _, err := fs.Stat(configPath); err == nil {
-		return fmt.Errorf("repo is already registered at %s", relPath)
-	} else if !os.IsNotExist(err) {
+	// Workspace registry is the source of truth for "already registered".
+	workspaceConfig, err := ReadWorkspaceConfig(fs)
+	if err != nil {
 		return err
+	}
+	if IsRegisteredInWorkspace(workspaceConfig, kind, name, app) {
+		return fmt.Errorf("repo is already registered in workspace: %s/%s", kind, name)
 	}
 
 	if remote == "" {
 		remote = tokens.RemoteNone
 	}
 
-	starterType := kind
-	if kind == tokens.RepoKindTemplate {
-		// A template repo's ocean.config.json carries the kind it scaffolds
-		// so the runtime can route it correctly via ListTemplatesByType.
-		starterType = templateKind
+	// Only drop a starter config when the repo doesn't already ship one.
+	// A pre-existing ocean.config.json belongs to the developer and must
+	// not be silently overwritten by register.
+	configPath := filepath.Join(relPath, "ocean.config.json")
+	if _, err := fs.Stat(configPath); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		starterType := kind
+		if kind == tokens.RepoKindTemplate {
+			// A template repo's ocean.config.json carries the kind it scaffolds
+			// so the runtime can route it correctly via ListTemplatesByType.
+			starterType = templateKind
+		}
+		if err := WriteStarterRepoConfig(fs, relPath, name, starterType); err != nil {
+			return err
+		}
 	}
-	if err := WriteStarterRepoConfig(fs, relPath, name, starterType); err != nil {
-		return err
-	}
+
 	if err := registerEntryInWorkspace(fs, kind, name, app, remote, templateKind); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "registered %s/%s at %s\n", kind, name, relPath)
 	return nil
+}
+
+// IsRegisteredInWorkspace reports whether the workspace config already
+// contains an entry for the given kind/name (and parent app, when the
+// kind requires one). Used by RegisterRepo to gate the "already
+// registered" check on the actual workspace registry rather than on the
+// presence of an ocean.config.json file on disk.
+func IsRegisteredInWorkspace(config WorkspaceConfig, kind string, name string, app string) bool {
+	switch kind {
+	case tokens.RepoKindProject:
+		return FindProjectIndex(config, name) != -1
+	case tokens.RepoKindLibrary:
+		if app == "" {
+			return FindGlobalLibraryIndex(config, name) != -1
+		}
+		appIdx := FindAppIndex(config, app)
+		if appIdx == -1 {
+			return false
+		}
+		return FindAppLibraryIndex(config.Apps[appIdx], name) != -1
+	case tokens.RepoKindApp:
+		return FindAppIndex(config, name) != -1
+	case tokens.RepoKindService:
+		appIdx := FindAppIndex(config, app)
+		if appIdx == -1 {
+			return false
+		}
+		return FindServiceIndex(config.Apps[appIdx], name) != -1
+	case tokens.RepoKindTemplate:
+		return FindTemplateIndex(config, name) != -1
+	}
+	return false
 }
 
 // registerEntryInWorkspace adds the new repo entry to ocean.workspace.json

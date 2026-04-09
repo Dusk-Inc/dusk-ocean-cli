@@ -152,21 +152,69 @@ func TestRegisterRepo_MissingDirectoryErrors(t *testing.T) {
 }
 
 func TestRegisterRepo_AlreadyRegisteredErrors(t *testing.T) {
+	// Workspace registry is the source of truth: an existing entry in
+	// ocean.workspace.json is what makes a repo "already registered",
+	// not the presence of an ocean.config.json on disk.
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
 	repoPath := "repos/projects/tooling"
 	if err := fs.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	if err := afero.WriteFile(fs, filepath.Join(repoPath, "ocean.config.json"), []byte("{}"), 0o644); err != nil {
+	// Pre-populate the workspace registry so the "already registered"
+	// branch fires.
+	if err := AddProjectToWorkspace(fs, "tooling"); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
+
 	err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindProject, "tooling", "", "", "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestRegisterRepo_ExistingConfigNoWorkspaceEntry covers the gap a user
+// hit in practice: a repo that is itself a dusk-ocean project (so it
+// already ships an ocean.config.json) being registered into a sibling
+// workspace where it has no entry yet. The pre-existing config must be
+// left untouched and the workspace entry must be added.
+func TestRegisterRepo_ExistingConfigNoWorkspaceEntry(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	repoPath := "repos/projects/dusk-ocean-cli"
+	if err := fs.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// The repo brings its own ocean.config.json — it is itself a
+	// dusk-ocean project. register must not clobber it.
+	original := []byte(`{"name":"dusk-ocean-cli","language":"go","type":"project"}`)
+	if err := afero.WriteFile(fs, filepath.Join(repoPath, "ocean.config.json"), original, 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindProject, "dusk-ocean-cli", "", "https://github.com/D-U-S-K-D-E-V/dusk-ocean-cli", ""); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+
+	// Workspace entry was added with the supplied remote.
+	cfg := readWorkspaceConfig(t, fs)
+	if len(cfg.Projects) != 1 || cfg.Projects[0].Name != "dusk-ocean-cli" {
+		t.Fatalf("expected project registered, got %+v", cfg.Projects)
+	}
+	if cfg.Projects[0].Remote != "https://github.com/D-U-S-K-D-E-V/dusk-ocean-cli" {
+		t.Errorf("unexpected remote: %q", cfg.Projects[0].Remote)
+	}
+
+	// Pre-existing ocean.config.json was preserved verbatim.
+	got, err := afero.ReadFile(fs, filepath.Join(repoPath, "ocean.config.json"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("ocean.config.json was modified:\nwant: %s\ngot:  %s", original, got)
 	}
 }
 
