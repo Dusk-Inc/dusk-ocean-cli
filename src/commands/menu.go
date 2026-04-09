@@ -29,6 +29,9 @@ var menuEntries = []menuEntry{
 	{tokens.MenuOpContain, "Build and push a Docker container image"},
 	{tokens.MenuOpRename, "Rename a repository"},
 	{tokens.MenuOpRefresh, "Install, build, and test the workspace"},
+	{tokens.MenuOpAdopt, "Clone an external git repo into the workspace"},
+	{tokens.MenuOpRegister, "Register an already-on-disk repo into the workspace"},
+	{tokens.MenuOpTask, "Run a workspace-level task against a repo"},
 	{tokens.MenuOpVersion, "Show the CLI version"},
 }
 
@@ -75,6 +78,12 @@ var menuCmd = &cobra.Command{
 			return runMenuRename(cmd)
 		case tokens.MenuOpRefresh:
 			return runMenuRefresh(cmd)
+		case tokens.MenuOpAdopt:
+			return runMenuAdopt(cmd)
+		case tokens.MenuOpRegister:
+			return runMenuRegister(cmd)
+		case tokens.MenuOpTask:
+			return runMenuTask(cmd)
 		case tokens.MenuOpVersion:
 			fmt.Println(functions.Version)
 			return nil
@@ -704,4 +713,171 @@ func runMenuRefresh(cmd *cobra.Command) error {
 		return err
 	}
 	return functions.CleanupStaleHashes(fs, cmd, root)
+}
+
+// promptForRepoKind prompts the user to choose one of the five adopt/register
+// kinds and (when needed) the parent app or template kind. Returns the
+// kind, the parent app name (which is "" for kinds that do not take an
+// --app), and the template kind (which is "" for non-template kinds).
+func promptForRepoKind() (kind string, app string, templateKind string, err error) {
+	kindPrompt := promptui.Select{
+		Label: "Repo kind",
+		Items: []string{
+			tokens.RepoKindProject,
+			tokens.RepoKindLibrary,
+			tokens.RepoKindApp,
+			tokens.RepoKindService,
+			tokens.RepoKindTemplate,
+		},
+	}
+	_, kind, err = kindPrompt.Run()
+	if err != nil {
+		return "", "", "", err
+	}
+	switch kind {
+	case tokens.RepoKindService:
+		app, err = functions.PromptForApp()
+		if err != nil {
+			return "", "", "", err
+		}
+	case tokens.RepoKindLibrary:
+		scopePrompt := promptui.Select{
+			Label: "Library scope",
+			Items: []string{tokens.MenuLibGlobal, tokens.MenuTypeApp},
+		}
+		_, scope, err := scopePrompt.Run()
+		if err != nil {
+			return "", "", "", err
+		}
+		if scope == tokens.MenuTypeApp {
+			app, err = functions.PromptForApp()
+			if err != nil {
+				return "", "", "", err
+			}
+		}
+	case tokens.RepoKindTemplate:
+		// Apps are not template-able. Only the three allowed kinds appear
+		// in this menu.
+		tkPrompt := promptui.Select{
+			Label: "Template kind (what this template scaffolds)",
+			Items: []string{
+				tokens.TemplateKindService,
+				tokens.TemplateKindLibrary,
+				tokens.TemplateKindProject,
+			},
+		}
+		_, templateKind, err = tkPrompt.Run()
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+	return kind, app, templateKind, nil
+}
+
+// runMenuAdopt prompts for the inputs to dusk-ocean adopt and runs it.
+func runMenuAdopt(cmd *cobra.Command) error {
+	urlPrompt := promptui.Prompt{
+		Label: "Remote URL",
+		Validate: func(input string) error {
+			if strings.TrimSpace(input) == "" {
+				return fmt.Errorf("remote URL is required")
+			}
+			return nil
+		},
+	}
+	remoteURL, err := urlPrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	kind, app, templateKind, err := promptForRepoKind()
+	if err != nil {
+		return err
+	}
+
+	namePrompt := promptui.Prompt{
+		Label:   "Repo name (leave blank to derive from remote URL)",
+		Default: "",
+	}
+	name, err := namePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	return functions.AdoptRepo(afero.NewOsFs(), cmd.OutOrStdout(), cmd.ErrOrStderr(), strings.TrimSpace(remoteURL), kind, strings.TrimSpace(name), app, templateKind)
+}
+
+// runMenuRegister prompts for the inputs to dusk-ocean register and runs it.
+func runMenuRegister(cmd *cobra.Command) error {
+	kind, app, templateKind, err := promptForRepoKind()
+	if err != nil {
+		return err
+	}
+
+	namePrompt := promptui.Prompt{
+		Label: "Repo name",
+		Validate: func(input string) error {
+			if strings.TrimSpace(input) == "" {
+				return fmt.Errorf("repo name is required")
+			}
+			return nil
+		},
+	}
+	name, err := namePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	remotePrompt := promptui.Prompt{
+		Label:   "Remote URL (leave blank for None)",
+		Default: "",
+	}
+	remote, err := remotePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	return functions.RegisterRepo(afero.NewOsFs(), cmd.OutOrStdout(), kind, strings.TrimSpace(name), app, strings.TrimSpace(remote), templateKind)
+}
+
+// runMenuTask prompts for the inputs to dusk-ocean task and runs it.
+func runMenuTask(cmd *cobra.Command) error {
+	namePrompt := promptui.Prompt{
+		Label: "Workspace task name",
+		Validate: func(input string) error {
+			if strings.TrimSpace(input) == "" {
+				return fmt.Errorf("task name is required")
+			}
+			return nil
+		},
+	}
+	taskName, err := namePrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	targetPrompt := promptui.Prompt{
+		Label: "Target repo name",
+		Validate: func(input string) error {
+			if strings.TrimSpace(input) == "" {
+				return fmt.Errorf("target is required")
+			}
+			return nil
+		},
+	}
+	target, err := targetPrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	appPrompt := promptui.Prompt{
+		Label:   "Parent app (leave blank if the target is a project, global library, or app)",
+		Default: "",
+	}
+	app, err := appPrompt.Run()
+	if err != nil {
+		return err
+	}
+
+	return functions.RunWorkspaceTask(afero.NewOsFs(), cmd.OutOrStdout(), cmd.ErrOrStderr(), strings.TrimSpace(taskName), strings.TrimSpace(target), strings.TrimSpace(app))
 }

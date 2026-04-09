@@ -29,20 +29,22 @@ func TestInitWorkspace(t *testing.T) {
 			filepath.Join(".ocean", "hashes"),
 			"repos",
 			filepath.Join("repos", "apps"),
-			filepath.Join("repos", "templates"),
 			filepath.Join("repos", "libs"),
+			filepath.Join("repos", "projects"),
+			filepath.Join("repos", "templates"),
 			filepath.Join("repos", "containers"),
-			filepath.Join("repos", "templates", "apps"),
-			filepath.Join("repos", "templates", "apps", "services"),
-			filepath.Join("repos", "templates", "apps", "libs"),
-			filepath.Join("repos", "templates", "apps", "jobs"),
-			filepath.Join("repos", "templates", "apps", "testing"),
 		}
 
 		for _, path := range paths {
 			if _, err := fs.Stat(path); err != nil {
 				t.Fatalf("expected path: %s: %v", path, err)
 			}
+		}
+
+		// Apps are not template-able. The init layout must NOT include a
+		// repos/templates/apps/ tree.
+		if _, err := fs.Stat(filepath.Join("repos", "templates", "apps")); err == nil {
+			t.Fatalf("repos/templates/apps must not be created by init")
 		}
 
 		if !gitignoreHasEntry(t, fs, ".ocean") {
@@ -163,6 +165,73 @@ func TestEnsureGitIgnore(t *testing.T) {
 			t.Fatalf("expected single .ocean entry")
 		}
 	})
+}
+
+func TestValidateWorkspaceConfig_RejectsRepoVariableCollision(t *testing.T) {
+	cases := []struct {
+		name   string
+		config WorkspaceConfig
+	}{
+		{
+			name: "project shadows reserved name",
+			config: WorkspaceConfig{
+				Workspace: "ws",
+				Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+				Projects: []WorkspaceProject{
+					{Name: "tooling", Variables: map[string]string{"name": "shadowed"}},
+				},
+			},
+		},
+		{
+			name: "global library shadows path",
+			config: WorkspaceConfig{
+				Workspace: "ws",
+				Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+				Libraries: []WorkspaceLibrary{
+					{Name: "lib-a", Variables: map[string]string{"path": "elsewhere"}},
+				},
+			},
+		},
+		{
+			name: "service shadows port",
+			config: WorkspaceConfig{
+				Workspace: "ws",
+				Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+				Apps: []WorkspaceApp{
+					{
+						Name: "app-a",
+						Services: []WorkspaceService{
+							{Name: "svc-a", Variables: map[string]string{"port": "9999"}},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateWorkspaceConfig(tc.config)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), "collides with reserved repo field") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateWorkspaceConfig_AcceptsBenignUserVariables(t *testing.T) {
+	config := WorkspaceConfig{
+		Workspace: "ws",
+		Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+		Projects: []WorkspaceProject{
+			{Name: "tooling", Variables: map[string]string{"deploy_env": "staging", "branch": "main"}},
+		},
+	}
+	if err := ValidateWorkspaceConfig(config); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func gitignoreHasEntry(t *testing.T, fs afero.Fs, entry string) bool {

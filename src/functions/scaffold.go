@@ -66,6 +66,11 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 	})
 }
 
+// appSubdirs is the fixed list of subdirectories scaffolded under every new
+// app. Apps are intentionally not template-able — Dusk Ocean creates this
+// folder structure directly so the layout stays stable across the workspace.
+var appSubdirs = []string{"services", "libs", "jobs", "docs", "testing"}
+
 func AddApp(fs afero.Fs, name string) error {
 	if name == "" {
 		return fmt.Errorf("--name is required")
@@ -78,13 +83,17 @@ func AddApp(fs afero.Fs, name string) error {
 		return err
 	}
 
-	templatePath := filepath.Join("repos", "templates", "apps")
-	if _, err := fs.Stat(templatePath); err != nil {
-		return fmt.Errorf("missing template: %w", err)
-	}
-
-	if err := CopyDir(fs, templatePath, appPath); err != nil {
+	if err := fs.MkdirAll(appPath, 0o755); err != nil {
 		return err
+	}
+	for _, sub := range appSubdirs {
+		subPath := filepath.Join(appPath, sub)
+		if err := fs.MkdirAll(subPath, 0o755); err != nil {
+			return err
+		}
+		if err := afero.WriteFile(fs, filepath.Join(subPath, ".gitkeep"), nil, 0o644); err != nil {
+			return err
+		}
 	}
 
 	appConfig := struct {
@@ -111,7 +120,7 @@ func AddApp(fs afero.Fs, name string) error {
 	return addAppToWorkspace(fs, name)
 }
 
-func AddService(fs afero.Fs, appName string, serviceName string, template string, dockerfile string, replacements map[string]string) error {
+func AddService(fs afero.Fs, appName string, serviceName string, template string, dockerfile string, containerFile string, replacements map[string]string) error {
 	appPath := filepath.Join("repos", "apps", appName)
 	if _, err := fs.Stat(appPath); err != nil {
 		if os.IsNotExist(err) {
@@ -159,7 +168,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.config.json"), payload, 0o644); err != nil {
 			return err
 		}
-		return registerService(fs, appName, serviceName, dockerfile)
+		return registerService(fs, appName, serviceName, dockerfile, containerFile)
 	}
 
 	templatePath := filepath.Join("repos", "templates", template)
@@ -173,7 +182,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 	if err := CopyDirWithReplacements(fs, templatePath, servicePath, replacements); err != nil {
 		return err
 	}
-	return registerService(fs, appName, serviceName, dockerfile)
+	return registerService(fs, appName, serviceName, dockerfile, containerFile)
 }
 
 var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
@@ -215,13 +224,13 @@ func RemoveApp(fs afero.Fs, name string) error {
 	return removeAppFromWorkspace(fs, name)
 }
 
-func registerService(fs afero.Fs, appName string, serviceName string, dockerfile string) error {
+func registerService(fs afero.Fs, appName string, serviceName string, dockerfile string, containerFile string) error {
 	port, err := NextServicePort(fs, appName)
 	if err != nil {
 		return err
 	}
 	image := DefaultServiceImage(appName, serviceName)
-	return AddServiceToWorkspace(fs, appName, serviceName, port, image, dockerfile)
+	return AddServiceToWorkspace(fs, appName, serviceName, port, image, dockerfile, containerFile)
 }
 
 func addAppToWorkspace(fs afero.Fs, name string) error {

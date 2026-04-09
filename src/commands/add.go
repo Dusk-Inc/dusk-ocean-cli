@@ -3,6 +3,7 @@ package cmd
 import
 (
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+	tokens "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,47 +102,10 @@ var addServiceCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		containersRoot := filepath.Join(root, "repos", "containers")
-		containerEntries, err := os.ReadDir(containersRoot)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("no Dockerfiles found")
-			}
-			return err
-		}
-		dockerfiles := make([]string, 0, len(containerEntries))
-		for _, entry := range containerEntries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if strings.HasSuffix(name, "Dockerfile") {
-				dockerfiles = append(dockerfiles, name)
-			}
-		}
-		if len(dockerfiles) == 0 {
-			return fmt.Errorf("no Dockerfiles found")
-		}
-		sort.Strings(dockerfiles)
-		dockerPrompt := promptui.Select{
-			Label: "Select Dockerfile",
-			Items: dockerfiles,
-		}
-		_, dockerfileName, err := dockerPrompt.Run()
+		containerFile, err := promptForContainerFile(root)
 		if err != nil {
 			return err
 		}
-
-		dbPrompt := promptui.Select{
-			Label: "Attach database",
-			Items: []string{"no", "yes"},
-		}
-		_, dbChoice, err := dbPrompt.Run()
-		if err != nil {
-			return err
-		}
-		attachDB := dbChoice == "yes"
-		_ = attachDB
 
 		fs := afero.NewOsFs()
 		replacements := map[string]string{}
@@ -156,11 +120,47 @@ var addServiceCmd = &cobra.Command{
 				return err
 			}
 		}
-		if err := functions.AddService(fs, appName, serviceName, template, dockerfileName, replacements); err != nil {
+
+		// REQ 19: pre-validate template-declared deps BEFORE any files
+		// are copied, so an illegal propagation aborts cleanly with no
+		// half-scaffolded state on disk.
+		if template != "" {
+			workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+			if err != nil {
+				return err
+			}
+			hypothetical := functions.Target{
+				Kind: functions.TargetService,
+				App:  appName,
+				Name: serviceName,
+				Path: filepath.Join(root, "repos", "apps", appName, "services", serviceName),
+			}
+			if err := functions.ValidateTemplateDepsForTarget(root, workspaceConfig, template, hypothetical); err != nil {
+				return err
+			}
+		}
+
+		if err := functions.AddService(fs, appName, serviceName, template, "", containerFile, replacements); err != nil {
 			return err
 		}
 		servicePath := filepath.Join("repos", "apps", appName, "services", serviceName)
-		return functions.RunSetupTask(fs, servicePath, root, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		if err := functions.RunSetupTask(fs, servicePath, root, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			return err
+		}
+
+		// REQ 19: propagate template deps after the new repo is registered.
+		if template != "" {
+			target := functions.Target{
+				Kind: functions.TargetService,
+				App:  appName,
+				Name: serviceName,
+				Path: filepath.Join(root, "repos", "apps", appName, "services", serviceName),
+			}
+			if err := functions.PropagateTemplateDeps(cmd, fs, template, target); err != nil {
+				return err
+			}
+		}
+		return nil
 	},
 }
 
@@ -272,6 +272,31 @@ var addLibCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// REQ 19: pre-validate template-declared deps before copy.
+		workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		var hypothetical functions.Target
+		if location == "app" {
+			hypothetical = functions.Target{
+				Kind: functions.TargetAppLib,
+				App:  appName,
+				Name: libName,
+				Path: filepath.Join(root, "repos", "apps", appName, "libs", libName),
+			}
+		} else {
+			hypothetical = functions.Target{
+				Kind: functions.TargetGlobalLib,
+				Name: libName,
+				Path: filepath.Join(root, "repos", "libs", libName),
+			}
+		}
+		if err := functions.ValidateTemplateDepsForTarget(root, workspaceConfig, templateName, hypothetical); err != nil {
+			return err
+		}
+
 		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
@@ -281,9 +306,17 @@ var addLibCmd = &cobra.Command{
 		}
 
 		if location == "app" {
-			return functions.AddAppLibraryToWorkspace(fs, appName, libName)
+			if err := functions.AddAppLibraryToWorkspace(fs, appName, libName); err != nil {
+				return err
+			}
+		} else {
+			if err := functions.AddGlobalLibraryToWorkspace(fs, libName); err != nil {
+				return err
+			}
 		}
-		return functions.AddGlobalLibraryToWorkspace(fs, libName)
+
+		// REQ 19: propagate template deps after registration.
+		return functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical)
 	},
 }
 
@@ -347,10 +380,32 @@ var addPkgCmd = &cobra.Command{
 			}
 			return err
 		}
+
+		// REQ 19: pre-validate template-declared deps before copy.
+		root, err := functions.GetRoot()
+		if err != nil {
+			return err
+		}
+		workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		hypothetical := functions.Target{
+			Kind: functions.TargetProject,
+			Name: projectName,
+			Path: filepath.Join(root, "repos", "projects", projectName),
+		}
+		if err := functions.ValidateTemplateDepsForTarget(root, workspaceConfig, templateName, hypothetical); err != nil {
+			return err
+		}
+
 		if err := functions.CopyDir(fs, templatePath, destPath); err != nil {
 			return err
 		}
-		return functions.AddProjectToWorkspace(fs, projectName)
+		if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
+			return err
+		}
+		return functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical)
 	},
 }
 
@@ -458,10 +513,33 @@ var addTestCmd = &cobra.Command{
 		for key, value := range prompted {
 			replacements[key] = value
 		}
+
+		// REQ 19: pre-validate template-declared deps before copy.
+		root, err := functions.GetRoot()
+		if err != nil {
+			return err
+		}
+		workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		hypothetical := functions.Target{
+			Kind: functions.TargetTest,
+			App:  appName,
+			Name: testName,
+			Path: filepath.Join(root, "repos", "apps", appName, "testing", testName),
+		}
+		if err := functions.ValidateTemplateDepsForTarget(root, workspaceConfig, templateName, hypothetical); err != nil {
+			return err
+		}
+
 		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
-		return functions.AddTestToWorkspace(fs, appName, testName)
+		if err := functions.AddTestToWorkspace(fs, appName, testName); err != nil {
+			return err
+		}
+		return functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical)
 	},
 }
 
@@ -505,6 +583,11 @@ func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 	return keys, nil
 }
 
+// reservedPlaceholderPrefix marks tokens that Dusk Ocean substitutes at
+// runtime. These are NOT prompted at scaffold time and survive verbatim in
+// the generated files so the runtime engine can fill them in later.
+const reservedPlaceholderPrefix = tokens.VarNsOcean + ":"
+
 func addPlaceholders(value string, placeholders map[string]struct{}) {
 	matches := placeholderPattern.FindAllStringSubmatch(value, -1)
 	for _, match := range matches {
@@ -512,10 +595,89 @@ func addPlaceholders(value string, placeholders map[string]struct{}) {
 			continue
 		}
 		key := strings.TrimSpace(match[1])
-		if key != "" {
-			placeholders[key] = struct{}{}
+		if key == "" {
+			continue
 		}
+		// REQ 3.9: skip reserved {{ocean:*}} tokens — they are filled in
+		// at runtime by Dusk Ocean, not at scaffold time by the user.
+		if strings.HasPrefix(key, reservedPlaceholderPrefix) {
+			continue
+		}
+		placeholders[key] = struct{}{}
 	}
+}
+
+// promptForContainerFile asks the user how to assign a service's
+// container_file (REQ 3.8). Three branches:
+//
+//   - existing: pick a file already present under repos/containers/.
+//   - custom:   accept an arbitrary workspace-relative or bare path.
+//   - none:     leave the field empty.
+//
+// The returned string goes straight into WorkspaceService.ContainerFile.
+func promptForContainerFile(root string) (string, error) {
+	containerOptionExisting := "existing"
+	containerOptionCustom := "custom"
+	containerOptionNone := "none"
+
+	choicePrompt := promptui.Select{
+		Label: "Container file",
+		Items: []string{containerOptionExisting, containerOptionCustom, containerOptionNone},
+	}
+	_, choice, err := choicePrompt.Run()
+	if err != nil {
+		return "", err
+	}
+
+	switch choice {
+	case containerOptionNone:
+		return "", nil
+
+	case containerOptionCustom:
+		customPrompt := promptui.Prompt{
+			Label: "Container file path (workspace-relative)",
+			Validate: func(input string) error {
+				if strings.TrimSpace(input) == "" {
+					return fmt.Errorf("container file path is required")
+				}
+				return nil
+			},
+		}
+		value, err := customPrompt.Run()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(value), nil
+
+	case containerOptionExisting:
+		containersRoot := filepath.Join(root, "repos", "containers")
+		entries, err := os.ReadDir(containersRoot)
+		if err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+		var files []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			files = append(files, entry.Name())
+		}
+		if len(files) == 0 {
+			return "", fmt.Errorf("no files in repos/containers/; pick custom or none instead")
+		}
+		sort.Strings(files)
+		filePrompt := promptui.Select{
+			Label: "Select container file",
+			Items: files,
+		}
+		_, file, err := filePrompt.Run()
+		if err != nil {
+			return "", err
+		}
+		return file, nil
+	}
+
+	return "", nil
 }
 
 func promptPlaceholderValues(placeholders []string) (map[string]string, error) {

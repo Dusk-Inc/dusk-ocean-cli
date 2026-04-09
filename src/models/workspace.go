@@ -3,12 +3,15 @@ package models
 import "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 
 type WorkspaceConfig struct {
-	Workspace string             `json:"workspace"`
-	Version   string             `json:"version,omitempty"`
-	Ports     WorkspacePorts     `json:"ports"`
-	Apps      []WorkspaceApp     `json:"apps"`
-	Libraries []WorkspaceLibrary `json:"libraries"`
-	Projects  []WorkspaceProject `json:"projects"`
+	Workspace string              `json:"workspace"`
+	Version   string              `json:"version,omitempty"`
+	Variables map[string]string   `json:"variables,omitempty"`
+	Tasks     map[string]string   `json:"tasks,omitempty"`
+	Ports     WorkspacePorts      `json:"ports"`
+	Apps      []WorkspaceApp      `json:"apps"`
+	Libraries []WorkspaceLibrary  `json:"libraries"`
+	Projects  []WorkspaceProject  `json:"projects"`
+	Templates []WorkspaceTemplate `json:"templates"`
 }
 
 type WorkspacePorts struct {
@@ -28,6 +31,8 @@ type WorkspaceReservedPort struct {
 
 type WorkspaceApp struct {
 	Name      string             `json:"name"`
+	Remote    string             `json:"remote,omitempty"`
+	Variables map[string]string  `json:"variables,omitempty"`
 	Services  []WorkspaceService `json:"services"`
 	Libraries []WorkspaceLibrary `json:"libraries"`
 	Testing   []WorkspaceTest    `json:"testing"`
@@ -39,32 +44,53 @@ type WorkspaceImage struct {
 }
 
 type WorkspaceService struct {
-	Name          string         `json:"name"`
-	Port          string         `json:"port"`
-	Image         WorkspaceImage `json:"image"`
-	Dockerfile    string         `json:"Dockerfile"`
-	ContainerFile string         `json:"container_file,omitempty"`
-	ImagePath     string         `json:"image_path,omitempty"`
-	Scopes        []string       `json:"scopes,omitempty"`
-	Deps          []WorkspaceDep `json:"deps"`
+	Name          string            `json:"name"`
+	Port          string            `json:"port"`
+	Image         WorkspaceImage    `json:"image"`
+	Dockerfile    string            `json:"Dockerfile"`
+	ContainerFile string            `json:"container_file,omitempty"`
+	ImagePath     string            `json:"image_path,omitempty"`
+	Remote        string            `json:"remote,omitempty"`
+	Variables     map[string]string `json:"variables,omitempty"`
+	Scopes        []string          `json:"scopes,omitempty"`
+	Deps          []WorkspaceDep    `json:"deps"`
 }
 
 type WorkspaceLibrary struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
+	Name      string            `json:"name"`
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+	Scopes    []string          `json:"scopes,omitempty"`
+	Deps      []WorkspaceDep    `json:"deps"`
 }
 
 type WorkspaceProject struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
+	Name      string            `json:"name"`
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+	Scopes    []string          `json:"scopes,omitempty"`
+	Deps      []WorkspaceDep    `json:"deps"`
 }
 
 type WorkspaceTest struct {
-	Name   string         `json:"name"`
-	Scopes []string       `json:"scopes,omitempty"`
-	Deps   []WorkspaceDep `json:"deps"`
+	Name      string            `json:"name"`
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+	Scopes    []string          `json:"scopes,omitempty"`
+	Deps      []WorkspaceDep    `json:"deps"`
+}
+
+// WorkspaceTemplate represents a scaffold template registered in
+// ocean.workspace.json. Templates are scaffolding sources for new repos and
+// are intentionally limited to the kinds: service, library, project. Apps
+// are not template-able — Dusk Ocean scaffolds the app folder structure
+// directly in code.
+type WorkspaceTemplate struct {
+	Name      string            `json:"name"`
+	Kind      string            `json:"kind"` // service|library|project
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+	Deps      []WorkspaceDep    `json:"deps"`
 }
 
 type WorkspaceDep struct {

@@ -121,6 +121,9 @@ func init() {
 	rootCmd.AddCommand(renameCmd)
 	rootCmd.AddCommand(moveCmd)
 	rootCmd.AddCommand(hashCmd)
+	rootCmd.AddCommand(adoptCmd)
+	rootCmd.AddCommand(registerCmd)
+	rootCmd.AddCommand(taskCmd)
 
 	menuCmd.AddCommand(menuCreateCmd)
 	menuCmd.AddCommand(menuRemoveCmd)

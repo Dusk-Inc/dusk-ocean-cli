@@ -50,10 +50,11 @@ Map each component type to its directory path convention and carry the metadata 
 | Model | Path Convention | Notable Fields |
 |---|---|---|
 | `WorkspaceApp` | `repos/apps/<name>` | services, app libraries, test projects |
-| `WorkspaceService` | `repos/apps/<app>/services/<name>` | port, image name, dockerfile, dependencies |
+| `WorkspaceService` | `repos/apps/<app>/services/<name>` | port, image name, dockerfile, container_file, dependencies |
 | `WorkspaceLibrary` | `repos/libs/<name>` or `repos/apps/<app>/libs/<name>` | name, dependencies |
 | `WorkspaceProject` | `repos/projects/<name>` | name, dependencies |
 | `WorkspaceTest` | `repos/apps/<app>/testing/<name>` | name, dependencies |
+| `WorkspaceTemplate` | `repos/templates/<name>` | name, kind (`service`/`library`/`project`), deps propagated at scaffold time |
 
 ## WorkspaceDep
 
@@ -158,3 +159,91 @@ String constant packages in `src/tokens/`. Three files: `commands.go`, `files.go
 
 ### Function
 Centralized string literal store for command names, file names, and path segments shared across the codebase.
+
+## VariableContext
+
+### Definition
+Go struct in `src/functions/variables.go` carrying four `map[string]string` fields — `Env`, `Var`, `Ocean`, `Repo` — one per substitution namespace.
+
+### Function
+Aggregates the values consulted by `Substitute`. Each map is keyed by the bare variable name (no namespace prefix) and is populated by callers before substitution runs.
+
+## Substitute
+
+### Definition
+Top-level function in `src/functions/variables.go`. Uses a regex-driven `ReplaceAllStringFunc` against `{{ns:name}}` tokens.
+
+### Function
+Replaces every recognized token in a template string with the value from the matching namespace in `VariableContext`. Strict: an unknown namespace or a missing key in a known namespace surfaces a hard error rather than producing a silent empty string. Used by the workspace task executor; the contain command keeps its own literal `ReplaceAll` path to preserve lenient tolerance of unknown tokens in contain tasks.
+
+## LoadEnvFile
+
+### Definition
+Function in `src/functions/variables.go`. Reads `.env` from the workspace root via the supplied `afero.Fs`.
+
+### Function
+Parses simple `KEY=VALUE` pairs (with `#` comments and blank lines tolerated) and returns them as a map. A missing file is logged via the writer argument and yields an empty map without raising an error, matching the project's "no silent defaults" guidance.
+
+## BuildRepoVariables
+
+### Definition
+Function in `src/functions/variables.go` that walks the workspace config to find a repo entry by kind and name.
+
+### Function
+Returns the full `{{repo:*}}` map for that entry: reserved fields auto-derived from the workspace model (name, kind, path, scopes, remote, plus per-kind extras like port and image fields for services), with user-declared `variables` merged on top. A user variable that collides with a reserved field name is rejected with a hard error.
+
+## RepoKind helpers
+
+### Definition
+`ResolveRepoPath` and `ValidateRepoKindFlags` in `src/functions/repo_kind.go`, plus the `RepoKindProject`, `RepoKindLibrary`, `RepoKindApp`, and `RepoKindService` constants in `src/tokens/workspace.go`.
+
+### Function
+Centralize the deterministic on-disk layout for adopted/registered repos and the flag-validation rules: `service` requires `--app`, `library` accepts `--app` optionally (presence flips global → app-scoped), `project`, `app`, and `template` reject `--app`. `template` additionally requires `--template-kind` (one of `service`, `library`, `project` — `app` is rejected because apps are not template-able). Used by both `AdoptRepo` and `RegisterRepo` to keep their behaviors consistent.
+
+## WriteStarterRepoConfig
+
+### Definition
+Function in `src/functions/starter_config.go` that writes a minimal `ocean.config.json` at a given repo path.
+
+### Function
+Drops the empty-task-strings shape used by adopt/register. Refuses to overwrite an existing `ocean.config.json` so a developer's existing config is never silently clobbered.
+
+## AdoptRepo
+
+### Definition
+Function in `src/functions/adopt.go` invoked by `dusk-ocean adopt` and the menu adopt flow.
+
+### Function
+Validates flags, checks the deterministic target path, clones the supplied remote URL via the package-level `gitClone` injection point (stubbable in tests), writes a starter `ocean.config.json`, and registers the new entry in `ocean.workspace.json` with the remote URL populated. Handles the three precondition states (target absent → proceed; target exists without config → suggest register; target exists with config → already-registered error).
+
+## RegisterRepo
+
+### Definition
+Function in `src/functions/register.go` invoked by `dusk-ocean register` and the menu register flow.
+
+### Function
+Mirror of `AdoptRepo` minus the clone step. Operates on a directory the developer has already placed at the deterministic workspace path. Writes a starter `ocean.config.json` and adds a workspace entry with `remote` set from `--remote` or the literal string `"None"` when `--remote` is omitted.
+
+## RunWorkspaceTask
+
+### Definition
+Function in `src/functions/workspace_tasks.go`. Public entry point delegates to `RunWorkspaceTaskAt`, which is the test-friendly core that takes the workspace root explicitly.
+
+### Function
+Resolves the named workspace task from `config.Tasks`, infers the target repo's kind via `ResolveRepoKindByName`, builds the full `VariableContext` (env from `LoadEnvFile`, var from `LoadWorkspaceVariables`, repo from `BuildRepoVariables`, ocean intentionally empty), substitutes the template via `Substitute`, and executes the resulting command via the package-level `runShell` injection point (stubbable in tests). Single-repo execution only; iteration is intentionally deferred.
+
+## WorkspaceTemplate registry
+
+### Definition
+Helpers in `src/functions/templates.go` (`AddTemplateToWorkspace`, `RemoveTemplateFromWorkspace`, `FindTemplateIndex`, `FindTemplatesByKind`, `ValidateTemplateDepsForTarget`, `PropagateTemplateDeps`) backed by `WorkspaceConfig.Templates` and the `WorkspaceTemplate` model.
+
+### Function
+Manages the workspace registry of scaffold templates. Each `WorkspaceTemplate` carries a `kind` (`service`, `library`, or `project`) and a `deps` list. Apps are intentionally not template-able — `ValidateTemplateKind` and `FindTemplatesByKind` both reject the `app` kind. Templates are excluded from `BuildWorkspaceGraph`/`CollectWorkspaceNodes`, so they never participate in build/check/refresh/contain/hash flows. `ListTemplatesByType` consults `Templates` first and falls back to a filesystem walk under `repos/templates/` for unregistered template directories so the dev loop of "drop a folder, scaffold from it" still works.
+
+## PropagateTemplateDeps
+
+### Definition
+Function in `src/functions/templates.go`, called from each `add*Cmd` flow in `src/commands/add.go` after the freshly-scaffolded repo is registered in workspace config.
+
+### Function
+Walks the template's registered `deps` list and wires each entry into the new repo by delegating to `WireLocalDependency`, so the same scope/cycle/flow checks and `add` task execution apply as if the user had run `dusk-ocean add` by hand. The companion `ValidateTemplateDepsForTarget` runs **before** any files are copied — using the same `resolveDependency` + `validateInstallFlow` rules against a synthetic Target — so an illegal propagation aborts cleanly with no half-scaffolded state on disk.

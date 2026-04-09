@@ -83,7 +83,7 @@ func ServiceImageReference(fs afero.Fs, appName string, serviceName string) (str
 	return formatImageReference(image), nil
 }
 
-func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port string, image WorkspaceImage, dockerfile string) error {
+func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port string, image WorkspaceImage, dockerfile string, containerFile string) error {
 	workspaceConfig, err := ReadWorkspaceConfig(fs)
 	if err != nil {
 		return err
@@ -103,11 +103,12 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 			Name: appName,
 			Services: []WorkspaceService{
 				{
-					Name:       serviceName,
-					Port:       port,
-					Image:      image,
-					Dockerfile: dockerfile,
-					Deps:       []WorkspaceDep{},
+					Name:          serviceName,
+					Port:          port,
+					Image:         image,
+					Dockerfile:    dockerfile,
+					ContainerFile: containerFile,
+					Deps:          []WorkspaceDep{},
 				},
 			},
 			Libraries: []WorkspaceLibrary{},
@@ -119,24 +120,29 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 	serviceIndex := FindServiceIndex(workspaceConfig.Apps[appIndex], serviceName)
 	if serviceIndex == -1 {
 		workspaceConfig.Apps[appIndex].Services = append(workspaceConfig.Apps[appIndex].Services, WorkspaceService{
-			Name:       serviceName,
-			Port:       port,
-			Image:      image,
-			Dockerfile: dockerfile,
-			Deps:       []WorkspaceDep{},
+			Name:          serviceName,
+			Port:          port,
+			Image:         image,
+			Dockerfile:    dockerfile,
+			ContainerFile: containerFile,
+			Deps:          []WorkspaceDep{},
 		})
 	} else {
-		existingDeps := workspaceConfig.Apps[appIndex].Services[serviceIndex].Deps
-		existingDockerfile := workspaceConfig.Apps[appIndex].Services[serviceIndex].Dockerfile
+		existing := workspaceConfig.Apps[appIndex].Services[serviceIndex]
+		existingDeps := existing.Deps
 		if strings.TrimSpace(dockerfile) == "" {
-			dockerfile = existingDockerfile
+			dockerfile = existing.Dockerfile
+		}
+		if strings.TrimSpace(containerFile) == "" {
+			containerFile = existing.ContainerFile
 		}
 		workspaceConfig.Apps[appIndex].Services[serviceIndex] = WorkspaceService{
-			Name:       serviceName,
-			Port:       port,
-			Image:      image,
-			Dockerfile: dockerfile,
-			Deps:       existingDeps,
+			Name:          serviceName,
+			Port:          port,
+			Image:         image,
+			Dockerfile:    dockerfile,
+			ContainerFile: containerFile,
+			Deps:          existingDeps,
 		}
 	}
 

@@ -22,6 +22,35 @@ func makeServiceInApp(appName string, serviceName string, deps ...WorkspaceDep) 
 	}
 }
 
+// --- substituteOceanPlaceholders ---
+
+func TestSubstituteOceanPlaceholders(t *testing.T) {
+	t.Run("replaces all four reserved tokens", func(t *testing.T) {
+		got := substituteOceanPlaceholders(
+			"docker build -f {{ocean:container_file}} -t {{ocean:image_path}} . # svc={{ocean:service_name}} port={{ocean:port}}",
+			"svc-a", "3001", "registry.example.com/app-a/svc-a", "/abs/ts.Dockerfile",
+		)
+		want := "docker build -f /abs/ts.Dockerfile -t registry.example.com/app-a/svc-a . # svc=svc-a port=3001"
+		if got != want {
+			t.Fatalf("got %q\nwant %q", got, want)
+		}
+	})
+
+	t.Run("leaves unrecognized tokens verbatim", func(t *testing.T) {
+		// Contain historically tolerated unknown tokens; the general
+		// Substitute engine is stricter, so this preserves the legacy
+		// contract for contain tasks specifically.
+		got := substituteOceanPlaceholders(
+			"echo {{ocean:port}} {{var:org}} {{repo:name}}",
+			"svc-a", "3001", "img", "df",
+		)
+		want := "echo 3001 {{var:org}} {{repo:name}}"
+		if got != want {
+			t.Fatalf("got %q\nwant %q", got, want)
+		}
+	})
+}
+
 // --- ResolveContainTarget ---
 
 func TestResolveContainTarget(t *testing.T) {

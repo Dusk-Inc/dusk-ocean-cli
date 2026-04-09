@@ -255,7 +255,12 @@ func resolveContainerFilePath(config WorkspaceConfig, root, stagingPath, appName
 }
 
 // substituteOceanPlaceholders replaces reserved {{ocean:*}} tokens in the task string
-// with their runtime values before execution (REQ 10.9).
+// with their runtime values before execution (REQ 10.9). It uses literal
+// ReplaceAll (rather than the strict Substitute engine) so unrecognized
+// tokens in a contain task are left verbatim instead of erroring — this
+// preserves the historical contain-task behavior. The general variables
+// engine (functions.Substitute) is used by workspace tasks where strict
+// resolution is desired.
 func substituteOceanPlaceholders(task, serviceName, port, imagePath, containerFile string) string {
 	task = strings.ReplaceAll(task, "{{ocean:service_name}}", serviceName)
 	task = strings.ReplaceAll(task, "{{ocean:port}}", port)

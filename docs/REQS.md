@@ -8,7 +8,7 @@ Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dep
 
 #### Requirements
 - [x] 1.1 Given `dusk-ocean init` is run with `--name`, when `ocean.workspace.json` does not exist, then Dusk Ocean shall create it with the provided workspace name, default allowed ports (`3000-3999`), and empty apps and libraries lists.
-- [ ] 1.2 Given `dusk-ocean init` is run, when baseline directories are missing, then Dusk Ocean shall create `.ocean`, `.ocean/results`, `.ocean/hashes`, `repos`, `repos/apps`, `repos/libs`, and template directories under `repos/templates/apps` (including `services/`, `jobs/`, `libs/`, and `docs/` subfolders).
+- [x] 1.2 Given `dusk-ocean init` is run, when baseline directories are missing, then Dusk Ocean shall create `.ocean`, `.ocean/results`, `.ocean/hashes`, `repos`, `repos/apps`, `repos/libs`, `repos/projects`, `repos/templates`, and `repos/containers`. Apps are not template-able, so init shall not create any `repos/templates/apps/` tree.
 - [x] 1.3 Given new scaffold directories are created during init, when directory creation completes, then Dusk Ocean shall create `.gitkeep` files for tracked empty folders except `.ocean` folders.
 - [x] 1.4 Given `.gitignore` is missing or does not contain `.ocean`, when init runs, then Dusk Ocean shall create/update `.gitignore` and ensure exactly one `.ocean` entry is present.
 - [x] 1.5 Given `--name` is missing, when init is executed, then Dusk Ocean shall reject the command with a required-flag error.
@@ -33,15 +33,15 @@ Most commands require execution from a valid workspace root.
 
 #### Requirements
 - [x] 3.1 Given `dusk-ocean menu` is executed, when the user selects a command, then Dusk Ocean shall present a description of the selected command and prompt for all required inputs before executing.
-- [x] 3.2 Given `dusk-ocean menu create` selects app type, when prompts complete, then Dusk Ocean shall scaffold `repos/apps/<name>/` with `services/`, `jobs/`, `libs/`, and `docs/` subdirectories and register it in workspace config.
+- [x] 3.2 Given `dusk-ocean menu create` selects app type, when prompts complete, then Dusk Ocean shall directly create `repos/apps/<name>/` with `services/`, `jobs/`, `libs/`, `docs/`, and `testing/` subdirectories (and a starter `ocean.config.json`) and register it in workspace config. Apps are not template-driven — these subfolders are created in code rather than copied from a template tree.
 - [x] 3.3 Given `dusk-ocean menu create` selects library type, when the user selects workspace-level or app-adjacent placement and provides a name, then Dusk Ocean shall scaffold `repos/libs/<name>/` or `repos/apps/<app>/libs/<name>/` accordingly and register it in workspace config.
 - [x] 3.4 Given template files include `{{placeholder}}` tokens, when scaffolding occurs, then Dusk Ocean shall prompt for replacement values and apply them to both file names and file contents.
 - [x] 3.5 Given `dusk-ocean menu remove` is executed, when the user selects a target and confirms deletion, then Dusk Ocean shall delete the target directory and unregister it from workspace config.
 - [x] 3.6 Given `menu remove` targets a library that has dependents, when deletion is confirmed, then Dusk Ocean shall run uninstall tasks for all dependent repos before removing the library and pruning dependency references from workspace config.
 - [x] 3.7 Given user confirmation is not `y` in any `menu remove` flow, when the prompt resolves, then Dusk Ocean shall abort without mutation.
 
-- [ ] 3.8 Given `dusk-ocean menu create` selects service type, when the service scaffold prompt completes, then Dusk Ocean shall ask whether to assign a container file to the service: (a) select an existing file from `repos/containers/`, (b) provide a custom container file path, or (c) none; the selection shall be recorded as the service's `container_file` in workspace config.
-- [ ] 3.9 Given a scaffold template contains a placeholder prefixed with `ocean:` (e.g. `{{ocean:port}}`), when scaffolding occurs, then Dusk Ocean shall treat it as a reserved system placeholder, shall NOT prompt the user for a replacement value, and shall preserve it verbatim in the generated file for runtime substitution by Dusk Ocean.
+- [x] 3.8 Given `dusk-ocean menu create` selects service type, when the service scaffold prompt completes, then Dusk Ocean shall ask whether to assign a container file to the service: (a) select an existing file from `repos/containers/`, (b) provide a custom container file path, or (c) none; the selection shall be recorded as the service's `container_file` in workspace config.
+- [x] 3.9 Given a scaffold template contains a placeholder prefixed with `ocean:` (e.g. `{{ocean:port}}`), when scaffolding occurs, then Dusk Ocean shall treat it as a reserved system placeholder, shall NOT prompt the user for a replacement value, and shall preserve it verbatim in the generated file for runtime substitution by Dusk Ocean.
 
 #### Constraints
 - Scaffolding (`menu create`) and repo deletion (`menu remove`) are only available through the menu and have no flag-based equivalents.
@@ -108,10 +108,10 @@ Most commands require execution from a valid workspace root.
 
 #### Requirements
 - [x] 8.1 Given `dusk-ocean rename --repo <old-name> --new-name <new-name>` is executed without `--in`, when the target is an app, global library, or project and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
-- [ ] 8.2 Given `dusk-ocean rename --repo <old-name> --new-name <new-name> --in <app-name>` is executed, when the target is a service or app library within the specified app and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
+- [x] 8.2 Given `dusk-ocean rename --repo <old-name> --new-name <new-name> --in <app-name>` is executed, when the target is a service or app library within the specified app and the new name is not already in use, then Dusk Ocean shall rename the repository directory, update `ocean.config.json`, update all workspace config references, update hash store paths, and update all dependency references that name the old repo.
 - [x] 8.3 Given `rename` is run with a `--new-name` that conflicts with an existing repository name, when validation runs, then Dusk Ocean shall reject with a name-conflict error.
 - [x] 8.4 Given `rename` is run with a `--repo` that does not exist in workspace config, when validation runs, then Dusk Ocean shall reject with a target-not-found error.
-- [ ] 8.5 Given `dusk-ocean menu` is executed, when the user selects `rename`, then Dusk Ocean shall prompt the user to select a repository type (app, global library, app library, app service, or project), prompt to select the specific repository within that type, prompt for a new name, and execute the rename operation.
+- [x] 8.5 Given `dusk-ocean menu` is executed, when the user selects `rename`, then Dusk Ocean shall prompt the user to select a repository type (app, global library, app library, app service, or project), prompt to select the specific repository within that type, prompt for a new name, and execute the rename operation.
 
 ### 9 Workspace Refresh
 #### Context
@@ -224,4 +224,79 @@ Projects are standalone repositories that live under `repos/projects/` and are r
 - Project names shall reject whitespace and follow the same character constraints applied to other repository types.
 - Projects live exclusively under `repos/projects/` and shall not be co-located in `repos/apps/` or `repos/libs/`.
 
+### 16 Variables
+#### Context
+Task commands in `ocean.workspace.json` and `ocean.config.json` may reference values through four namespaces: `{{env:NAME}}` (workspace-root `.env`), `{{var:NAME}}` (top-level `variables` map in `ocean.workspace.json`), `{{ocean:NAME}}` (system-reserved tokens), and `{{repo:NAME}}` (per-repo fields, re-evaluated against each target). Substitution is strict: missing keys and unknown namespaces are hard errors.
+
+#### Requirements
+- [x] 16.1 Given a task command containing `{{env:NAME}}`, `{{var:NAME}}`, `{{ocean:NAME}}`, or `{{repo:NAME}}` tokens, when Dusk Ocean executes the task, then Dusk Ocean shall replace each token with the value from the matching namespace.
+- [x] 16.2 Given a task command contains a token whose key is missing from its namespace, when substitution runs, then Dusk Ocean shall fail with an error naming the namespace and key.
+- [x] 16.3 Given a task command contains a token with an unknown namespace prefix, when substitution runs, then Dusk Ocean shall fail with an error naming the bad namespace.
+- [x] 16.4 Given a workspace-root `.env` file exists, when `{{env:NAME}}` substitution runs, then Dusk Ocean shall load the file and resolve the token from the parsed `KEY=VALUE` pairs.
+- [x] 16.5 Given the workspace-root `.env` file is absent, when `{{env:NAME}}` substitution runs, then Dusk Ocean shall log the absence and treat the env namespace as empty.
+- [x] 16.6 Given a repo entry in `ocean.workspace.json` declares a `variables` map, when `BuildRepoVariables` runs, then Dusk Ocean shall merge those user variables onto the auto-derived reserved fields.
+- [x] 16.7 Given a repo entry's `variables` block declares a key that collides with a reserved repo field name, when `ValidateWorkspaceConfig` runs, then Dusk Ocean shall reject the workspace config with an error naming the offending repo and key.
+
+#### Constraints
+- Reserved `{{repo:*}}` names are: `name`, `kind`, `path`, `scopes`, `remote` for every kind, plus `port`, `image_name`, `image_tag`, `dockerfile`, `container_file`, `image_path`, `app` for services, and `app` for app-scoped libraries.
+- The four reserved `{{ocean:*}}` contain-time tokens (`service_name`, `port`, `image_path`, `container_file`) continue to be substituted by the contain command using literal `ReplaceAll` semantics so unknown tokens in a contain task are left verbatim rather than rejected.
+
+### 17 Workspace Tasks
+#### Context
+`ocean.workspace.json` may declare a top-level `tasks` map: keys are task names, values are shell command templates that reference any combination of the four variable namespaces. Workspace tasks are invoked via `dusk-ocean task --name <task> --target <repo> [--app <app>]` and execute against a single repo. Iteration across multiple repos is not yet supported.
+
+#### Requirements
+- [x] 17.1 Given `ocean.workspace.json` declares a `tasks` map, when `dusk-ocean task --name <task> --target <repo>` is executed, then Dusk Ocean shall look up the named template, substitute its variable tokens against the target repo's context, and execute the resulting command from the workspace root.
+- [x] 17.2 Given `--name` references a task that does not exist in `tasks`, when the command runs, then Dusk Ocean shall fail with a task-not-found error.
+- [x] 17.3 Given `--target` references a repo that does not exist in workspace config, when the command runs, then Dusk Ocean shall fail with a target-not-found error suggesting `--app` for service or app-scoped library targets.
+- [x] 17.4 Given `--target` matches multiple workspace entries (e.g. a project and a global library with the same name), when resolution runs without `--app`, then Dusk Ocean shall fail with an ambiguity error listing the matching kinds.
+- [x] 17.5 Given a workspace task command exits with a non-zero status, when the task runs, then Dusk Ocean shall surface the exit error.
+
+#### Constraints
+- Workspace tasks execute one repo at a time. Iteration across all registered repos is intentionally deferred.
+- The `Ocean` namespace is empty when running workspace tasks; only the four reserved contain-time tokens populate `{{ocean:*}}` and they only work inside contain tasks.
+
+### 18 Polyrepo Remotes & Adopt/Register
+#### Context
+Each registered repo entry in `ocean.workspace.json` may carry a `remote` field — a plain string holding the upstream git URL — exposed to templates as `{{repo:remote}}`. The literal string `"None"` is a valid sentinel for entries whose upstream is unknown. Two new commands bring repos under management: `adopt` clones an external repo into the deterministic workspace path; `register` records an already-on-disk repo without cloning. Both commands write a starter `ocean.config.json` at the repo root and add a workspace entry. The presence of `ocean.config.json` at a repo root is Dusk Ocean's registration marker.
+
+#### Requirements
+- [x] 18.1 Given `dusk-ocean adopt <remote-url> --kind <kind> --name <name>` is executed and the deterministic target path does not exist, when adopt runs, then Dusk Ocean shall clone `<remote-url>` into that path, write a starter `ocean.config.json` at the repo root, and register the new entry in `ocean.workspace.json` with `remote` populated from `<remote-url>`.
+- [x] 18.2 Given `adopt` runs and the target path already exists with no `ocean.config.json` inside, when the precondition check runs, then Dusk Ocean shall refuse with an error suggesting `register` instead.
+- [x] 18.3 Given `adopt` runs and the target path already exists with an `ocean.config.json` inside, when the precondition check runs, then Dusk Ocean shall refuse with an already-registered error.
+- [x] 18.4 Given `--name` is omitted from `adopt`, when the command runs, then Dusk Ocean shall derive `--name` from the basename of `<remote-url>` (stripping `.git`).
+- [x] 18.5 Given `dusk-ocean register --kind <kind> --name <name>` is executed and the deterministic target path exists with no `ocean.config.json` inside, when register runs, then Dusk Ocean shall write a starter `ocean.config.json` and add the new entry in `ocean.workspace.json` with `remote` set from `--remote` or the literal string `"None"` when `--remote` is omitted.
+- [x] 18.6 Given `register` runs and the deterministic target path does not exist, when the precondition check runs, then Dusk Ocean shall refuse with a not-found error.
+- [x] 18.7 Given `register` runs and the deterministic target path exists with an `ocean.config.json` inside, when the precondition check runs, then Dusk Ocean shall refuse with an already-registered error.
+- [x] 18.8 Given `--kind library` is supplied without `--app`, when adopt or register runs, then Dusk Ocean shall register the repo as a global library at `repos/libs/<name>/`.
+- [x] 18.9 Given `--kind library` is supplied with `--app <app>`, when adopt or register runs, then Dusk Ocean shall register the repo as an app-scoped library at `repos/apps/<app>/libs/<name>/`.
+- [x] 18.10 Given `--kind service` is supplied without `--app`, when flag validation runs, then Dusk Ocean shall reject the command.
+- [x] 18.11 Given `--kind project` or `--kind app` is supplied with `--app`, when flag validation runs, then Dusk Ocean shall reject the command.
+
+#### Constraints
+- The folder layout under `repos/` is deterministic: there is no flag to relocate adopted or registered repos.
+- Authentication for private clones is inherited from the user's ambient git credentials; Dusk Ocean stores no secrets.
+- `register` does not read `.git/config` to auto-detect the remote URL; the user supplies it via `--remote` or accepts the `"None"` sentinel. This keeps the command tool-agnostic.
+
+### 19 Templates as Workspace Entries
+#### Context
+Templates are scaffolding sources used by `dusk-ocean menu create` to stamp out new services, libraries, or projects. Each template is a directory under `repos/templates/<name>/` that may be registered in `ocean.workspace.json` as a top-level `WorkspaceTemplate` entry. A registered template carries a `kind` field declaring what it scaffolds and an optional `deps` list whose entries are automatically wired into anything scaffolded from the template via the same flow as `dusk-ocean add`. Templates are excluded from `build`, `check`, `install`, `run`, `contain`, `refresh`, and the hash manifest — they are not buildable artifacts. Apps are intentionally not template-able: the CLI scaffolds the app folder structure directly in code.
+
+#### Requirements
+- [x] 19.1 Given `dusk-ocean adopt <url> --kind template --name <n> --template-kind <k>` is executed, when validation passes, then Dusk Ocean shall clone the repo into `repos/templates/<n>/`, write a starter `ocean.config.json` whose `type` field is `<k>`, and add a `WorkspaceTemplate` entry to `ocean.workspace.json` with `kind=<k>` and the supplied remote URL.
+- [x] 19.2 Given `dusk-ocean register --kind template --name <n> --template-kind <k>` is executed, when the deterministic path exists without an `ocean.config.json`, then Dusk Ocean shall write the starter config and add a `WorkspaceTemplate` entry just like `adopt` (without cloning).
+- [x] 19.3 Given `--kind template` is supplied with `--template-kind app`, when validation runs, then Dusk Ocean shall reject the command with an error stating apps are not template-able.
+- [x] 19.4 Given `--kind template` is supplied with no `--template-kind`, when validation runs, then Dusk Ocean shall reject the command with a missing-flag error.
+- [x] 19.5 Given `--template-kind` is supplied with a `--kind` other than `template`, when validation runs, then Dusk Ocean shall reject the command.
+- [x] 19.6 Given `dusk-ocean menu create` selects service, library, or project type, when listing available templates, then Dusk Ocean shall include every workspace-registered template whose `kind` matches, plus any unregistered template directories under `repos/templates/` that classify themselves via `ocean.config.json`'s `type` field.
+- [x] 19.7 Given a template registered in workspace config declares one or more entries in `deps`, when a repo is scaffolded from that template, then Dusk Ocean shall pre-validate every dep against the destination kind/app using the same scope, cycle, and flow rules as `dusk-ocean add` BEFORE any files are copied; if any dep would be illegal, the scaffold shall fail and no files shall be copied.
+- [x] 19.8 Given the pre-validation check passes, when scaffold completes and the new repo is registered in workspace config, then Dusk Ocean shall propagate each declared dep by invoking the same wiring path as `dusk-ocean add`, running each dep's `add` task in the new repo's directory and recording the relationship in the workspace dependency graph.
+- [x] 19.9 Given a template is registered in workspace config, when `build`, `check`, `install`, `run`, `contain`, `refresh`, or `hash` runs, then Dusk Ocean shall not include the template in the dependency graph or the hash manifest.
+- [x] 19.10 Given a template is named as the `--payload` of `dusk-ocean add` (or as a dep source in any other repo's workspace entry), when validation runs, then Dusk Ocean shall reject the operation — templates cannot be used as dependencies.
+
+#### Constraints
+- Apps are not template-able. `--template-kind app` is rejected.
+- Template kind values are restricted to `service`, `library`, and `project`.
+- Templates participate in the workspace registry but are excluded from every build/check/refresh path.
+- Filesystem-only templates (a directory under `repos/templates/<n>/` with no workspace entry) remain usable by `menu create` but cannot declare propagated `deps` — only registered templates participate in deps propagation.
 

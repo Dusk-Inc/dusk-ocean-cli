@@ -12,6 +12,9 @@ const (
 	MenuOpRename    = "rename"
 	MenuOpRefresh   = "refresh"
 	MenuOpVersion   = "version"
+	MenuOpAdopt     = "adopt"
+	MenuOpRegister  = "register"
+	MenuOpTask      = "task"
 
 	MenuTypeApp     = "app"
 	MenuTypeLibrary = "library"

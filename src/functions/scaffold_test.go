@@ -8,18 +8,10 @@ import (
 )
 
 func TestAddApp(t *testing.T) {
-	t.Run("domain__valid_name__copies_template", func(t *testing.T) {
+	t.Run("domain__valid_name__creates_subfolders_directly", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		templatePath := filepath.Join("repos", "templates", "apps")
 		appPath := filepath.Join("repos", "apps", "alpha")
-		templateFile := filepath.Join(templatePath, "README.md")
 
-		if err := fs.MkdirAll(templatePath, 0o755); err != nil {
-			t.Fatalf("mkdir template: %v", err)
-		}
-		if err := afero.WriteFile(fs, templateFile, []byte("template"), 0o644); err != nil {
-			t.Fatalf("write template file: %v", err)
-		}
 		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
 			Apps:      []WorkspaceApp{},
 			Libraries: []WorkspaceLibrary{},
@@ -32,17 +24,29 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("AddApp: %v", err)
 		}
 
-		if _, err := fs.Stat(filepath.Join(appPath, "README.md")); err != nil {
-			t.Fatalf("expected file copied: %v", err)
+		// Apps are not template-able — AddApp must mkdir each subfolder
+		// in code, not copy from repos/templates/apps/.
+		for _, sub := range []string{"services", "libs", "jobs", "docs", "testing"} {
+			subPath := filepath.Join(appPath, sub)
+			info, err := fs.Stat(subPath)
+			if err != nil {
+				t.Fatalf("expected subfolder %s: %v", sub, err)
+			}
+			if !info.IsDir() {
+				t.Fatalf("expected %s to be a directory", sub)
+			}
+			if _, err := fs.Stat(filepath.Join(subPath, ".gitkeep")); err != nil {
+				t.Fatalf("expected .gitkeep in %s: %v", sub, err)
+			}
+		}
+
+		if _, err := fs.Stat(filepath.Join(appPath, "ocean.config.json")); err != nil {
+			t.Fatalf("expected ocean.config.json: %v", err)
 		}
 	})
 
 	t.Run("domain__valid_name__registers_workspace_app", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		templatePath := filepath.Join("repos", "templates", "apps")
-		if err := fs.MkdirAll(templatePath, 0o755); err != nil {
-			t.Fatalf("mkdir template: %v", err)
-		}
 		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
 			Apps:      []WorkspaceApp{},
 			Libraries: []WorkspaceLibrary{},
@@ -87,10 +91,20 @@ func TestAddApp(t *testing.T) {
 		}
 	})
 
-	t.Run("complement__missing_template__returns_error", func(t *testing.T) {
+	t.Run("complement__no_app_template_tree_required", func(t *testing.T) {
+		// AddApp must succeed on a freshly initialized workspace that has
+		// NO repos/templates/apps/ tree. This locks in the "apps are not
+		// template-able" decision.
 		fs := afero.NewMemMapFs()
-		if err := AddApp(fs, "alpha"); err == nil {
-			t.Fatalf("expected error")
+		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
+			Apps:      []WorkspaceApp{},
+			Libraries: []WorkspaceLibrary{},
+			Projects:  []WorkspaceProject{},
+		}); err != nil {
+			t.Fatalf("write workspace config: %v", err)
+		}
+		if err := AddApp(fs, "alpha"); err != nil {
+			t.Fatalf("AddApp must not require a template tree: %v", err)
 		}
 	})
 }

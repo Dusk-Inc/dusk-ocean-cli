@@ -29,6 +29,7 @@ type (
 	WorkspaceLibrary      = models.WorkspaceLibrary
 	WorkspaceProject      = models.WorkspaceProject
 	WorkspaceTest         = models.WorkspaceTest
+	WorkspaceTemplate     = models.WorkspaceTemplate
 	WorkspaceDep          = models.WorkspaceDep
 	RepoConfig            = models.RepoConfig
 	TargetKind            = models.TargetKind
@@ -123,14 +124,10 @@ func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 		filepath.Join(".ocean", "hashes"),
 		"repos",
 		filepath.Join("repos", "apps"),
-		filepath.Join("repos", "templates"),
 		filepath.Join("repos", "libs"),
+		filepath.Join("repos", "projects"),
+		filepath.Join("repos", "templates"),
 		filepath.Join("repos", "containers"),
-		filepath.Join("repos", "templates", "apps"),
-		filepath.Join("repos", "templates", "apps", "services"),
-		filepath.Join("repos", "templates", "apps", "libs"),
-		filepath.Join("repos", "templates", "apps", "jobs"),
-		filepath.Join("repos", "templates", "apps", "testing"),
 	}
 
 	for _, dir := range dirs {
@@ -172,6 +169,7 @@ func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 		Apps:      []WorkspaceApp{},
 		Libraries: []WorkspaceLibrary{},
 		Projects:  []WorkspaceProject{},
+		Templates: []WorkspaceTemplate{},
 	}
 
 	payload, err := json.MarshalIndent(workspaceConfig, "", "    ")
@@ -906,6 +904,9 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 		problems = append(problems, err.Error())
 	}
 	for _, app := range config.Apps {
+		if err := validateRepoVariableCollisions(app.Variables, reservedAppRepoFields); err != nil {
+			problems = append(problems, fmt.Sprintf("app %s variables: %s", app.Name, err.Error()))
+		}
 		serviceNames := map[string]struct{}{}
 		libNames := map[string]struct{}{}
 		for _, service := range app.Services {
@@ -916,6 +917,9 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 			if err := validateDeps(service.Deps); err != nil {
 				problems = append(problems, fmt.Sprintf("app %s service %s deps: %s", app.Name, service.Name, err.Error()))
 			}
+			if err := validateRepoVariableCollisions(service.Variables, reservedServiceFields); err != nil {
+				problems = append(problems, fmt.Sprintf("app %s service %s variables: %s", app.Name, service.Name, err.Error()))
+			}
 		}
 		for _, lib := range app.Libraries {
 			if _, exists := libNames[lib.Name]; exists && !isTemplateName(lib.Name) {
@@ -924,6 +928,9 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 			libNames[lib.Name] = struct{}{}
 			if err := validateDeps(lib.Deps); err != nil {
 				problems = append(problems, fmt.Sprintf("app %s library %s deps: %s", app.Name, lib.Name, err.Error()))
+			}
+			if err := validateRepoVariableCollisions(lib.Variables, reservedAppLibFields); err != nil {
+				problems = append(problems, fmt.Sprintf("app %s library %s variables: %s", app.Name, lib.Name, err.Error()))
 			}
 		}
 		testNames := map[string]struct{}{}
@@ -946,6 +953,9 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 		if err := validateDeps(lib.Deps); err != nil {
 			problems = append(problems, fmt.Sprintf("library %s deps: %s", lib.Name, err.Error()))
 		}
+		if err := validateRepoVariableCollisions(lib.Variables, reservedGlobalLibFields); err != nil {
+			problems = append(problems, fmt.Sprintf("library %s variables: %s", lib.Name, err.Error()))
+		}
 	}
 	projects := map[string]struct{}{}
 	for _, project := range config.Projects {
@@ -956,9 +966,40 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 		if err := validateDeps(project.Deps); err != nil {
 			problems = append(problems, fmt.Sprintf("project %s deps: %s", project.Name, err.Error()))
 		}
+		if err := validateRepoVariableCollisions(project.Variables, reservedProjectFields); err != nil {
+			problems = append(problems, fmt.Sprintf("project %s variables: %s", project.Name, err.Error()))
+		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf(strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
+// reservedProjectFields, reservedAppLibFields, reservedGlobalLibFields,
+// reservedServiceFields, and reservedAppRepoFields enumerate the {{repo:*}}
+// names that are auto-derived from each kind of repo entry. Users may not
+// shadow these via a `variables` block.
+var (
+	reservedProjectFields   = []string{"name", "kind", "path", "scopes", "remote"}
+	reservedAppRepoFields   = []string{"name", "kind", "path", "scopes", "remote"}
+	reservedGlobalLibFields = []string{"name", "kind", "path", "scopes", "remote"}
+	reservedAppLibFields    = []string{"name", "kind", "path", "scopes", "remote", "app"}
+	reservedServiceFields   = []string{"name", "kind", "path", "scopes", "remote", "port", "image_name", "image_tag", "dockerfile", "container_file", "image_path", "app"}
+)
+
+func validateRepoVariableCollisions(user map[string]string, reserved []string) error {
+	if len(user) == 0 {
+		return nil
+	}
+	reservedSet := make(map[string]struct{}, len(reserved))
+	for _, name := range reserved {
+		reservedSet[name] = struct{}{}
+	}
+	for key := range user {
+		if _, exists := reservedSet[key]; exists {
+			return fmt.Errorf("%q collides with reserved repo field", key)
+		}
 	}
 	return nil
 }

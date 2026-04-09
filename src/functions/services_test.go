@@ -155,7 +155,7 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
 
-		err := AddServiceToWorkspace(fs, "{{app_name}}", "{{service_name}}", "3100", WorkspaceImage{}, "Dockerfile")
+		err := AddServiceToWorkspace(fs, "{{app_name}}", "{{service_name}}", "3100", WorkspaceImage{}, "Dockerfile", "")
 		if err != nil {
 			t.Fatalf("AddServiceToWorkspace: %v", err)
 		}
@@ -207,7 +207,7 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		writeWorkspaceConfig(t, fs, config)
 
 		image := WorkspaceImage{Name: "custom-image", Tag: "v1"}
-		err := AddServiceToWorkspace(fs, "{{app_name}}", "{{service_name}}", "3001", image, "Dockerfile")
+		err := AddServiceToWorkspace(fs, "{{app_name}}", "{{service_name}}", "3001", image, "Dockerfile", "")
 		if err != nil {
 			t.Fatalf("AddServiceToWorkspace: %v", err)
 		}
@@ -255,7 +255,7 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		}
 		writeWorkspaceConfig(t, fs, config)
 
-		err := AddServiceToWorkspace(fs, "app", "api", "3005", WorkspaceImage{}, " ")
+		err := AddServiceToWorkspace(fs, "app", "api", "3005", WorkspaceImage{}, " ", "")
 		if err != nil {
 			t.Fatalf("AddServiceToWorkspace: %v", err)
 		}
@@ -276,6 +276,41 @@ func TestAddServiceToWorkspace(t *testing.T) {
 		}
 		if service.Image.Tag != "dev" {
 			t.Fatalf("expected image tag dev, got %s", service.Image.Tag)
+		}
+	})
+
+	t.Run("domain__container_file__persists_to_workspace", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
+
+		err := AddServiceToWorkspace(fs, "alpha", "api", "3000", WorkspaceImage{}, "", "repos/containers/svc.Dockerfile")
+		if err != nil {
+			t.Fatalf("AddServiceToWorkspace: %v", err)
+		}
+
+		config := readWorkspaceConfig(t, fs)
+		service := findService(t, config.Apps[0], "api")
+		if service.ContainerFile != "repos/containers/svc.Dockerfile" {
+			t.Fatalf("expected ContainerFile to persist, got %q", service.ContainerFile)
+		}
+		if service.Dockerfile != "" {
+			t.Fatalf("expected Dockerfile empty when only container_file given, got %q", service.Dockerfile)
+		}
+	})
+
+	t.Run("complement__container_file_none__leaves_field_empty", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
+
+		err := AddServiceToWorkspace(fs, "alpha", "api", "3000", WorkspaceImage{}, "", "")
+		if err != nil {
+			t.Fatalf("AddServiceToWorkspace: %v", err)
+		}
+
+		config := readWorkspaceConfig(t, fs)
+		service := findService(t, config.Apps[0], "api")
+		if service.ContainerFile != "" {
+			t.Fatalf("expected empty ContainerFile, got %q", service.ContainerFile)
 		}
 	})
 }
