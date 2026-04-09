@@ -37,4 +37,24 @@ const (
 	VarNsVar   = "var"
 	VarNsOcean = "ocean"
 	VarNsRepo  = "repo"
+
+	// Default workspace task names pre-populated by `dusk-ocean init` so
+	// the slots are visible in the freshly-written ocean.workspace.json
+	// and the developer can fill in the command for each one.
+	WorkspaceTaskClone            = "clone"
+	WorkspaceTaskInit             = "init"
+	WorkspaceTaskCreateRemote     = "create_remote"
+	WorkspaceTaskCheckoutExisting = "checkout_existing"
+	WorkspaceTaskCheckoutNew      = "checkout_new"
 )
+
+// DefaultWorkspaceTaskNames is the canonical ordered list of workspace
+// task names that `dusk-ocean init` writes into a new ocean.workspace.json
+// with empty command strings. The order matches the README's example.
+var DefaultWorkspaceTaskNames = []string{
+	WorkspaceTaskClone,
+	WorkspaceTaskInit,
+	WorkspaceTaskCreateRemote,
+	WorkspaceTaskCheckoutExisting,
+	WorkspaceTaskCheckoutNew,
+}

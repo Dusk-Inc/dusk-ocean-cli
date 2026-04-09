@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 )
 
@@ -63,6 +64,34 @@ func TestInitWorkspace(t *testing.T) {
 		}
 		if len(config.Projects) != 0 {
 			t.Fatalf("expected no projects, got %d", len(config.Projects))
+		}
+
+		// Variables map should be present-but-empty so the slot is
+		// visible in the freshly-written ocean.workspace.json.
+		if config.Variables == nil {
+			t.Fatalf("expected initialized Variables map, got nil")
+		}
+		if len(config.Variables) != 0 {
+			t.Fatalf("expected empty Variables map, got %v", config.Variables)
+		}
+
+		// Tasks map should be pre-populated with each default workspace
+		// task name and an empty command string for each one.
+		if config.Tasks == nil {
+			t.Fatalf("expected initialized Tasks map, got nil")
+		}
+		for _, name := range tokens.DefaultWorkspaceTaskNames {
+			cmd, ok := config.Tasks[name]
+			if !ok {
+				t.Errorf("expected default task %q to be present", name)
+				continue
+			}
+			if cmd != "" {
+				t.Errorf("expected default task %q to be empty, got %q", name, cmd)
+			}
+		}
+		if len(config.Tasks) != len(tokens.DefaultWorkspaceTaskNames) {
+			t.Errorf("expected %d default tasks, got %d", len(tokens.DefaultWorkspaceTaskNames), len(config.Tasks))
 		}
 	})
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -156,9 +157,16 @@ func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 		return err
 	}
 
+	tasks := map[string]string{}
+	for _, name := range tokens.DefaultWorkspaceTaskNames {
+		tasks[name] = ""
+	}
+
 	workspaceConfig := WorkspaceConfig{
 		Workspace: opts.Name,
 		Version:   "",
+		Variables: map[string]string{},
+		Tasks:     tasks,
 		Ports: WorkspacePorts{
 			Allowed: WorkspacePortRange{
 				Min: 3000,

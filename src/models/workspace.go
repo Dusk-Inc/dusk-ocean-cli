@@ -5,8 +5,8 @@ import "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 type WorkspaceConfig struct {
 	Workspace string              `json:"workspace"`
 	Version   string              `json:"version,omitempty"`
-	Variables map[string]string   `json:"variables,omitempty"`
-	Tasks     map[string]string   `json:"tasks,omitempty"`
+	Variables map[string]string   `json:"variables"`
+	Tasks     map[string]string   `json:"tasks"`
 	Ports     WorkspacePorts      `json:"ports"`
 	Apps      []WorkspaceApp      `json:"apps"`
 	Libraries []WorkspaceLibrary  `json:"libraries"`
