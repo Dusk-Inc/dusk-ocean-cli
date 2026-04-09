@@ -155,15 +155,16 @@ func TestAdoptRepo_DirectoryWithoutConfigErrorsSuggestRegister(t *testing.T) {
 	}
 }
 
-func TestAdoptRepo_DirectoryWithConfigErrorsAlreadyRegistered(t *testing.T) {
+func TestAdoptRepo_AlreadyRegisteredErrors(t *testing.T) {
+	// Workspace registry is the source of truth: an existing entry in
+	// ocean.workspace.json is what makes a repo "already registered",
+	// not the presence of an ocean.config.json on disk.
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
-	if err := fs.MkdirAll("repos/projects/tooling", 0o755); err != nil {
+	if err := AddProjectToWorkspace(fs, "tooling"); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	if err := afero.WriteFile(fs, "repos/projects/tooling/ocean.config.json", []byte("{}"), 0o644); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+
 	err := AdoptRepo(fs, &bytes.Buffer{}, &bytes.Buffer{},
 		"git@github.com:dusk-inc/tooling.git", tokens.RepoKindProject, "tooling", "", "")
 	if err == nil {
@@ -171,6 +172,51 @@ func TestAdoptRepo_DirectoryWithConfigErrorsAlreadyRegistered(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestAdoptRepo_PreservesClonedConfig covers the gap a user hit in
+// practice: cloning a repo that is itself a dusk-ocean project (so it
+// brings its own ocean.config.json) must register the workspace entry
+// AND leave the cloned config untouched. The previous behavior errored
+// out before registration, leaving the workspace registry empty.
+func TestAdoptRepo_PreservesClonedConfig(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+
+	// Stub git clone to drop a cloned ocean.config.json into the target
+	// path, simulating a repo that ships dusk-ocean management.
+	original := []byte(`{"name":"iris-components","language":"typescript","type":"library"}`)
+	prev := gitClone
+	t.Cleanup(func() { gitClone = prev })
+	gitClone = func(url, dest string, stdout, stderr io.Writer) error {
+		if err := fs.MkdirAll(dest, 0o755); err != nil {
+			return err
+		}
+		return afero.WriteFile(fs, filepath.Join(dest, "ocean.config.json"), original, 0o644)
+	}
+
+	if err := AdoptRepo(fs, &bytes.Buffer{}, &bytes.Buffer{},
+		"https://github.com/D-U-S-K-D-E-V/iris-components", tokens.RepoKindLibrary, "iris-components", "", ""); err != nil {
+		t.Fatalf("AdoptRepo: %v", err)
+	}
+
+	// Workspace entry was added.
+	cfg, _ := ReadWorkspaceConfig(fs)
+	if len(cfg.Libraries) != 1 || cfg.Libraries[0].Name != "iris-components" {
+		t.Fatalf("expected library registered: %+v", cfg.Libraries)
+	}
+	if cfg.Libraries[0].Remote != "https://github.com/D-U-S-K-D-E-V/iris-components" {
+		t.Errorf("unexpected remote: %q", cfg.Libraries[0].Remote)
+	}
+
+	// Cloned ocean.config.json was preserved verbatim.
+	got, err := afero.ReadFile(fs, "repos/libs/iris-components/ocean.config.json")
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("ocean.config.json was modified:\nwant: %s\ngot:  %s", original, got)
 	}
 }
 

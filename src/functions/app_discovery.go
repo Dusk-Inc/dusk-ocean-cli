@@ -1,0 +1,164 @@
+package functions
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"github.com/spf13/afero"
+)
+
+// AppSubRepoKind classifies the three kinds of sub-repo that may live
+// inside an app's directory tree. The string values match the existing
+// repo kinds where applicable, plus "test" for app testing projects
+// (which adopt/register do not accept as a top-level --kind).
+const (
+	AppSubRepoKindService = "service"
+	AppSubRepoKindLibrary = "library"
+	AppSubRepoKindTest    = "test"
+)
+
+// DiscoveredAppSubRepo describes one repo found inside an app's
+// services/, libs/, or testing/ subdirectory by DiscoverAppSubRepos.
+type DiscoveredAppSubRepo struct {
+	Kind string // service|library|test
+	Name string
+	Path string // workspace-relative path to the sub-repo directory
+}
+
+// appSubRepoDirs maps each scanned subdirectory to the kind of sub-repo
+// it holds. Walking is one level deep — adopt/register only honor
+// sub-repos that live directly under one of these three directories.
+var appSubRepoDirs = []struct {
+	subdir string
+	kind   string
+}{
+	{"services", AppSubRepoKindService},
+	{"libs", AppSubRepoKindLibrary},
+	{"testing", AppSubRepoKindTest},
+}
+
+// DiscoverAppSubRepos walks the three known sub-repo directories under
+// repos/apps/<appName>/ and returns every immediate child directory that
+// carries an ocean.config.json. Missing subdirectories are silently
+// treated as empty, not an error — apps may legitimately have no
+// services or no testing projects yet.
+func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, error) {
+	appRoot := filepath.Join("repos", "apps", appName)
+	var found []DiscoveredAppSubRepo
+
+	for _, entry := range appSubRepoDirs {
+		subRoot := filepath.Join(appRoot, entry.subdir)
+		infos, err := afero.ReadDir(fs, subRoot)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		// Sort so the discovered order is deterministic across
+		// filesystem implementations (afero.MemMapFs, OS, etc.).
+		sort.Slice(infos, func(i, j int) bool {
+			return infos[i].Name() < infos[j].Name()
+		})
+
+		for _, info := range infos {
+			if !info.IsDir() {
+				continue
+			}
+			childPath := filepath.Join(subRoot, info.Name())
+			configPath := filepath.Join(childPath, "ocean.config.json")
+			if _, err := fs.Stat(configPath); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, err
+			}
+			found = append(found, DiscoveredAppSubRepo{
+				Kind: entry.kind,
+				Name: info.Name(),
+				Path: childPath,
+			})
+		}
+	}
+	return found, nil
+}
+
+// RegisterDiscoveredAppSubRepos discovers every sub-repo inside the
+// adopted/registered app and adds a workspace entry for each one that
+// is not yet registered. Already-registered sub-repos are skipped with
+// a log line; per-entry registration failures are logged but do not
+// abort the loop.
+//
+// Sub-repos discovered this way are NOT given a `remote` value because
+// they share the parent app's git history. The user can register a
+// sub-repo with its own remote separately if it later becomes a
+// polyrepo.
+func RegisterDiscoveredAppSubRepos(fs afero.Fs, out io.Writer, appName string) error {
+	discovered, err := DiscoverAppSubRepos(fs, appName)
+	if err != nil {
+		return err
+	}
+	if len(discovered) == 0 {
+		return nil
+	}
+
+	for _, sub := range discovered {
+		// Re-read the config at the top of every iteration so the next
+		// staleness check (FindServiceIndex, NextServicePort, etc.) sees
+		// the entries written by the previous iteration.
+		config, err := ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		appIdx := FindAppIndex(config, appName)
+		if appIdx == -1 {
+			return fmt.Errorf("app not registered in workspace: %s", appName)
+		}
+
+		switch sub.Kind {
+		case AppSubRepoKindService:
+			if FindServiceIndex(config.Apps[appIdx], sub.Name) != -1 {
+				fmt.Fprintf(out, "discovered service %s/%s: already registered, skipping\n", appName, sub.Name)
+				continue
+			}
+			port, err := NextServicePort(fs, appName)
+			if err != nil {
+				fmt.Fprintf(out, "discovered service %s/%s: failed to allocate port: %v\n", appName, sub.Name, err)
+				continue
+			}
+			image := DefaultServiceImage(appName, sub.Name)
+			if err := AddServiceToWorkspace(fs, appName, sub.Name, port, image, "", ""); err != nil {
+				fmt.Fprintf(out, "discovered service %s/%s: failed to register: %v\n", appName, sub.Name, err)
+				continue
+			}
+			fmt.Fprintf(out, "discovered service %s/%s: registered\n", appName, sub.Name)
+
+		case AppSubRepoKindLibrary:
+			if FindAppLibraryIndex(config.Apps[appIdx], sub.Name) != -1 {
+				fmt.Fprintf(out, "discovered library %s/%s: already registered, skipping\n", appName, sub.Name)
+				continue
+			}
+			if err := AddAppLibraryToWorkspace(fs, appName, sub.Name); err != nil {
+				fmt.Fprintf(out, "discovered library %s/%s: failed to register: %v\n", appName, sub.Name, err)
+				continue
+			}
+			fmt.Fprintf(out, "discovered library %s/%s: registered\n", appName, sub.Name)
+
+		case AppSubRepoKindTest:
+			if FindAppTestIndex(config.Apps[appIdx], sub.Name) != -1 {
+				fmt.Fprintf(out, "discovered test %s/%s: already registered, skipping\n", appName, sub.Name)
+				continue
+			}
+			if err := AddTestToWorkspace(fs, appName, sub.Name); err != nil {
+				fmt.Fprintf(out, "discovered test %s/%s: failed to register: %v\n", appName, sub.Name, err)
+				continue
+			}
+			fmt.Fprintf(out, "discovered test %s/%s: registered\n", appName, sub.Name)
+		}
+	}
+	return nil
+}

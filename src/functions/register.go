@@ -88,6 +88,17 @@ func RegisterRepo(fs afero.Fs, out io.Writer, kind string, name string, app stri
 	if err := registerEntryInWorkspace(fs, kind, name, app, remote, templateKind); err != nil {
 		return err
 	}
+
+	// When registering an app, walk its services/, libs/, and testing/
+	// subdirectories one level deep and auto-register every immediate
+	// child that carries an ocean.config.json. The sub-repos share the
+	// parent app's git history so they get no `remote` value.
+	if kind == tokens.RepoKindApp {
+		if err := RegisterDiscoveredAppSubRepos(fs, out, name); err != nil {
+			return err
+		}
+	}
+
 	fmt.Fprintf(out, "registered %s/%s at %s\n", kind, name, relPath)
 	return nil
 }
