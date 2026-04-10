@@ -1,0 +1,45 @@
+# Binaries & build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/build/
+/out/
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+*.cover
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories (vendored)
+/vendor/
+
+# Secrets & environment
+*.env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Editor & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Dusk Ocean
+.ocean/
