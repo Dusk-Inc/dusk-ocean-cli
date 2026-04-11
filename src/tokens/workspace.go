@@ -46,6 +46,26 @@ const (
 	WorkspaceTaskCreateRemote     = "create_remote"
 	WorkspaceTaskCheckoutExisting = "checkout_existing"
 	WorkspaceTaskCheckoutNew      = "checkout_new"
+
+	// Standard task names in a repo-level ocean.config.json tasks block.
+	RepoConfigTaskInstall   = "install"
+	RepoConfigTaskBuild     = "build"
+	RepoConfigTaskTest      = "test"
+	RepoConfigTaskRun       = "run"
+	RepoConfigTaskContain   = "contain"
+	RepoConfigTaskAdd       = "add"
+	RepoConfigTaskUninstall = "uninstall"
+	RepoConfigTaskPrebuild  = "prebuild"
+	RepoConfigTaskSetup     = "setup"
+
+	// Workspace directory layout constants.
+	RepoDirRoot      = "repos"
+	RepoDirApps      = "apps"
+	RepoDirLibs      = "libs"
+	RepoDirProjects  = "projects"
+	RepoDirTemplates = "templates"
+	RepoDirServices  = "services"
+	RepoDirSandbox   = "sandbox"
 )
 
 // DefaultWorkspaceTaskNames is the canonical ordered list of workspace
