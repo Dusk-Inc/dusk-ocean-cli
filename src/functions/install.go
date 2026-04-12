@@ -21,6 +21,7 @@ const (
 	targetGlobalLib targetKind = TargetGlobalLib
 	targetProject   targetKind = TargetProject
 	targetTest      targetKind = TargetTest
+	targetTemplate  targetKind = TargetTemplate
 
 	dependencyGlobalLib dependencyKind = "global-lib"
 	dependencyAppLib    dependencyKind = "app-lib"
@@ -54,6 +55,9 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 	},
 	targetTest: {
 		dependencyAppLib:    true,
+		dependencyGlobalLib: true,
+	},
+	targetTemplate: {
 		dependencyGlobalLib: true,
 	},
 }
@@ -322,6 +326,8 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 			return fmt.Errorf("invalid dependency for service")
 		case targetTest:
 			return fmt.Errorf("invalid dependency for test")
+		case targetTemplate:
+			return fmt.Errorf("invalid dependency for template")
 		default:
 			return fmt.Errorf("unsupported install target")
 		}
@@ -476,6 +482,16 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 			return WorkspaceConfig{}, err
 		}
 		config.Projects[projectIndex].Deps = append(depsList, makeInstallDep(dependency))
+	case targetTemplate:
+		templateIndex := FindTemplateIndex(config, target.Name)
+		if templateIndex == -1 {
+			return WorkspaceConfig{}, fmt.Errorf("template not registered in workspace: %s", target.Name)
+		}
+		depsList := config.Templates[templateIndex].Deps
+		if containsDep(depsList, dependency.name, depSourceForInstall(dependency)) {
+			return WorkspaceConfig{}, fmt.Errorf("dependency already registered: %s", dependency.name)
+		}
+		config.Templates[templateIndex].Deps = append(depsList, makeInstallDep(dependency))
 	default:
 		return WorkspaceConfig{}, fmt.Errorf("unsupported install target")
 	}
@@ -484,7 +500,7 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 }
 
 func ensureNoCycles(config WorkspaceConfig, target installTarget, dependency installDependency) error {
-	if target.Kind == targetService || target.Kind == targetTest {
+	if target.Kind == targetService || target.Kind == targetTest || target.Kind == targetTemplate {
 		return nil
 	}
 	graph, err := BuildDependencyGraph(config)
@@ -520,6 +536,8 @@ func installTargetKey(target installTarget) string {
 		return GlobalLibKey(target.Name)
 	case targetProject:
 		return ProjectKey(target.Name)
+	case targetTemplate:
+		return fmt.Sprintf("template:%s", target.Name)
 	default:
 		return ""
 	}

@@ -130,6 +130,7 @@ const (
 	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
 	TargetProject   TargetKind = tokens.TargetProjectKind
 	TargetTest      TargetKind = tokens.TargetTestKind
+	TargetTemplate  TargetKind = tokens.TargetTemplateKind
 )
 
 type Target struct {
