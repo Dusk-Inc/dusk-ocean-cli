@@ -111,6 +111,7 @@ func init() {
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(containCmd)
+	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(refreshCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)

@@ -11,9 +11,9 @@ import (
 )
 
 // ManifestEntry records per-operation hashes for a single repository.
-// Each operation (build, check, contain) stores the dependency-tree hash at
-// the time it last succeeded. To determine whether an operation is stale,
-// compute the current tree hash and compare it to the stored value.
+// Each operation (build, check, contain, publish) stores the dependency-tree
+// hash at the time it last succeeded. To determine whether an operation is
+// stale, compute the current tree hash and compare it to the stored value.
 //
 // Schema (.ocean/manifest.json):
 //
@@ -25,7 +25,8 @@ import (
 //	      "name":         "<repo-name>",    // repo name within its kind/app scope
 //	      "build_hash":   "<sha256-hex>",   // tree hash at last successful build
 //	      "check_hash":   "<sha256-hex>",   // tree hash at last successful check
-//	      "contain_hash": "<sha256-hex>"    // tree hash at last successful contain
+//	      "contain_hash": "<sha256-hex>",   // tree hash at last successful contain
+//	      "publish_hash": "<sha256-hex>"    // tree hash at last successful publish
 //	    },
 //	    ...
 //	  }
@@ -40,6 +41,7 @@ type ManifestEntry struct {
 	BuildHash   string `json:"build_hash"`
 	CheckHash   string `json:"check_hash"`
 	ContainHash string `json:"contain_hash"`
+	PublishHash string `json:"publish_hash,omitempty"`
 }
 
 // Manifest is the in-memory representation of .ocean/manifest.json.
@@ -153,6 +155,15 @@ func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) err
 func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.ContainHash = hash
+		return e
+	})
+}
+
+// SetManifestPublishHash stores the dependency-tree hash for a successful publish.
+// No-op if the manifest is absent or the key is not present.
+func SetManifestPublishHash(fs afero.Fs, root string, key string, hash string) error {
+	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
+		e.PublishHash = hash
 		return e
 	})
 }

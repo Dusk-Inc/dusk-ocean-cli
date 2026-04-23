@@ -115,6 +115,7 @@ type RepoConfig struct {
 		Install   string `json:"install"`
 		Uninstall string `json:"uninstall"`
 		Contain   string `json:"contain"`
+		Publish   string `json:"publish"`
 		Run       string `json:"run"`
 		Setup     string `json:"setup"`
 		Prebuild  string `json:"prebuild"`
