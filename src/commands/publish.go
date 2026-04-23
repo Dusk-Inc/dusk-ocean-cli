@@ -1,0 +1,67 @@
+package cmd
+
+import (
+	"fmt"
+
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+)
+
+var publishCmd = &cobra.Command{
+	Use:   "publish",
+	Short: "Publish a project or service artifact (e.g. npm publish)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Top-level convenience: `dusk-ocean publish --project <name>` dispatches
+		// to the `publish project --name <name>` subcommand code path.
+		projectName, err := cmd.Flags().GetString("project")
+		if err != nil {
+			return err
+		}
+		skipPreflight, err := cmd.Flags().GetBool("skip-preflight")
+		if err != nil {
+			return err
+		}
+		if projectName == "" {
+			return cmd.Help()
+		}
+		return functions.PublishProject(cmd, afero.NewOsFs(), projectName, skipPreflight)
+	},
+}
+
+var publishProjectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Publish a project artifact",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		skipPreflight, err := cmd.Flags().GetBool("skip-preflight")
+		if err != nil {
+			return err
+		}
+		return functions.PublishProject(cmd, afero.NewOsFs(), name, skipPreflight)
+	},
+}
+
+var publishServiceCmd = &cobra.Command{
+	Use:   "service",
+	Short: "Publish a service artifact (not yet implemented)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf("publish service is not yet implemented")
+	},
+}
+
+func init() {
+	publishCmd.Flags().String("project", "", "Name of the project to publish (shorthand for `publish project --name`)")
+	publishCmd.PersistentFlags().Bool("skip-preflight", false, "Skip pre-flight build/contain manifest checks")
+
+	publishProjectCmd.Flags().String("name", "", "Name of the project")
+
+	publishCmd.AddCommand(publishProjectCmd)
+	publishCmd.AddCommand(publishServiceCmd)
+}

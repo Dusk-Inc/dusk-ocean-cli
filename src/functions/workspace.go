@@ -45,6 +45,7 @@ const (
 	TargetGlobalLib = models.TargetGlobalLib
 	TargetProject   = models.TargetProject
 	TargetTest      = models.TargetTest
+	TargetTemplate  = models.TargetTemplate
 )
 
 const defaultImageTag = "dev"
@@ -108,6 +109,14 @@ func MakeApp(name string, libraries []WorkspaceLibrary) WorkspaceApp {
 		Services:  nil,
 		Libraries: libraries,
 		Testing:   nil,
+	}
+}
+
+func MakeTemplate(name string, kind string, deps ...string) WorkspaceTemplate {
+	return WorkspaceTemplate{
+		Name: name,
+		Kind: kind,
+		Deps: makeGlobalDeps(deps...),
 	}
 }
 
@@ -309,6 +318,35 @@ func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 		patterns = append(patterns, trimmed)
 	}
 	return patterns, nil
+}
+
+// CollectRepoIgnorePatterns returns the workspace-root .gitignore patterns
+// plus the repo-local .gitignore patterns, in that order. This ensures that
+// repo-scoped ignores (e.g. `dist/`, `coverage/`) are honored when hashing a
+// repo directory — without which every rebuild produces a new dependency-tree
+// hash and defeats Ocean's skip cache. Patterns with leading `/` in the repo's
+// .gitignore are rooted at the repo directory, which matches the walk origin
+// in CalcDirHash. Nested .gitignore files below the repo root are not yet
+// consulted.
+func CollectRepoIgnorePatterns(fs afero.Fs, workspaceRoot string, repoPath string) ([]string, error) {
+	workspacePatterns, err := ReadGitignorePatterns(fs, workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	if repoPath == "" || repoPath == workspaceRoot {
+		return workspacePatterns, nil
+	}
+	repoPatterns, err := ReadGitignorePatterns(fs, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(repoPatterns) == 0 {
+		return workspacePatterns, nil
+	}
+	merged := make([]string, 0, len(workspacePatterns)+len(repoPatterns))
+	merged = append(merged, workspacePatterns...)
+	merged = append(merged, repoPatterns...)
+	return merged, nil
 }
 
 // UpdateConfig reads the workspace config, applies a mutation, and writes it back if changed.
@@ -703,6 +741,15 @@ func ProjectNames(config WorkspaceConfig) []string {
 	return names
 }
 
+// TemplateNames returns names of all registered templates.
+func TemplateNames(config WorkspaceConfig) []string {
+	names := make([]string, 0, len(config.Templates))
+	for _, template := range config.Templates {
+		names = append(names, template.Name)
+	}
+	return names
+}
+
 // ResolveTargetByName resolves a workspace target by its repo name across all entity types.
 // Returns an error if no match is found or if the name is ambiguous.
 func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Target, error) {
@@ -724,6 +771,16 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 				Kind: TargetProject,
 				Name: name,
 				Path: filepath.Join(root, "repos", "projects", name),
+			})
+		}
+	}
+
+	for _, template := range config.Templates {
+		if template.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetTemplate,
+				Name: name,
+				Path: filepath.Join(root, "repos", "templates", name),
 			})
 		}
 	}
@@ -899,6 +956,10 @@ func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 		}
 		if FindAppTestIndex(config.Apps[appIndex], target.Name) == -1 {
 			return fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+	case TargetTemplate:
+		if FindTemplateIndex(config, target.Name) == -1 {
+			return fmt.Errorf("template not registered in workspace: %s", target.Name)
 		}
 	default:
 		return fmt.Errorf("unsupported install target")
@@ -1126,6 +1187,8 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 		return config.Uninstall, nil
 	case "contain":
 		return config.Tasks.Contain, nil
+	case "publish":
+		return config.Tasks.Publish, nil
 	case "run":
 		return config.Tasks.Run, nil
 	case "setup":

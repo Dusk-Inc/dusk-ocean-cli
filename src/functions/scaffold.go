@@ -14,10 +14,23 @@ import (
 )
 
 func CopyDir(fs afero.Fs, src string, dst string) error {
-	return CopyDirWithReplacements(fs, src, dst, nil)
+	return CopyDirWithReplacements(fs, src, dst, nil, nil)
 }
 
-func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+// CopyTemplate copies a scaffold template from src to dst, applying the
+// workspace's .oceanignore rules so directories like .git, node_modules, and
+// build artifacts don't propagate from a template into a newly scaffolded
+// entity. Use this for any `add` command that seeds from repos/templates/.
+func CopyTemplate(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	patterns, _ := ReadOceanIgnorePatterns(fs, root)
+	return CopyDirWithReplacements(fs, src, dst, replacements, patterns)
+}
+
+func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string, ignorePatterns []string) error {
 	return afero.Walk(fs, src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -29,6 +42,13 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 		}
 		if relPath == "." {
 			return fs.MkdirAll(dst, 0o755)
+		}
+
+		if shouldIgnore(filepath.ToSlash(relPath), info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		targetPath := filepath.Join(dst, replacePlaceholders(relPath, replacements))
@@ -179,7 +199,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		return err
 	}
 
-	if err := CopyDirWithReplacements(fs, templatePath, servicePath, replacements); err != nil {
+	if err := CopyTemplate(fs, templatePath, servicePath, replacements); err != nil {
 		return err
 	}
 	return registerService(fs, appName, serviceName, dockerfile, containerFile)

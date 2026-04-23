@@ -297,7 +297,7 @@ var addLibCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
 
@@ -399,7 +399,7 @@ var addPkgCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDir(fs, templatePath, destPath); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, nil); err != nil {
 			return err
 		}
 		if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
@@ -533,7 +533,7 @@ var addTestCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
 		if err := functions.AddTestToWorkspace(fs, appName, testName); err != nil {

@@ -102,11 +102,12 @@ func matchesIgnorePattern(relPath string, isDir bool, pattern string) bool {
 	return false
 }
 
-// CalcRepoHash computes the directory hash for a repository, using .gitignore patterns
-// from the workspace root for ignore filtering. This is the single entry point for
-// computing repo hashes across build, check, and manifest operations.
+// CalcRepoHash computes the directory hash for a repository, using .gitignore
+// patterns from the workspace root AND the repo root for ignore filtering. This
+// is the single entry point for computing repo hashes across build, check, and
+// manifest operations.
 func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
-	ignorePatterns, err := ReadGitignorePatterns(fs, root)
+	ignorePatterns, err := CollectRepoIgnorePatterns(fs, root, repoPath)
 	if err != nil {
 		return "", err
 	}
@@ -114,8 +115,11 @@ func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
 }
 
 // CalcNodeTreeHash computes a combined hash of a node and all its transitive
-// dependency directories. This is the single entry point for computing
-// dependency-tree hashes used by the manifest and operation skip logic.
+// dependency directories. Ignore patterns are collected per-node from both the
+// workspace-root .gitignore and the node's own repo-local .gitignore, so each
+// repo's build artifacts (e.g. dist/, coverage/) are excluded from its hash.
+// This is the single entry point for computing dependency-tree hashes used by
+// the manifest and operation skip logic.
 func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Node) (string, error) {
 	deps, err := CollectDependencyOrder(config, node)
 	if err != nil {
@@ -123,11 +127,13 @@ func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Nod
 	}
 	nodesToHash := append(deps, node)
 
-	ignorePatterns, _ := ReadGitignorePatterns(fs, root)
-
 	combined := sha256.New()
 	for _, n := range nodesToHash {
 		_, srcPath, _, err := NodeBuildInfo(root, n)
+		if err != nil {
+			return "", err
+		}
+		ignorePatterns, err := CollectRepoIgnorePatterns(fs, root, srcPath)
 		if err != nil {
 			return "", err
 		}
@@ -184,6 +190,17 @@ func MakeContainHashPath(buildHashPath string) string {
 	for i, part := range parts {
 		if part == "build" {
 			parts[i] = "contain"
+			break
+		}
+	}
+	return filepath.Join(parts...)
+}
+
+func MakePublishHashPath(buildHashPath string) string {
+	parts := strings.Split(filepath.Clean(buildHashPath), string(filepath.Separator))
+	for i, part := range parts {
+		if part == "build" {
+			parts[i] = "publish"
 			break
 		}
 	}
