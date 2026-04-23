@@ -1,5 +1,7 @@
+![dusk ocean image header](./resources/Dusk%20Ocean%20Github%20Readme.png "dusk ocean image header")
+
 # Dusk Ocean CLI
-Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
+Dusk Ocean is a polyglot polyrepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
 
 ## Source Layout
 - `src/commands`: Cobra command definitions — one file per top-level command.
@@ -9,7 +11,7 @@ Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dep
 - `src/tokens`: Shared constants and enums for domain literals and kinds.
 
 ## Getting Started
-Run the following from the root of your monorepo to initialize the workspace:
+Run the following from the root of your polyrepo to initialize the workspace:
 ```bash
 dusk-ocean init --name <workspace_name>
 ```
