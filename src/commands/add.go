@@ -25,7 +25,11 @@ var addAppCmd = &cobra.Command{
 			return err
 		}
 
-		return functions.AddApp(afero.NewOsFs(), name)
+		root, err := functions.GetRoot()
+		if err != nil {
+			return err
+		}
+		return functions.AddApp(afero.NewOsFs(), name, root)
 	},
 }
 

@@ -71,7 +71,7 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 // folder structure directly so the layout stays stable across the workspace.
 var appSubdirs = []string{"services", "libs", "jobs", "docs", "testing"}
 
-func AddApp(fs afero.Fs, name string) error {
+func AddApp(fs afero.Fs, name string, workspaceRoot string) error {
 	if name == "" {
 		return fmt.Errorf("--name is required")
 	}
@@ -94,6 +94,9 @@ func AddApp(fs afero.Fs, name string) error {
 		if err := afero.WriteFile(fs, filepath.Join(subPath, ".gitkeep"), nil, 0o644); err != nil {
 			return err
 		}
+	}
+	if err := scaffoldJobsMigrations(fs, appPath, name, workspaceRoot); err != nil {
+		return err
 	}
 
 	appConfig := struct {
@@ -118,6 +121,68 @@ func AddApp(fs afero.Fs, name string) error {
 	}
 
 	return addAppToWorkspace(fs, name)
+}
+
+const jobsV1MigrationSQL = `-- V1: initial table declarations
+-- PostgreSQL 13+ (uses gen_random_uuid())
+-- Add your CREATE TABLE statements here.
+`
+
+const jobsDockerComposeTemplate = `services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flyway:
+    image: flyway/flyway:10-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
+      FLYWAY_USER: "${POSTGRES_USER}"
+      FLYWAY_PASSWORD: "${POSTGRES_PASSWORD}"
+      FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+    volumes:
+      - ${HOST_WORKSPACE_PATH}/repos/apps/%s/jobs/migrations:/flyway/sql
+    command: migrate
+
+volumes:
+  postgres-data:
+`
+
+func scaffoldJobsMigrations(fs afero.Fs, appPath string, name string, workspaceRoot string) error {
+	migrationsPath := filepath.Join(appPath, "jobs", "migrations")
+	if err := fs.MkdirAll(migrationsPath, 0o755); err != nil {
+		return err
+	}
+	if err := afero.WriteFile(fs, filepath.Join(migrationsPath, "V1__table_declarations.sql"), []byte(jobsV1MigrationSQL), 0o644); err != nil {
+		return err
+	}
+
+	dockerPath := filepath.Join(appPath, "jobs", "docker")
+	if err := fs.MkdirAll(dockerPath, 0o755); err != nil {
+		return err
+	}
+	envContent := fmt.Sprintf("HOST_WORKSPACE_PATH=%s\nPOSTGRES_PORT=5432\nPOSTGRES_DB=%s\nPOSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\n", workspaceRoot, name, name, name)
+	if err := afero.WriteFile(fs, filepath.Join(dockerPath, ".env"), []byte(envContent), 0o644); err != nil {
+		return err
+	}
+	composeContent := fmt.Sprintf(jobsDockerComposeTemplate, name)
+	return afero.WriteFile(fs, filepath.Join(dockerPath, "docker-compose.yml"), []byte(composeContent), 0o644)
 }
 
 func AddService(fs afero.Fs, appName string, serviceName string, template string, dockerfile string, containerFile string, replacements map[string]string) error {

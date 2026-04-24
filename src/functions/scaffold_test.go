@@ -2,6 +2,7 @@ package functions
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -20,7 +21,7 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("write workspace config: %v", err)
 		}
 
-		if err := AddApp(fs, "alpha"); err != nil {
+		if err := AddApp(fs, "alpha", "/workspace"); err != nil {
 			t.Fatalf("AddApp: %v", err)
 		}
 
@@ -45,6 +46,50 @@ func TestAddApp(t *testing.T) {
 		}
 	})
 
+	t.Run("domain__valid_name__creates_migration_files", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		appPath := filepath.Join("repos", "apps", "alpha")
+
+		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
+			Apps:      []WorkspaceApp{},
+			Libraries: []WorkspaceLibrary{},
+			Projects:  []WorkspaceProject{},
+		}); err != nil {
+			t.Fatalf("write workspace config: %v", err)
+		}
+
+		if err := AddApp(fs, "alpha", "/workspace"); err != nil {
+			t.Fatalf("AddApp: %v", err)
+		}
+
+		v1Path := filepath.Join(appPath, "jobs", "migrations", "V1__table_declarations.sql")
+		if _, err := fs.Stat(v1Path); err != nil {
+			t.Fatalf("expected V1__table_declarations.sql: %v", err)
+		}
+
+		envPath := filepath.Join(appPath, "jobs", "docker", ".env")
+		envBytes, err := afero.ReadFile(fs, envPath)
+		if err != nil {
+			t.Fatalf("expected jobs/docker/.env: %v", err)
+		}
+		envContent := string(envBytes)
+		if !containsStr(envContent, "HOST_WORKSPACE_PATH=/workspace") {
+			t.Fatalf("expected HOST_WORKSPACE_PATH in .env, got: %s", envContent)
+		}
+		if !containsStr(envContent, "POSTGRES_DB=alpha") {
+			t.Fatalf("expected POSTGRES_DB=alpha in .env, got: %s", envContent)
+		}
+
+		composePath := filepath.Join(appPath, "jobs", "docker", "docker-compose.yml")
+		composeBytes, err := afero.ReadFile(fs, composePath)
+		if err != nil {
+			t.Fatalf("expected jobs/docker/docker-compose.yml: %v", err)
+		}
+		if !containsStr(string(composeBytes), "repos/apps/alpha/jobs/migrations") {
+			t.Fatalf("expected app name in volume mount, got: %s", string(composeBytes))
+		}
+	})
+
 	t.Run("domain__valid_name__registers_workspace_app", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
@@ -55,7 +100,7 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("write workspace config: %v", err)
 		}
 
-		if err := AddApp(fs, "alpha"); err != nil {
+		if err := AddApp(fs, "alpha", "/workspace"); err != nil {
 			t.Fatalf("AddApp: %v", err)
 		}
 
@@ -73,7 +118,7 @@ func TestAddApp(t *testing.T) {
 
 	t.Run("boundary__empty_name__returns_error", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		if err := AddApp(fs, ""); err == nil {
+		if err := AddApp(fs, "", "/workspace"); err == nil {
 			t.Fatalf("expected error")
 		}
 	})
@@ -86,7 +131,7 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("mkdir app: %v", err)
 		}
 
-		if err := AddApp(fs, "alpha"); err == nil {
+		if err := AddApp(fs, "alpha", "/workspace"); err == nil {
 			t.Fatalf("expected error")
 		}
 	})
@@ -103,10 +148,14 @@ func TestAddApp(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("write workspace config: %v", err)
 		}
-		if err := AddApp(fs, "alpha"); err != nil {
+		if err := AddApp(fs, "alpha", "/workspace"); err != nil {
 			t.Fatalf("AddApp must not require a template tree: %v", err)
 		}
 	})
+}
+
+func containsStr(s, substr string) bool {
+	return strings.Contains(s, substr)
 }
 
 func TestRemoveApp(t *testing.T) {
