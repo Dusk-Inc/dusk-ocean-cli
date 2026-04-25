@@ -11,37 +11,44 @@ import (
 var containCmd = &cobra.Command{
 	Use:   "contain",
 	Short: "Build and publish a service or project container image",
+}
+
+var containProjectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Containerize a project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serviceName, err := cmd.Flags().GetString("service")
+		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
-		appName, err := cmd.Flags().GetString("app")
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		return functions.ContainProject(cmd, afero.NewOsFs(), name)
+	},
+}
+
+var containServiceCmd = &cobra.Command{
+	Use:   "service",
+	Short: "Containerize a service",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
-		projectName, err := cmd.Flags().GetString("project")
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		appName, err := cmd.Flags().GetString("in")
 		if err != nil {
 			return err
 		}
-		if serviceName == "" && projectName == "" {
-			return fmt.Errorf("one of --service or --project is required")
-		}
-		if serviceName != "" && projectName != "" {
-			return fmt.Errorf("--service and --project are mutually exclusive")
-		}
-		if projectName != "" {
-			if appName != "" {
-				return fmt.Errorf("--app cannot be combined with --project")
-			}
-			return functions.ContainProject(cmd, afero.NewOsFs(), projectName)
-		}
-		return functions.ContainService(cmd, afero.NewOsFs(), appName, serviceName)
+		return functions.ContainService(cmd, afero.NewOsFs(), appName, name)
 	},
 }
 
 func init() {
-	containCmd.Flags().String("service", "", "Name of the service to containerize")
-	containCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
-	containCmd.Flags().String("project", "", "Name of the project to containerize")
+	containProjectCmd.Flags().String("name", "", "Name of the project")
+	containServiceCmd.Flags().String("name", "", "Name of the service")
+	containServiceCmd.Flags().String("in", "", "App name (required when service name is ambiguous)")
 }

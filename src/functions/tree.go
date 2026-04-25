@@ -130,16 +130,27 @@ type templateConfig struct {
 }
 
 // ListTemplatesByType returns the names of every template that scaffolds
-// the requested kind. Workspace-registered templates are returned first
-// (REQ 19); any unregistered template directories under repos/templates/
+// any of the requested kinds. Workspace-registered templates are returned
+// first (REQ 19); any unregistered template directories under repos/templates/
 // that classify themselves via ocean.config.json's `type` field are
 // included afterward, deduplicated against the registry, so the dev loop
 // of "drop a template folder, scaffold from it" still works.
 //
-// Apps are intentionally not template-able. Asking for kind "app" returns
-// an empty slice without touching disk.
-func ListTemplatesByType(kind string) ([]string, error) {
-	if kind == "app" {
+// Service and library scaffolds invoke this with a single kind. Project
+// scaffolds invoke it with service+library+project so a project may seed
+// from any non-app template kind (REQ 19.6.1).
+//
+// Apps are intentionally not template-able and are silently filtered out.
+// Asking for nothing but "app" yields an empty slice without touching disk.
+func ListTemplatesByType(kinds ...string) ([]string, error) {
+	wanted := map[string]struct{}{}
+	for _, kind := range kinds {
+		if kind == "app" {
+			continue
+		}
+		wanted[kind] = struct{}{}
+	}
+	if len(wanted) == 0 {
 		return nil, nil
 	}
 
@@ -153,7 +164,7 @@ func ListTemplatesByType(kind string) ([]string, error) {
 
 	// Workspace-registered templates take precedence.
 	if config, err := ReadWorkspaceConfig(afero.NewOsFs()); err == nil {
-		for _, name := range FindTemplatesByKind(config, kind) {
+		for _, name := range FindTemplatesByKinds(config, kinds...) {
 			if _, ok := seen[name]; ok {
 				continue
 			}
@@ -188,7 +199,7 @@ func ListTemplatesByType(kind string) ([]string, error) {
 		if err := json.Unmarshal(payload, &config); err != nil {
 			continue
 		}
-		if strings.TrimSpace(config.Type) != kind {
+		if _, ok := wanted[strings.TrimSpace(config.Type)]; !ok {
 			continue
 		}
 		seen[entry.Name()] = struct{}{}

@@ -11,22 +11,6 @@ import (
 var publishCmd = &cobra.Command{
 	Use:   "publish",
 	Short: "Publish a project or service artifact (e.g. npm publish)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Top-level convenience: `dusk-ocean publish --project <name>` dispatches
-		// to the `publish project --name <name>` subcommand code path.
-		projectName, err := cmd.Flags().GetString("project")
-		if err != nil {
-			return err
-		}
-		skipPreflight, err := cmd.Flags().GetBool("skip-preflight")
-		if err != nil {
-			return err
-		}
-		if projectName == "" {
-			return cmd.Help()
-		}
-		return functions.PublishProject(cmd, afero.NewOsFs(), projectName, skipPreflight)
-	},
 }
 
 var publishProjectCmd = &cobra.Command{
@@ -57,11 +41,9 @@ var publishServiceCmd = &cobra.Command{
 }
 
 func init() {
-	publishCmd.Flags().String("project", "", "Name of the project to publish (shorthand for `publish project --name`)")
 	publishCmd.PersistentFlags().Bool("skip-preflight", false, "Skip pre-flight build/contain manifest checks")
 
 	publishProjectCmd.Flags().String("name", "", "Name of the project")
-
-	publishCmd.AddCommand(publishProjectCmd)
-	publishCmd.AddCommand(publishServiceCmd)
+	publishServiceCmd.Flags().String("name", "", "Name of the service")
+	publishServiceCmd.Flags().String("in", "", "App name (required when service name is ambiguous)")
 }

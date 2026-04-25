@@ -56,7 +56,7 @@ func PublishProject(cmd *cobra.Command, fs afero.Fs, projectName string, skipPre
 			return fmt.Errorf("publish pre-flight failed for project %s: no successful build recorded (run `dusk-ocean build project --name %s` first, or pass --skip-preflight)", projectName, projectName)
 		}
 		if strings.TrimSpace(entry.ContainHash) == "" {
-			return fmt.Errorf("publish pre-flight failed for project %s: no successful contain recorded (run `dusk-ocean contain --project %s` first, or pass --skip-preflight)", projectName, projectName)
+			return fmt.Errorf("publish pre-flight failed for project %s: no successful contain recorded (run `dusk-ocean contain project --name %s` first, or pass --skip-preflight)", projectName, projectName)
 		}
 	}
 

@@ -69,6 +69,35 @@ func FindTemplatesByKind(config WorkspaceConfig, kind string) []string {
 	return names
 }
 
+// FindTemplatesByKinds returns the names of every registered template whose
+// Kind is in the requested set. Templates are returned grouped by the order
+// of `kinds`, preserving registration order within each kind, and a name
+// that somehow appears under multiple kinds is emitted only once. The "app"
+// kind is silently filtered out (apps are not template-able, REQ 19.6.1).
+func FindTemplatesByKinds(config WorkspaceConfig, kinds ...string) []string {
+	if len(kinds) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var names []string
+	for _, kind := range kinds {
+		if kind == tokens.RepoKindApp {
+			continue
+		}
+		for _, template := range config.Templates {
+			if template.Kind != kind {
+				continue
+			}
+			if _, ok := seen[template.Name]; ok {
+				continue
+			}
+			seen[template.Name] = struct{}{}
+			names = append(names, template.Name)
+		}
+	}
+	return names
+}
+
 // ValidateTemplateDepsForTarget pre-validates every dep declared on a
 // template against a hypothetical target, BEFORE any files are copied.
 // The hypothetical target need not exist in workspace config yet — the

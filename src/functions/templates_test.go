@@ -182,6 +182,84 @@ func TestFindTemplatesByKind(t *testing.T) {
 	}
 }
 
+// TestFindTemplatesByKinds covers REQ 19.6.1: project scaffolding lists
+// every workspace-registered template whose kind is service, library, or
+// project, in registration order with cross-kind deduplication, while
+// "app" is silently filtered out so a stale entry can never leak in.
+func TestFindTemplatesByKinds(t *testing.T) {
+	t.Run("domain__project_scaffold_kinds__returns_service_library_project_in_order", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-svc", Kind: tokens.TemplateKindService},
+				{Name: "go-lib", Kind: tokens.TemplateKindLibrary},
+				{Name: "go-proj", Kind: tokens.TemplateKindProject},
+				{Name: "py-svc", Kind: tokens.TemplateKindService},
+			},
+		}
+
+		names := FindTemplatesByKinds(config,
+			tokens.TemplateKindService,
+			tokens.TemplateKindLibrary,
+			tokens.TemplateKindProject,
+		)
+
+		want := []string{"ts-svc", "py-svc", "go-lib", "go-proj"}
+		if len(names) != len(want) {
+			t.Fatalf("expected %d templates, got %v", len(want), names)
+		}
+		for i, n := range want {
+			if names[i] != n {
+				t.Fatalf("expected names[%d]=%q, got %q (full=%v)", i, n, names[i], names)
+			}
+		}
+	})
+
+	t.Run("boundary__no_kinds__returns_empty", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-svc", Kind: tokens.TemplateKindService},
+			},
+		}
+
+		names := FindTemplatesByKinds(config)
+		if len(names) != 0 {
+			t.Fatalf("expected no templates when no kinds requested, got %v", names)
+		}
+	})
+
+	t.Run("error__app_kind_filtered_out__returns_only_other_kinds", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{Name: "stale-app", Kind: tokens.RepoKindApp},
+				{Name: "ts-svc", Kind: tokens.TemplateKindService},
+			},
+		}
+
+		names := FindTemplatesByKinds(config, tokens.RepoKindApp, tokens.TemplateKindService)
+
+		if len(names) != 1 || names[0] != "ts-svc" {
+			t.Fatalf("expected only ts-svc (apps not template-able), got %v", names)
+		}
+	})
+
+	t.Run("chaos__duplicate_kinds__deduplicates_results", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-svc", Kind: tokens.TemplateKindService},
+			},
+		}
+
+		names := FindTemplatesByKinds(config,
+			tokens.TemplateKindService,
+			tokens.TemplateKindService,
+		)
+
+		if len(names) != 1 || names[0] != "ts-svc" {
+			t.Fatalf("expected single entry despite duplicate kinds, got %v", names)
+		}
+	})
+}
+
 // TestValidateTemplateDepsForTarget_RejectsMissingDep covers REQ 19.7:
 // pre-validation must reject before any files are copied when a template
 // dep references a library that doesn't exist.

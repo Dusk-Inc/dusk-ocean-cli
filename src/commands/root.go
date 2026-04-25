@@ -159,6 +159,12 @@ func init() {
 	runCmd.AddCommand(runAppCmd)
 	runCmd.AddCommand(runServiceCmd)
 
+	containCmd.AddCommand(containProjectCmd)
+	containCmd.AddCommand(containServiceCmd)
+
+	publishCmd.AddCommand(publishProjectCmd)
+	publishCmd.AddCommand(publishServiceCmd)
+
 	initCmd.Flags().String("name", "", "Workspace name")
 	addCmd.Flags().String("payload", "", "Library to wire as a dependency")
 	addCmd.Flags().String("target", "", "Target repo to receive the dependency")

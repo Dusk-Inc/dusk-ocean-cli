@@ -463,11 +463,10 @@ Skips install or build for nodes that have no corresponding task. Templates are 
 ### `contain`
 Stage a minimal build context and execute the service's or project's `contain` task to build and publish a container image.
 ```bash
-dusk-ocean contain --service <name>
-dusk-ocean contain --service <name> --app <app>  # required when service name is ambiguous
-dusk-ocean contain --project <name>              # project-kind repos
+dusk-ocean contain project --name <name>
+dusk-ocean contain service --name <name>
+dusk-ocean contain service --name <name> --in <app>   # required when service name is ambiguous
 ```
-`--service` and `--project` are mutually exclusive; `--app` cannot be combined with `--project` (projects have no app scope).
 
 Rather than enforcing a specific containerization tool, Dusk Ocean executes the `contain` task (defined in `ocean.config.json`) after staging the build context. Before executing, Dusk Ocean substitutes reserved placeholders (`{{ocean:service_name}}`, `{{ocean:port}}`, `{{ocean:image_path}}`, `{{ocean:container_file}}`) in the task command with runtime values. Projects have no `port` or `image_path` fields in workspace config; for project targets, those two tokens are substituted with empty strings, and `{{ocean:container_file}}` falls back to `<staging>/repos/projects/<name>/Dockerfile`. See [Variables](#variables) for the full substitution model. Ocean copies the target directory and all of its transitive local dependencies into `.ocean/stage/`, preserving their paths relative to the workspace root. The staging directory is always removed after the contain task completes or fails.
 
@@ -482,8 +481,7 @@ Two workspace-root files control staging:
 ### `publish`
 Execute a project's `publish` task (e.g. `npm publish`). Unlike `contain`, publish runs from the actual project directory — no staging — because package managers rely on the real repo layout (`package.json`, `.npmignore`, etc.).
 ```bash
-dusk-ocean publish project --name <name>            # canonical form
-dusk-ocean publish --project <name>                 # shorthand
+dusk-ocean publish project --name <name>
 dusk-ocean publish project --name <name> --skip-preflight
 ```
 Pre-flight requires a prior successful `build` and `contain` for the target (`build_hash` and `contain_hash` must be present in the manifest). This prevents publishing a stale artifact. Use `--skip-preflight` to bypass for emergency releases.

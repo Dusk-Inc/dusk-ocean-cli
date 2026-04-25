@@ -324,7 +324,13 @@ var addPkgCmd = &cobra.Command{
 	Use:   "project",
 	Short: "Add a project to repos/projects",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		templateItems, err := functions.ListTemplatesByType("project")
+		// REQ 19.6.1: project scaffolds may seed from service, library, or
+		// project templates — apps remain non-template-able.
+		templateItems, err := functions.ListTemplatesByType(
+			tokens.TemplateKindService,
+			tokens.TemplateKindLibrary,
+			tokens.TemplateKindProject,
+		)
 		if err != nil {
 			return err
 		}
