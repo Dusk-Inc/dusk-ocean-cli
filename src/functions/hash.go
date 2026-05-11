@@ -43,6 +43,14 @@ func CalcDirHash(fs afero.Fs, root string, ignorePatterns []string) (string, err
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+// ShouldIgnore reports whether a path matches one of the .oceanignore-style
+// patterns. Exported so commands outside this package (e.g. the placeholder
+// scanner in `add`) can apply the same filtering as the scaffold copier and
+// hasher.
+func ShouldIgnore(relPath string, isDir bool, patterns []string) bool {
+	return shouldIgnore(relPath, isDir, patterns)
+}
+
 func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 	ignored := false
 	for _, raw := range patterns {

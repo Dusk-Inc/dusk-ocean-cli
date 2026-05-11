@@ -1,0 +1,19 @@
+# Dusk Ocean — Implementation Log
+
+What's shipped today and what's still open. Behavior docs live in
+[docs/](docs/); this file tracks state over time.
+
+## Currently implemented
+
+- CLI commands: `add`, `add-scope`, `adopt`, `build`, `check`, `contain`, `detach`, `hash`, `init`, `install`, `menu`, `move`, `refresh`, `register`, `remove`, `remove-scope`, `rename`, `run`, `task`, `uninstall`.
+- `dusk-ocean add --payload <library> --target <repo>` registers a library as a workspace-level dependency of the target repo by writing to `ocean.workspace.json`.
+
+## Not yet implemented
+
+- **Non-interactive flag-only library install.** `dusk-ocean install` currently requires interactive arrow-key prompts (payload source → library → target → confirmation) to wire a library into a target repo's `package.json` and run the package manager install. There is no flag-only equivalent for scripted use (CI, agents, batch operations). Today the only way to drive it from a script is to combine `add --payload --target` (which updates `ocean.workspace.json`) with a manual `package.json` edit, or to run `install` interactively. Add a non-interactive form like `dusk-ocean install --payload <lib> --target <repo>` (matching `add`'s flag shape) that performs the package.json write and the package-manager install end-to-end.
+
+## Fixes
+
+- **Template dep propagation: ambiguous-name failure when two repos share a service name.** `PropagateTemplateDeps` (`src/functions/templates.go`) held a fully-qualified `Target` (kind/app/name/path) for the freshly-scaffolded repo but passed only `target.Name` to `WireLocalDependency`, which then re-resolved by bare name via `ResolveTargetByName`. With two repos sharing a name across apps (e.g. `plexus-library-app/services/client` and `pangno-app/services/client`), the lookup bailed with `target name is ambiguous: <name> (found in multiple repos)`. Pre-validation passed because it used the Target struct directly, so scaffolding copied files to disk and registered the service in `ocean.workspace.json` before failing — leaving partial state. Fix: added `WireLocalDependencyForTarget(cmd, fs, payloadName, target)` in `src/functions/install.go` that skips the bare-name re-resolve, extracted the post-resolution body of `WireLocalDependency` into a shared helper `wireDependencyForTarget`, and switched `PropagateTemplateDeps` to the new entrypoint. CLI-level `add --payload --target` continues to use the original bare-name path since that input genuinely is a user-typed string.
+
+- **Placeholder scan walks ignored directories and follows symlinks-to-dirs.** `collectPlaceholders` (`src/commands/add.go`), which scans a template for `{{placeholder}}` tokens before prompting the user, walked the template root without applying `.oceanignore` filtering (unlike `CopyTemplate`). When a template's `node_modules/` was populated (e.g. after `dusk-ocean add --payload <lib> --target <template>` ran pnpm install inside the template dir), the walk descended into pnpm's workspace symlinks. `afero.Walk` uses `Lstat`, so `info.IsDir()` returned false for a symlink-to-dir; the subsequent `afero.ReadFile` followed the link, opened a directory, and errored with `read <path>: is a directory`. Failure mode was confusing because it only triggered AFTER the template had been used as the target of an `add` (the scaffolded copy is unaffected since `CopyTemplate` does honor `.oceanignore`). Fix: `collectPlaceholders` now loads `.oceanignore` patterns from the workspace root and skips matching dirs via `SkipDir` (mirroring `CopyTemplate`), and additionally guards the read with `info.Mode().IsRegular()` to defend against any stray non-regular entries not covered by ignore patterns. Exported `ShouldIgnore` from `src/functions/hash.go` as a thin wrapper over the existing private matcher so the `commands` package can apply the same predicate.

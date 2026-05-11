@@ -120,7 +120,7 @@ func PropagateTemplateDeps(cmd *cobra.Command, fs afero.Fs, templateName string,
 		return nil
 	}
 	for _, dep := range config.Templates[idx].Deps {
-		if err := WireLocalDependency(cmd, fs, dep.Lib, target.Name); err != nil {
+		if err := WireLocalDependencyForTarget(cmd, fs, dep.Lib, target); err != nil {
 			return fmt.Errorf("template dep %s: %w", dep.Lib, err)
 		}
 	}

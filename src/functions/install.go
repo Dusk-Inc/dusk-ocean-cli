@@ -181,12 +181,31 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+// WireLocalDependencyForTarget wires a local dependency into an already-resolved
+// Target. Use this when the caller has full disambiguating context (kind, app,
+// name, path) — e.g. template scaffolding — so we avoid a bare-name re-resolve
+// that breaks when two repos share a name across apps.
+func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName string, target Target) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+func wireDependencyForTarget(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, payloadName string, target Target) error {
 	dependency, err := resolveDependency(root, target, payloadName, config)
 	if err != nil {
 		return err
 	}
 
-	// REQ 7.4 / REQ 5.3: cross-app app-lib dependency requires shared scopes.
 	if dependency.kind == dependencyAppLib && target.App != dependency.app {
 		payloadLookup := Target{Kind: TargetAppLib, App: dependency.app, Name: dependency.name}
 		payloadScopes := FindTargetScopes(config, payloadLookup)
@@ -195,7 +214,7 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 			return fmt.Errorf("scope violation: %s has no declared scopes; cannot be used across app boundaries", payloadName)
 		}
 		if !HasCommonScope(payloadScopes, targetScopes) {
-			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, targetName)
+			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, target.Name)
 		}
 	}
 
@@ -203,7 +222,6 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	// REQ 5.2: payload and target cannot be the same repo.
 	targetKey := installTargetKey(target)
 	depKey := installDependencyKey(dependency)
 	if targetKey != "" && targetKey == depKey {

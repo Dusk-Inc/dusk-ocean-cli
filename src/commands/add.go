@@ -551,6 +551,11 @@ var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
 
 func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 	placeholders := map[string]struct{}{}
+	workspaceRoot, _ := functions.GetRoot()
+	var ignorePatterns []string
+	if workspaceRoot != "" {
+		ignorePatterns, _ = functions.ReadOceanIgnorePatterns(fs, workspaceRoot)
+	}
 	err := afero.Walk(fs, root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -559,10 +564,20 @@ func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if relPath != "." {
-			addPlaceholders(relPath, placeholders)
+		if relPath == "." {
+			return nil
 		}
+		if functions.ShouldIgnore(filepath.ToSlash(relPath), info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		addPlaceholders(relPath, placeholders)
 		if info.IsDir() {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
 			return nil
 		}
 		content, err := afero.ReadFile(fs, path)
