@@ -13,9 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ResolveContainTarget resolves the app and service names for the contain command.
-// If appName is provided, it resolves directly within that app (REQ 10.3).
-// If appName is empty, it scans all apps for the service name (REQ 10.1/10.2).
 func ResolveContainTarget(config WorkspaceConfig, appName string, serviceName string) (string, string, error) {
 	if appName != "" {
 		appIdx := FindAppIndex(config, appName)
@@ -44,8 +41,6 @@ func ResolveContainTarget(config WorkspaceConfig, appName string, serviceName st
 	}
 }
 
-// ReadOceanIgnorePatterns reads .oceanignore from the workspace root.
-// Returns the patterns and true if found; returns nil and false if the file is absent.
 func ReadOceanIgnorePatterns(fs afero.Fs, root string) ([]string, bool) {
 	path := filepath.Join(root, ".oceanignore")
 	f, err := fs.Open(path)
@@ -66,8 +61,6 @@ func ReadOceanIgnorePatterns(fs afero.Fs, root string) ([]string, bool) {
 	return patterns, true
 }
 
-// ReadOceanIncludePaths reads .oceaninclude from the workspace root.
-// Returns the paths and true if found; returns nil and false if the file is absent.
 func ReadOceanIncludePaths(fs afero.Fs, root string) ([]string, bool) {
 	path := filepath.Join(root, ".oceaninclude")
 	f, err := fs.Open(path)
@@ -88,9 +81,6 @@ func ReadOceanIncludePaths(fs afero.Fs, root string) ([]string, bool) {
 	return paths, true
 }
 
-// StageServiceBuildContext creates a staging directory at .ocean/stage/ containing
-// the service directory and its transitive local deps, mirroring their paths from the
-// workspace root. Returns the staging root path (REQ 10.5/10.6).
 func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, out io.Writer) (string, error) {
 	stagingPath := filepath.Join(root, ".ocean", "stage")
 
@@ -116,7 +106,6 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 		return "", err
 	}
 
-	// Stage the service itself and each transitive dep.
 	nodesToStage := append(deps, serviceNode)
 	for _, node := range nodesToStage {
 		_, srcPath, _, err := NodeBuildInfo(root, node)
@@ -133,7 +122,6 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 		}
 	}
 
-	// Copy .oceaninclude files to staging root.
 	includePaths, found := ReadOceanIncludePaths(fs, root)
 	if !found {
 		fmt.Fprintf(out, ".oceaninclude not found; no workspace files will be copied to staging root\n")
@@ -149,7 +137,6 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 	return stagingPath, nil
 }
 
-// copyDir copies the directory at src to dst, excluding files matching ignorePatterns.
 func copyDir(fs afero.Fs, src string, dst string, ignorePatterns []string) error {
 	return afero.Walk(fs, src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -179,7 +166,6 @@ func copyDir(fs afero.Fs, src string, dst string, ignorePatterns []string) error
 	})
 }
 
-// copyFile copies a single file from src to dst, creating parent directories as needed.
 func copyFile(fs afero.Fs, src string, dst string) error {
 	if err := fs.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
@@ -206,13 +192,10 @@ func copyFile(fs afero.Fs, src string, dst string) error {
 	return err
 }
 
-// readContainCommand reads the contain task string from the service's ocean.config.json.
 func readContainCommand(targetPath string) (string, error) {
 	return ReadRepoCommand(afero.NewOsFs(), targetPath, "contain")
 }
 
-// resolveImagePath returns the image path for the service. Uses the service's ImagePath
-// workspace config field if set; otherwise falls back to the ServiceImageReference composite.
 func resolveImagePath(fs afero.Fs, config WorkspaceConfig, appName, serviceName string) string {
 	appIdx := FindAppIndex(config, appName)
 	if appIdx != -1 {
@@ -227,11 +210,6 @@ func resolveImagePath(fs afero.Fs, config WorkspaceConfig, appName, serviceName 
 	return img
 }
 
-// resolveContainerFilePath returns the absolute path to the service container file.
-// Checks ContainerFile first, falls back to Dockerfile for backward compatibility.
-// A bare filename (no directory component) resolves to repos/containers/<name>.
-// A value with path separators is treated as workspace-root-relative.
-// Falls back to Dockerfile inside the staged service directory when both fields are empty.
 func resolveContainerFilePath(config WorkspaceConfig, root, stagingPath, appName, serviceName string) string {
 	appIdx := FindAppIndex(config, appName)
 	if appIdx != -1 {
@@ -254,13 +232,6 @@ func resolveContainerFilePath(config WorkspaceConfig, root, stagingPath, appName
 	return filepath.Join(stagingPath, relServicePath, "Dockerfile")
 }
 
-// substituteOceanPlaceholders replaces reserved {{ocean:*}} tokens in the task string
-// with their runtime values before execution (REQ 10.9). It uses literal
-// ReplaceAll (rather than the strict Substitute engine) so unrecognized
-// tokens in a contain task are left verbatim instead of erroring — this
-// preserves the historical contain-task behavior. The general variables
-// engine (functions.Substitute) is used by workspace tasks where strict
-// resolution is desired.
 func substituteOceanPlaceholders(task, serviceName, port, imagePath, containerFile string) string {
 	task = strings.ReplaceAll(task, "{{ocean:service_name}}", serviceName)
 	task = strings.ReplaceAll(task, "{{ocean:port}}", port)
@@ -269,7 +240,6 @@ func substituteOceanPlaceholders(task, serviceName, port, imagePath, containerFi
 	return task
 }
 
-// ContainService stages the build context and runs the service's contain task (REQ 10).
 func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -281,13 +251,11 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 		return err
 	}
 
-	// REQ 10.1/10.2/10.3: resolve app and service.
 	resolvedApp, resolvedSvc, err := ResolveContainTarget(config, appName, serviceName)
 	if err != nil {
 		return err
 	}
 
-	// REQ 10.1: read contain task from ocean.config.json.
 	servicePath := filepath.Join(root, "repos", "apps", resolvedApp, "services", resolvedSvc)
 	containTask, err := readContainCommand(servicePath)
 	if err != nil {
@@ -298,7 +266,6 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 		return nil
 	}
 
-	// REQ 10.7/10.8: hash-based caching.
 	serviceNode, err := MakeServiceNode(config, resolvedApp, resolvedSvc)
 	if err != nil {
 		return err
@@ -317,24 +284,21 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 	if err != nil {
 		return err
 	}
-	// REQ 10.7: skip if dependency-tree hash unchanged.
+
 	if hasPrev && prevHash == newHash {
 		fmt.Fprintf(cmd.OutOrStdout(), "contain skipped for service %s/%s: no changes\n", resolvedApp, resolvedSvc)
 		key := ServiceKey(resolvedApp, resolvedSvc)
 		return SetManifestContainHash(fs, root, key, newHash)
 	}
 
-	// REQ 10.5/10.6: stage build context.
 	stagingPath, err := StageServiceBuildContext(fs, root, config, resolvedApp, resolvedSvc, cmd.OutOrStdout())
 	if err != nil {
 		return err
 	}
 
-	// Resolve container file and image path for placeholder substitution.
 	containerFile := resolveContainerFilePath(config, root, stagingPath, resolvedApp, resolvedSvc)
 	imagePath := resolveImagePath(fs, config, resolvedApp, resolvedSvc)
 
-	// Resolve port from workspace config.
 	port := ""
 	appIdx := FindAppIndex(config, resolvedApp)
 	if appIdx != -1 {
@@ -344,10 +308,8 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 		}
 	}
 
-	// REQ 10.9: substitute ocean: placeholders.
 	task := substituteOceanPlaceholders(containTask, resolvedSvc, port, imagePath, containerFile)
 
-	// REQ 10.1: execute contain task from staging directory.
 	execCmd := exec.Command("bash", "-lc", task)
 	execCmd.Dir = stagingPath
 	execCmd.Stdout = cmd.OutOrStdout()
@@ -357,12 +319,10 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 
 	_ = fs.RemoveAll(stagingPath)
 
-	// REQ 10.4: surface error; do not update hash or manifest.
 	if runErr != nil {
 		return runErr
 	}
 
-	// REQ 10.8: on success, persist contain hash and update manifest.
 	if err := WriteHashFile(fs, containHashPath, newHash); err != nil {
 		return err
 	}

@@ -21,6 +21,8 @@ const (
 	MenuTypeService = "service"
 	MenuTypeProject = "project"
 	MenuTypeTest    = "test"
+	MenuTypeInfra   = "infra"
+	MenuTypeDocs    = "docs"
 
 	MenuLibGlobal = "global"
 )

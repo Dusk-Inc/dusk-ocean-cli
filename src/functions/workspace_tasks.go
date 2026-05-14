@@ -9,9 +9,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// runShell is the package-level injection point used by RunWorkspaceTask
-// to execute the substituted task command. Tests replace this with a stub
-// to capture the command and stub the exit status.
 var runShell = func(workdir string, command string, stdout io.Writer, stderr io.Writer) error {
 	cmd := exec.Command("bash", "-lc", command)
 	cmd.Dir = workdir
@@ -20,14 +17,6 @@ var runShell = func(workdir string, command string, stdout io.Writer, stderr io.
 	return cmd.Run()
 }
 
-// RunWorkspaceTask resolves the named workspace-level task, builds the
-// variable context for the target repo, substitutes the template, and
-// executes the resulting command. The execution working directory is the
-// workspace root, mirroring the existing contain-task pattern.
-//
-// If --app is empty, the target name is searched among projects, global
-// libraries, and apps. If --app is set, it is searched among that app's
-// services and libraries. Ambiguous matches are an error.
 func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -36,9 +25,6 @@ func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName 
 	return RunWorkspaceTaskAt(fs, root, stdout, stderr, taskName, target, app)
 }
 
-// RunWorkspaceTaskAt is the test-friendly core of RunWorkspaceTask. It
-// takes the workspace root explicitly so callers (and tests) that already
-// know the root can bypass the cwd-based EnsureWorkspaceRoot guard.
 func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	if taskName == "" {
 		return fmt.Errorf("--name is required")
@@ -87,11 +73,6 @@ func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Wr
 	return runShell(root, expanded, stdout, stderr)
 }
 
-// ResolveRepoKindByName scans the workspace config for a repo entry with
-// the given name. If app is non-empty, only that app's services and
-// libraries are searched. If app is empty, projects, global libraries,
-// and apps are searched. Ambiguous matches surface an error so the user
-// can disambiguate via --app.
 func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (string, error) {
 	if app != "" {
 		appIdx := FindAppIndex(config, app)
@@ -124,6 +105,12 @@ func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (str
 	}
 	if FindAppIndex(config, name) != -1 {
 		matches = append(matches, tokens.RepoKindApp)
+	}
+	if FindInfraIndex(config, name) != -1 {
+		matches = append(matches, tokens.RepoKindInfra)
+	}
+	if FindDocsIndex(config, name) != -1 {
+		matches = append(matches, tokens.RepoKindDocs)
 	}
 	switch len(matches) {
 	case 0:

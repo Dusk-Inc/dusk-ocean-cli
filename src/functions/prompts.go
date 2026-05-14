@@ -231,7 +231,6 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 	}
 }
 
-// SelectFromList displays a prompt selection for a list of items.
 func SelectFromList(label string, items []string) (string, error) {
 	if len(items) == 0 {
 		return "", fmt.Errorf("no options available")

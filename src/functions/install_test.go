@@ -299,13 +299,11 @@ func TestResolveTargetByName(t *testing.T) {
 
 func TestWireLocalDependencyValidation(t *testing.T) {
 	t.Run("complement__wire_local_dependency__scope_violation_returns_error", func(t *testing.T) {
-		// app-lib from app-a cannot be wired into a target in app-b without a shared scope
+
 		root := "/workspace"
 		target := installTarget{Kind: TargetService, App: "app-b", Name: "svc-b", Path: filepath.Join(root, "repos", "apps", "app-b", "services", "svc-b")}
 		dependency := installDependency{kind: dependencyAppLib, app: "app-a", name: "lib-a", path: filepath.Join(root, "repos", "apps", "app-a", "libs", "lib-a")}
 
-		// WireLocalDependency rejects cross-app app-lib wiring with a scope-violation error.
-		// Verify that the condition that triggers the rejection is true for this fixture.
 		if !(dependency.kind == dependencyAppLib && target.App != dependency.app) {
 			t.Fatalf("expected cross-app app-lib condition to be true")
 		}

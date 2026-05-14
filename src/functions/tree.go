@@ -129,15 +129,6 @@ type templateConfig struct {
 	Type     string `json:"type"`
 }
 
-// ListTemplatesByType returns the names of every template that scaffolds
-// the requested kind. Workspace-registered templates are returned first
-// (REQ 19); any unregistered template directories under repos/templates/
-// that classify themselves via ocean.config.json's `type` field are
-// included afterward, deduplicated against the registry, so the dev loop
-// of "drop a template folder, scaffold from it" still works.
-//
-// Apps are intentionally not template-able. Asking for kind "app" returns
-// an empty slice without touching disk.
 func ListTemplatesByType(kind string) ([]string, error) {
 	if kind == "app" {
 		return nil, nil
@@ -151,7 +142,6 @@ func ListTemplatesByType(kind string) ([]string, error) {
 	seen := map[string]struct{}{}
 	var templates []string
 
-	// Workspace-registered templates take precedence.
 	if config, err := ReadWorkspaceConfig(afero.NewOsFs()); err == nil {
 		for _, name := range FindTemplatesByKind(config, kind) {
 			if _, ok := seen[name]; ok {
@@ -162,7 +152,6 @@ func ListTemplatesByType(kind string) ([]string, error) {
 		}
 	}
 
-	// Fall back to filesystem walk for templates not yet registered.
 	templateRoot := filepath.Join(root, "repos", "templates")
 	entries, err := os.ReadDir(templateRoot)
 	if err != nil {

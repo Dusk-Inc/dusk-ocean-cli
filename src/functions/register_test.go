@@ -10,9 +10,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// seedScratchWorkspace lays down a minimal valid ocean.workspace.json so
-// register/adopt tests can exercise the workspace-mutation paths without
-// going through the full InitWorkspace ceremony.
 func seedScratchWorkspace(t *testing.T, fs afero.Fs) {
 	t.Helper()
 	cfg := WorkspaceConfig{
@@ -24,6 +21,62 @@ func seedScratchWorkspace(t *testing.T, fs afero.Fs) {
 	}
 	if err := WriteWorkspaceConfig(fs, cfg); err != nil {
 		t.Fatalf("seed: %v", err)
+	}
+}
+
+func TestRegisterRepo_Infra(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	if err := fs.MkdirAll("repos/infra/terraform-core", 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindInfra, "terraform-core", "", "git@github.com:dusk-inc/terraform-core.git", ""); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+	cfg, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		t.Fatalf("ReadWorkspaceConfig: %v", err)
+	}
+	if len(cfg.Infrastructure) != 1 || cfg.Infrastructure[0].Name != "terraform-core" {
+		t.Fatalf("expected infra terraform-core registered: %+v", cfg.Infrastructure)
+	}
+	if cfg.Infrastructure[0].Remote != "git@github.com:dusk-inc/terraform-core.git" {
+		t.Errorf("remote: got %q", cfg.Infrastructure[0].Remote)
+	}
+	repoConfig, err := ReadRepoConfig(fs, "repos/infra/terraform-core")
+	if err != nil {
+		t.Fatalf("expected starter ocean.config.json: %v", err)
+	}
+	if repoConfig.Type != "infra" {
+		t.Errorf("expected starter type=infra, got %q", repoConfig.Type)
+	}
+}
+
+func TestRegisterRepo_Docs(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	if err := fs.MkdirAll("repos/docs/handbook", 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindDocs, "handbook", "", "git@github.com:dusk-inc/handbook.git", ""); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+	cfg, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		t.Fatalf("ReadWorkspaceConfig: %v", err)
+	}
+	if len(cfg.Docs) != 1 || cfg.Docs[0].Name != "handbook" {
+		t.Fatalf("expected docs handbook registered: %+v", cfg.Docs)
+	}
+	if cfg.Docs[0].Remote != "git@github.com:dusk-inc/handbook.git" {
+		t.Errorf("remote: got %q", cfg.Docs[0].Remote)
+	}
+	repoConfig, err := ReadRepoConfig(fs, "repos/docs/handbook")
+	if err != nil {
+		t.Fatalf("expected starter ocean.config.json: %v", err)
+	}
+	if repoConfig.Type != "docs" {
+		t.Errorf("expected starter type=docs, got %q", repoConfig.Type)
 	}
 }
 
@@ -116,7 +169,7 @@ func TestRegisterRepo_App(t *testing.T) {
 func TestRegisterRepo_Service(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
-	// Service register requires the parent app directory + service dir.
+
 	if err := fs.MkdirAll("repos/apps/app-a/services/svc-a", 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -152,17 +205,14 @@ func TestRegisterRepo_MissingDirectoryErrors(t *testing.T) {
 }
 
 func TestRegisterRepo_AlreadyRegisteredErrors(t *testing.T) {
-	// Workspace registry is the source of truth: an existing entry in
-	// ocean.workspace.json is what makes a repo "already registered",
-	// not the presence of an ocean.config.json on disk.
+
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
 	repoPath := "repos/projects/tooling"
 	if err := fs.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	// Pre-populate the workspace registry so the "already registered"
-	// branch fires.
+
 	if err := AddProjectToWorkspace(fs, "tooling"); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -176,11 +226,6 @@ func TestRegisterRepo_AlreadyRegisteredErrors(t *testing.T) {
 	}
 }
 
-// TestRegisterRepo_ExistingConfigNoWorkspaceEntry covers the gap a user
-// hit in practice: a repo that is itself a dusk-ocean project (so it
-// already ships an ocean.config.json) being registered into a sibling
-// workspace where it has no entry yet. The pre-existing config must be
-// left untouched and the workspace entry must be added.
 func TestRegisterRepo_ExistingConfigNoWorkspaceEntry(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
@@ -188,8 +233,7 @@ func TestRegisterRepo_ExistingConfigNoWorkspaceEntry(t *testing.T) {
 	if err := fs.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	// The repo brings its own ocean.config.json — it is itself a
-	// dusk-ocean project. register must not clobber it.
+
 	original := []byte(`{"name":"dusk-ocean-cli","language":"go","type":"project"}`)
 	if err := afero.WriteFile(fs, filepath.Join(repoPath, "ocean.config.json"), original, 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -199,7 +243,6 @@ func TestRegisterRepo_ExistingConfigNoWorkspaceEntry(t *testing.T) {
 		t.Fatalf("RegisterRepo: %v", err)
 	}
 
-	// Workspace entry was added with the supplied remote.
 	cfg := readWorkspaceConfig(t, fs)
 	if len(cfg.Projects) != 1 || cfg.Projects[0].Name != "dusk-ocean-cli" {
 		t.Fatalf("expected project registered, got %+v", cfg.Projects)
@@ -208,7 +251,6 @@ func TestRegisterRepo_ExistingConfigNoWorkspaceEntry(t *testing.T) {
 		t.Errorf("unexpected remote: %q", cfg.Projects[0].Remote)
 	}
 
-	// Pre-existing ocean.config.json was preserved verbatim.
 	got, err := afero.ReadFile(fs, filepath.Join(repoPath, "ocean.config.json"))
 	if err != nil {
 		t.Fatalf("read config: %v", err)

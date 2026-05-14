@@ -17,8 +17,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Type aliases re-exported from models so callers using the functions package
-// continue to work without changes.
 type (
 	WorkspaceConfig       = models.WorkspaceConfig
 	WorkspacePorts        = models.WorkspacePorts
@@ -31,6 +29,8 @@ type (
 	WorkspaceProject      = models.WorkspaceProject
 	WorkspaceTest         = models.WorkspaceTest
 	WorkspaceTemplate     = models.WorkspaceTemplate
+	WorkspaceInfra        = models.WorkspaceInfra
+	WorkspaceDocs         = models.WorkspaceDocs
 	WorkspaceDep          = models.WorkspaceDep
 	RepoConfig            = models.RepoConfig
 	TargetKind            = models.TargetKind
@@ -78,7 +78,6 @@ func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
 	return absRoot, nil
 }
 
-
 func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []WorkspaceProject) WorkspaceConfig {
 	return WorkspaceConfig{
 		Workspace: "test",
@@ -124,11 +123,13 @@ func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 		filepath.Join(".ocean", "results"),
 		filepath.Join(".ocean", "hashes"),
 		"repos",
-		filepath.Join("repos", "apps"),
-		filepath.Join("repos", "libs"),
-		filepath.Join("repos", "projects"),
-		filepath.Join("repos", "templates"),
+		filepath.Join("repos", tokens.RepoDirApps),
+		filepath.Join("repos", tokens.RepoDirLibs),
+		filepath.Join("repos", tokens.RepoDirProjects),
+		filepath.Join("repos", tokens.RepoDirTemplates),
 		filepath.Join("repos", "containers"),
+		filepath.Join("repos", tokens.RepoDirInfra),
+		filepath.Join("repos", tokens.RepoDirDocs),
 	}
 
 	for _, dir := range dirs {
@@ -174,10 +175,12 @@ func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 			},
 			Reserved: []WorkspaceReservedPort{},
 		},
-		Apps:      []WorkspaceApp{},
-		Libraries: []WorkspaceLibrary{},
-		Projects:  []WorkspaceProject{},
-		Templates: []WorkspaceTemplate{},
+		Apps:           []WorkspaceApp{},
+		Libraries:      []WorkspaceLibrary{},
+		Projects:       []WorkspaceProject{},
+		Templates:      []WorkspaceTemplate{},
+		Infrastructure: []WorkspaceInfra{},
+		Docs:           []WorkspaceDocs{},
 	}
 
 	payload, err := json.MarshalIndent(workspaceConfig, "", "    ")
@@ -311,7 +314,6 @@ func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 	return patterns, nil
 }
 
-// UpdateConfig reads the workspace config, applies a mutation, and writes it back if changed.
 func UpdateConfig(fs afero.Fs, update func(WorkspaceConfig) (WorkspaceConfig, error)) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -357,6 +359,15 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 	}
 	if config.Projects == nil {
 		config.Projects = []WorkspaceProject{}
+	}
+	if config.Templates == nil {
+		config.Templates = []WorkspaceTemplate{}
+	}
+	if config.Infrastructure == nil {
+		config.Infrastructure = []WorkspaceInfra{}
+	}
+	if config.Docs == nil {
+		config.Docs = []WorkspaceDocs{}
 	}
 	if config.Ports.Allowed.Min == 0 {
 		config.Ports.Allowed.Min = 3000
@@ -427,7 +438,6 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 	return config
 }
 
-// FindAppIndex returns the index of an app name, or -1 if not found.
 func FindAppIndex(config WorkspaceConfig, appName string) int {
 	for i, app := range config.Apps {
 		if app.Name == appName {
@@ -437,7 +447,6 @@ func FindAppIndex(config WorkspaceConfig, appName string) int {
 	return -1
 }
 
-// FindServiceIndex returns the index of a service name within an app, or -1 if not found.
 func FindServiceIndex(app WorkspaceApp, serviceName string) int {
 	for i, service := range app.Services {
 		if service.Name == serviceName {
@@ -447,7 +456,6 @@ func FindServiceIndex(app WorkspaceApp, serviceName string) int {
 	return -1
 }
 
-// FindAppLibraryIndex returns the index of an app library name within an app, or -1 if not found.
 func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
 	for i, lib := range app.Libraries {
 		if lib.Name == libName {
@@ -457,7 +465,6 @@ func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
 	return -1
 }
 
-// FindAppTestIndex returns the index of an app test name within an app, or -1 if not found.
 func FindAppTestIndex(app WorkspaceApp, testName string) int {
 	for i, test := range app.Testing {
 		if test.Name == testName {
@@ -467,7 +474,6 @@ func FindAppTestIndex(app WorkspaceApp, testName string) int {
 	return -1
 }
 
-// FindGlobalLibraryIndex returns the index of a global library name, or -1 if not found.
 func FindGlobalLibraryIndex(config WorkspaceConfig, libName string) int {
 	for i, lib := range config.Libraries {
 		if lib.Name == libName {
@@ -477,7 +483,6 @@ func FindGlobalLibraryIndex(config WorkspaceConfig, libName string) int {
 	return -1
 }
 
-// FindProjectIndex returns the index of a project name, or -1 if not found.
 func FindProjectIndex(config WorkspaceConfig, projectName string) int {
 	for i, project := range config.Projects {
 		if project.Name == projectName {
@@ -487,7 +492,6 @@ func FindProjectIndex(config WorkspaceConfig, projectName string) int {
 	return -1
 }
 
-// FindAppLibraryByName returns an app library by name within an app.
 func FindAppLibraryByName(config WorkspaceConfig, appName string, name string) (WorkspaceLibrary, bool) {
 	appIndex := FindAppIndex(config, appName)
 	if appIndex == -1 {
@@ -501,7 +505,6 @@ func FindAppLibraryByName(config WorkspaceConfig, appName string, name string) (
 	return WorkspaceLibrary{}, false
 }
 
-// FindGlobalLibraryByName returns a global library by name and errors on ambiguity.
 func FindGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibrary, bool, error) {
 	var match *WorkspaceLibrary
 	for i, lib := range config.Libraries {
@@ -519,7 +522,6 @@ func FindGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibr
 	return *match, true, nil
 }
 
-// FindProjectByName returns a project by name and errors on ambiguity.
 func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, bool, error) {
 	var match *WorkspaceProject
 	for i, project := range config.Projects {
@@ -537,7 +539,6 @@ func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, b
 	return *match, true, nil
 }
 
-// AddTestToWorkspace registers an app-scoped test project.
 func AddTestToWorkspace(fs afero.Fs, appName string, name string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -568,7 +569,6 @@ func AddTestToWorkspace(fs afero.Fs, appName string, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
-// RemoveTestFromWorkspace removes an app-scoped test project registration.
 func RemoveTestFromWorkspace(fs afero.Fs, appName string, name string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		appIndex := FindAppIndex(config, appName)
@@ -585,7 +585,6 @@ func RemoveTestFromWorkspace(fs afero.Fs, appName string, name string) error {
 	})
 }
 
-// FindRepoLanguage returns whether the repo exists and its language if configured.
 func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
 	info, err := fs.Stat(repoPath)
 	if err != nil {
@@ -604,7 +603,6 @@ func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
 	return true, config.Language, nil
 }
 
-// AppNamesWithLibraries returns app names that contain libraries.
 func AppNamesWithLibraries(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -616,7 +614,6 @@ func AppNamesWithLibraries(config WorkspaceConfig) []string {
 	return names
 }
 
-// AppNamesWithServices returns app names that contain services.
 func AppNamesWithServices(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -628,7 +625,6 @@ func AppNamesWithServices(config WorkspaceConfig) []string {
 	return names
 }
 
-// AppNamesWithTests returns app names that contain testing projects.
 func AppNamesWithTests(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -640,7 +636,6 @@ func AppNamesWithTests(config WorkspaceConfig) []string {
 	return names
 }
 
-// AppLibraryNames returns library names for a given app.
 func AppLibraryNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -655,7 +650,6 @@ func AppLibraryNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
-// ServiceNames returns service names for a given app.
 func ServiceNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -670,7 +664,6 @@ func ServiceNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
-// TestNames returns testing project names for a given app.
 func TestNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -685,7 +678,6 @@ func TestNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
-// GlobalLibraryNames returns names of global libraries.
 func GlobalLibraryNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Libraries))
 	for _, lib := range config.Libraries {
@@ -694,7 +686,6 @@ func GlobalLibraryNames(config WorkspaceConfig) []string {
 	return names
 }
 
-// ProjectNames returns names of projects.
 func ProjectNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Projects))
 	for _, project := range config.Projects {
@@ -703,8 +694,6 @@ func ProjectNames(config WorkspaceConfig) []string {
 	return names
 }
 
-// ResolveTargetByName resolves a workspace target by its repo name across all entity types.
-// Returns an error if no match is found or if the name is ambiguous.
 func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Target, error) {
 	var matches []Target
 
@@ -777,7 +766,6 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 	return matches[0], nil
 }
 
-// ResolveTarget resolves a workspace target from a path.
 func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -863,7 +851,6 @@ func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	return Target{}, fmt.Errorf("current directory is not a supported install target")
 }
 
-// ValidateTargetRegistration ensures the target exists in the workspace config.
 func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 	switch target.Kind {
 	case TargetService:
@@ -984,10 +971,6 @@ func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 	return nil
 }
 
-// reservedProjectFields, reservedAppLibFields, reservedGlobalLibFields,
-// reservedServiceFields, and reservedAppRepoFields enumerate the {{repo:*}}
-// names that are auto-derived from each kind of repo entry. Users may not
-// shadow these via a `variables` block.
 var (
 	reservedProjectFields   = []string{"name", "kind", "path", "scopes", "remote"}
 	reservedAppRepoFields   = []string{"name", "kind", "path", "scopes", "remote"}
@@ -1304,7 +1287,6 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-// FindTargetScopes returns the scope list for a resolved Target from workspace config.
 func FindTargetScopes(config WorkspaceConfig, target Target) []string {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1353,7 +1335,6 @@ func FindTargetScopes(config WorkspaceConfig, target Target) []string {
 	return nil
 }
 
-// HasCommonScope returns true if slices a and b share at least one element.
 func HasCommonScope(a, b []string) bool {
 	set := make(map[string]struct{}, len(a))
 	for _, s := range a {
@@ -1367,8 +1348,6 @@ func HasCommonScope(a, b []string) bool {
 	return false
 }
 
-// AddScopeToWorkspaceTarget appends a scope to a target's entry in the workspace config.
-// It is a no-op if the scope is already present.
 func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1429,8 +1408,6 @@ func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope stri
 	return config, nil
 }
 
-// RemoveScopeFromWorkspaceTarget removes a scope from a target's entry in the workspace config.
-// It is a no-op if the scope is not present.
 func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1481,15 +1458,12 @@ func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope
 	return config, nil
 }
 
-// FindDepsReliantOnScope returns human-readable descriptions of cross-app dependency
-// relationships that will be broken if scope is removed from target (REQ 7.3).
 func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string) []string {
-	// Only app-libs can be cross-app payload sources; check if target is an app-lib.
+
 	if target.Kind != TargetAppLib {
 		return nil
 	}
 
-	// Build the scopes target would have after removal.
 	currentScopes := FindTargetScopes(config, target)
 	remainingScopes := removeString(currentScopes, scope)
 
@@ -1497,14 +1471,13 @@ func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string)
 	for _, app := range config.Apps {
 		for _, svc := range app.Services {
 			if app.Name == target.App {
-				continue // same app, not cross-app
+				continue
 			}
 			for _, dep := range svc.Deps {
 				if dep.Lib != target.Name {
 					continue
 				}
-				// This service in a different app depends on the target lib.
-				// Check if it currently relies on the scope being removed.
+
 				dependentScopes := svc.Scopes
 				if HasCommonScope(currentScopes, dependentScopes) && !HasCommonScope(remainingScopes, dependentScopes) {
 					warnings = append(warnings, fmt.Sprintf(
@@ -1552,7 +1525,6 @@ func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string)
 	return warnings
 }
 
-// AddScope adds a scope name to a target in both workspace config and ocean.config.json (REQ 7.1).
 func AddScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -1583,7 +1555,6 @@ func AddScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName stri
 	return WriteRepoConfig(fs, target.Path, repoConfig)
 }
 
-// RemoveScope removes a scope name from a target in both workspace config and ocean.config.json (REQ 7.2/7.3).
 func RemoveScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {

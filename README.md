@@ -30,7 +30,7 @@ Note: Apps are not template-able. `dusk-ocean menu create` (app type) scaffolds 
 ## Core Concepts
 
 ### Organization
-All code lives under `repos/` in one of four categories:
+All code lives under `repos/` in one of six categories. Apps, libraries, projects, and templates are *code* repos — they participate in the build/check/install pipeline and each carries an `ocean.config.json`. **Infrastructure** and **Docs** are *non-code* repos — they hold terraform, k8s manifests, runbooks, design notes, and the like; they carry no `ocean.config.json` and are clone-only on `refresh`.
 
 #### Apps (`repos/apps/<app>/`)
 Full-stack or microservice-based applications. Apps are not template-able — `dusk-ocean menu create` scaffolds the folder structure directly in code. Each app contains:
@@ -47,7 +47,13 @@ Libraries shared across the entire monorepo. Use a `-ts`, `-py`, or `-go` suffix
 Standalone repositories for self-contained tools, CLIs, research repos, or other non-library, non-application work. Projects participate in the standard build/check/install workflow and may depend on global libraries, but cannot be used as dependencies by other repositories. Use a language suffix when names collide.
 
 #### Templates (`repos/templates/<name>/`)
-Scaffolding sources used by `menu create` to stamp out new services, libraries, or projects. **Apps are intentionally not template-able** — Dusk Ocean scaffolds the app folder structure directly in code. Each template is its own repo with an `ocean.config.json` and is registered in `ocean.workspace.json` with a `kind` field declaring what it produces (`service`, `library`, or `project`). A template may also declare a `deps` list of local libraries; those dependencies are automatically wired into anything scaffolded from the template (see [`menu create`](#menu)). Templates participate in the workspace registry but are **excluded from** `build`, `check`, `install`, `run`, `contain`, `refresh`, and the hash manifest — they are not buildable artifacts. Templates cannot themselves be used as dependencies by other repositories.
+Scaffolding sources used by `menu create` to stamp out new services, libraries, projects, infrastructure repos, or docs repos. **Apps are intentionally not template-able** — Dusk Ocean scaffolds the app folder structure directly in code. Each template is its own repo with an `ocean.config.json` and is registered in `ocean.workspace.json` with a `kind` field declaring what it produces (`service`, `library`, `project`, `infra`, or `docs`). A template may also declare a `deps` list of local libraries; those dependencies are automatically wired into anything scaffolded from the template (see [`menu create`](#menu)). Templates participate in the workspace registry but are **excluded from** `build`, `check`, `install`, `run`, `contain`, `refresh`, and the hash manifest — they are not buildable artifacts. Templates cannot themselves be used as dependencies by other repositories.
+
+#### Infrastructure (`repos/infra/<name>`)
+Non-code repos that hold terraform modules, Kubernetes manifests, Pulumi/CDK programs, and similar infrastructure artifacts. Infrastructure repos carry **no** `ocean.config.json` — they have no build/check/install lifecycle. They do not participate in the dependency graph. `dusk-ocean refresh` will clone them from their `remote` if missing, then leave them alone.
+
+#### Docs (`repos/docs/<name>`)
+Non-code repos for markdown documentation that doesn't belong to a single app — runbooks, design notes, organizational handbooks, ADR collections. Same lifecycle semantics as Infrastructure: no `ocean.config.json`, clone-only on `refresh`, not in the dependency graph.
 
 ### Workspace Configuration (`ocean.workspace.json`)
 Tracks all registered apps, services, libraries, projects, and templates along with their local dependency graphs.
@@ -121,6 +127,18 @@ Tracks all registered apps, services, libraries, projects, and templates along w
             "deps": [
                 { "lib": "lib-a", "from": "global" }
             ]
+        }
+    ],
+    "infrastructure": [
+        {
+            "name": "terraform-core",
+            "remote": "git@github.com:dusk-inc/terraform-core.git"
+        }
+    ],
+    "docs": [
+        {
+            "name": "handbook",
+            "remote": "git@github.com:dusk-inc/handbook.git"
         }
     ]
 }
@@ -253,6 +271,10 @@ Workspace tasks are command templates declared at the top level of `ocean.worksp
 
 In the example above, `org` is a workspace constant defined in `variables`; `remote`, `path`, and `name` are reserved `{{repo:*}}` names auto-derived from the repo entry (see [Variables](#variables)); and `branch` is the only **user-defined** `{{repo:*}}` value — each repo entry that participates in `checkout_existing` / `checkout_new` must supply it in its own `variables` block.
 
+#### Auto-wiring on scaffold
+
+Every `add app | library | project | infra | docs` (and the equivalent `menu create` flow) finishes by invoking `create_remote` then `checkout_new` against the freshly scaffolded directory, so a brand-new repo gets a remote provisioned and a local git history initialized without a separate step. The tasks are plain shell commands, so the same fix works for whatever host the user prefers — GitHub, GitLab, Bitbucket, or a Mercurial setup; the workspace owns the recipe. If either task command is blank (the default written by `dusk-ocean init`), Dusk Ocean skips it with a message and the scaffold succeeds without VCS bootstrap. App-scoped repos (services, app libraries, app testing repos) share their parent app's git history, so VCS wiring is intentionally **not** invoked for them.
+
 ### Polyrepo & Remotes
 
 Dusk Ocean is a polyrepo workspace manager. Each service, library, project, and template registered in `ocean.workspace.json` may live in its own git repository, and Dusk Ocean stores the upstream location on the repo entry itself so workspace-level tasks (see [Workspace Tasks](#workspace-tasks)) can clone or publish each one without the developer hand-maintaining a parallel URL list.
@@ -320,8 +342,10 @@ The `--kind` flag (shared by `adopt` and `register`) selects where the repo is r
 | `app` | top-level `apps` list (as a full application repo) | `repos/apps/<name>/` |
 | `service` | `apps[<app>].services` | `repos/apps/<app>/services/<name>/` |
 | `template` | top-level `templates` list | `repos/templates/<name>/` |
+| `infra` | top-level `infrastructure` list | `repos/infra/<name>/` |
+| `docs` | top-level `docs` list | `repos/docs/<name>/` |
 
-`--app` is **required** for `service`, **optional** for `library` (presence flips the entry from global to app-scoped), and **rejected** for `project`, `app`, and `template`. Registering a template additionally requires `--template-kind <service|library|project>` so the entry knows what it scaffolds. **Apps are not template-able**: `--template-kind app` is explicitly rejected.
+`--app` is **required** for `service`, **optional** for `library` (presence flips the entry from global to app-scoped), and **rejected** for `project`, `app`, `template`, `infra`, and `docs`. Registering a template additionally requires `--template-kind <service|library|project|infra|docs>` so the entry knows what it scaffolds. **Apps are not template-able**: `--template-kind app` is explicitly rejected. Registering an `infra` or `docs` repo deliberately does **not** drop a starter `ocean.config.json` — these repos have no build/check/install lifecycle.
 
 #### The auto-generated starter `ocean.config.json`
 Both `adopt` and `register` drop the same starter file at the repo root. It is intentionally minimal — every task starts empty, and the developer fills each one in by delegating to whatever build system the repo already ships with (npm scripts, a Makefile, a Taskfile, cargo, go test, etc.).
@@ -366,6 +390,8 @@ Initialize a new workspace.
 ```bash
 dusk-ocean init --name <workspace_name>
 ```
+
+`init` creates `ocean.workspace.json`, the `.ocean/` directory used for hashes and results, and the standard `repos/` layout: `repos/apps/`, `repos/libs/`, `repos/projects/`, `repos/templates/`, `repos/containers/`, `repos/infra/`, and `repos/docs/`. A `.gitkeep` is dropped into each newly created repo subfolder so empty layouts survive a git commit.
 
 ### `menu`
 Guided, interactive interface for all CLI commands. Each menu entry describes the command and collects required inputs via prompts. Scaffolding (`menu create`) and repo deletion (`menu remove`) are exclusively available through the menu and have no flag-based equivalents. All other commands (including `run`, `rename`, `add`, `remove`, etc.) are accessible both through the menu and directly via flags.
@@ -454,7 +480,7 @@ Install, build, and check every node in the workspace in dependency order.
 dusk-ocean refresh
 dusk-ocean refresh --clear-hashes  # remove hash records first to force a full rebuild
 ```
-Skips install or build for nodes that have no corresponding task. Templates are skipped entirely — they are scaffolding sources and have no buildable artifact. Fails on dependency graph cycles. Cleans up stale hash files for repos no longer in workspace config.
+Skips install or build for nodes that have no corresponding task. Templates are skipped entirely — they are scaffolding sources and have no buildable artifact. **Infrastructure and docs repos are clone-only**: refresh runs the workspace `clone` task for any `infrastructure[]` or `docs[]` entry whose on-disk directory is missing, then skips them from the install/build/check loops. Fails on dependency graph cycles. Cleans up stale hash files for repos no longer in workspace config.
 
 ### `contain`
 Stage a minimal build context and execute the service's `contain` task to build and publish a container image.

@@ -165,7 +165,6 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
-// WireLocalDependency wires a local dependency by name using --payload and --target flags (REQ 5.1).
 func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -184,10 +183,6 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
 }
 
-// WireLocalDependencyForTarget wires a local dependency into an already-resolved
-// Target. Use this when the caller has full disambiguating context (kind, app,
-// name, path) — e.g. template scaffolding — so we avoid a bare-name re-resolve
-// that breaks when two repos share a name across apps.
 func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName string, target Target) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -325,7 +320,7 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 		return fmt.Errorf("unsupported install target")
 	}
 	if !allowedDeps[dependency.kind] {
-		// REQ 15.4: projects cannot be used as dependencies.
+
 		if dependency.kind == dependencyProject {
 			return fmt.Errorf("projects cannot be used as dependencies")
 		}

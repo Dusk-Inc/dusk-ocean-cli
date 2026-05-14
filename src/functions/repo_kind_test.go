@@ -22,6 +22,8 @@ func TestResolveRepoPath(t *testing.T) {
 		{"app", tokens.RepoKindApp, "app-a", "", "repos/apps/app-a", false},
 		{"service", tokens.RepoKindService, "svc-a", "app-a", "repos/apps/app-a/services/svc-a", false},
 		{"service missing app errors", tokens.RepoKindService, "svc-a", "", "", true},
+		{"infra", tokens.RepoKindInfra, "terraform", "", "repos/infra/terraform", false},
+		{"docs", tokens.RepoKindDocs, "handbook", "", "repos/docs/handbook", false},
 		{"unknown kind errors", "weird", "x", "", "", true},
 		{"missing name errors", tokens.RepoKindProject, "", "", "", true},
 	}
@@ -59,6 +61,10 @@ func TestValidateRepoKindFlags(t *testing.T) {
 		{"library with app ok", tokens.RepoKindLibrary, "app-a", ""},
 		{"service with app ok", tokens.RepoKindService, "app-a", ""},
 		{"service no app errors", tokens.RepoKindService, "", "is required"},
+		{"infra no app ok", tokens.RepoKindInfra, "", ""},
+		{"infra with app errors", tokens.RepoKindInfra, "app-a", "must not be set"},
+		{"docs no app ok", tokens.RepoKindDocs, "", ""},
+		{"docs with app errors", tokens.RepoKindDocs, "app-a", "must not be set"},
 		{"unknown kind errors", "weird", "", "unknown --kind"},
 	}
 	for _, tc := range cases {

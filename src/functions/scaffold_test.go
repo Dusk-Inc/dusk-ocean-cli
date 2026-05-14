@@ -24,8 +24,6 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("AddApp: %v", err)
 		}
 
-		// Apps are not template-able — AddApp must mkdir each subfolder
-		// in code, not copy from repos/templates/apps/.
 		for _, sub := range []string{"services", "libs", "jobs", "docs", "testing"} {
 			subPath := filepath.Join(appPath, sub)
 			info, err := fs.Stat(subPath)
@@ -92,9 +90,7 @@ func TestAddApp(t *testing.T) {
 	})
 
 	t.Run("complement__no_app_template_tree_required", func(t *testing.T) {
-		// AddApp must succeed on a freshly initialized workspace that has
-		// NO repos/templates/apps/ tree. This locks in the "apps are not
-		// template-able" decision.
+
 		fs := afero.NewMemMapFs()
 		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
 			Apps:      []WorkspaceApp{},

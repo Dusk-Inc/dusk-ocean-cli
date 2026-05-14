@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 )
 
@@ -66,9 +67,6 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 	})
 }
 
-// appSubdirs is the fixed list of subdirectories scaffolded under every new
-// app. Apps are intentionally not template-able — Dusk Ocean creates this
-// folder structure directly so the layout stays stable across the workspace.
 var appSubdirs = []string{"services", "libs", "jobs", "docs", "testing"}
 
 func AddApp(fs afero.Fs, name string) error {
@@ -203,6 +201,90 @@ func replacePlaceholders(value string, replacements map[string]string) string {
 		}
 		return replacement
 	})
+}
+
+func AddInfra(fs afero.Fs, name string, template string, replacements map[string]string) error {
+	return addNonCodeRepo(fs, tokens.RepoKindInfra, name, template, replacements, AddInfraToWorkspace)
+}
+
+func AddDocs(fs afero.Fs, name string, template string, replacements map[string]string) error {
+	return addNonCodeRepo(fs, tokens.RepoKindDocs, name, template, replacements, AddDocsToWorkspace)
+}
+
+func RemoveInfra(fs afero.Fs, name string) error {
+	return removeNonCodeRepo(fs, tokens.RepoKindInfra, name, RemoveInfraFromWorkspace)
+}
+
+func RemoveDocs(fs afero.Fs, name string) error {
+	return removeNonCodeRepo(fs, tokens.RepoKindDocs, name, RemoveDocsFromWorkspace)
+}
+
+func addNonCodeRepo(fs afero.Fs, kind string, name string, template string, replacements map[string]string, register func(afero.Fs, string) error) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("--name is required")
+	}
+	relPath, err := ResolveRepoPath(kind, name, "")
+	if err != nil {
+		return err
+	}
+	if _, err := fs.Stat(relPath); err == nil {
+		return fmt.Errorf("%s already exists: %s", kind, name)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if strings.TrimSpace(template) == "" {
+		if err := fs.MkdirAll(relPath, 0o755); err != nil {
+			return err
+		}
+		if err := WriteStarterRepoConfig(fs, relPath, name, kind); err != nil {
+			return err
+		}
+		return register(fs, name)
+	}
+
+	templatePath := filepath.Join("repos", tokens.RepoDirTemplates, template)
+	if _, err := fs.Stat(templatePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing template: %s", template)
+		}
+		return err
+	}
+	if err := CopyDirWithReplacements(fs, templatePath, relPath, replacements); err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(relPath, "ocean.config.json")
+	if _, err := fs.Stat(configPath); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := WriteStarterRepoConfig(fs, relPath, name, kind); err != nil {
+			return err
+		}
+	}
+	return register(fs, name)
+}
+
+func removeNonCodeRepo(fs afero.Fs, kind string, name string, unregister func(afero.Fs, string) error) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("--name is required")
+	}
+	relPath, err := ResolveRepoPath(kind, name, "")
+	if err != nil {
+		return err
+	}
+	if info, err := fs.Stat(relPath); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s exists and is not a directory", relPath)
+		}
+		if err := fs.RemoveAll(relPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return unregister(fs, name)
 }
 
 func RemoveApp(fs afero.Fs, name string) error {

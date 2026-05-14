@@ -10,10 +10,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// withStubRunShell replaces the package-level runShell with a recording
-// stub for the duration of a test, restoring the original on cleanup.
-// The stub captures the command and working directory and returns the
-// configured exit error.
 type recordedShellInvocation struct {
 	workdir string
 	command string

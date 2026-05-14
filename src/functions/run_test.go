@@ -9,10 +9,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// --- helpers ---
-
-// setupRunWorkspace creates a MemMapFs with one app containing one service,
-// optionally seeded with ocean.config.json files.
 func setupRunWorkspace(t *testing.T, appRunTask string, svcRunTask string) (afero.Fs, string, WorkspaceConfig) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -33,7 +29,6 @@ func setupRunWorkspace(t *testing.T, appRunTask string, svcRunTask string) (afer
 		t.Fatalf("setup config: %v", err)
 	}
 
-	// Write app ocean.config.json.
 	appPath := filepath.Join(root, "repos", "apps", "app-a")
 	appConfigJSON := `{"name":"app-a","type":"app","tasks":{"run":"` + appRunTask + `"}}`
 	if err := fs.MkdirAll(appPath, 0o755); err != nil {
@@ -43,7 +38,6 @@ func setupRunWorkspace(t *testing.T, appRunTask string, svcRunTask string) (afer
 		t.Fatalf("write app config: %v", err)
 	}
 
-	// Write service ocean.config.json.
 	svcPath := filepath.Join(root, "repos", "apps", "app-a", "services", "svc-a")
 	svcConfigJSON := `{"name":"svc-a","type":"service","tasks":{"run":"` + svcRunTask + `","build":"","test":""}}`
 	if err := fs.MkdirAll(svcPath, 0o755); err != nil {
@@ -55,8 +49,6 @@ func setupRunWorkspace(t *testing.T, appRunTask string, svcRunTask string) (afer
 
 	return fs, root, config
 }
-
-// --- ResolveContainTarget reuse for run ---
 
 func TestRunServiceResolution(t *testing.T) {
 	t.Run("complement__run__missing_service_returns_error", func(t *testing.T) {
@@ -138,8 +130,6 @@ func TestRunServiceResolution(t *testing.T) {
 	})
 }
 
-// --- Run task skip logic ---
-
 func TestRunTaskSkip(t *testing.T) {
 	t.Run("complement__run_app__no_run_task_skips", func(t *testing.T) {
 		fs, root, config := setupRunWorkspace(t, "", "")
@@ -152,7 +142,6 @@ func TestRunTaskSkip(t *testing.T) {
 			t.Fatalf("expected empty run task, got: %s", runTask)
 		}
 
-		// Verify the skip message would be printed.
 		appIdx := FindAppIndex(config, "app-a")
 		if appIdx == -1 {
 			t.Fatalf("app not found")
@@ -196,8 +185,6 @@ func TestRunTaskSkip(t *testing.T) {
 	})
 }
 
-// --- App validation ---
-
 func TestRunAppValidation(t *testing.T) {
 	t.Run("complement__run_app__missing_app_returns_error", func(t *testing.T) {
 		config := MakeConfig(nil, nil, nil)
@@ -207,8 +194,6 @@ func TestRunAppValidation(t *testing.T) {
 		}
 	})
 }
-
-// --- PreflightService ---
 
 func TestPreflightService(t *testing.T) {
 	t.Run("complement__preflight_service__missing_service_returns_error", func(t *testing.T) {

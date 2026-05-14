@@ -10,27 +10,18 @@ import (
 	"github.com/spf13/afero"
 )
 
-// AppSubRepoKind classifies the three kinds of sub-repo that may live
-// inside an app's directory tree. The string values match the existing
-// repo kinds where applicable, plus "test" for app testing projects
-// (which adopt/register do not accept as a top-level --kind).
 const (
 	AppSubRepoKindService = "service"
 	AppSubRepoKindLibrary = "library"
 	AppSubRepoKindTest    = "test"
 )
 
-// DiscoveredAppSubRepo describes one repo found inside an app's
-// services/, libs/, or testing/ subdirectory by DiscoverAppSubRepos.
 type DiscoveredAppSubRepo struct {
-	Kind string // service|library|test
+	Kind string
 	Name string
-	Path string // workspace-relative path to the sub-repo directory
+	Path string
 }
 
-// appSubRepoDirs maps each scanned subdirectory to the kind of sub-repo
-// it holds. Walking is one level deep — adopt/register only honor
-// sub-repos that live directly under one of these three directories.
 var appSubRepoDirs = []struct {
 	subdir string
 	kind   string
@@ -40,11 +31,6 @@ var appSubRepoDirs = []struct {
 	{"testing", AppSubRepoKindTest},
 }
 
-// DiscoverAppSubRepos walks the three known sub-repo directories under
-// repos/apps/<appName>/ and returns every immediate child directory that
-// carries an ocean.config.json. Missing subdirectories are silently
-// treated as empty, not an error — apps may legitimately have no
-// services or no testing projects yet.
 func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, error) {
 	appRoot := filepath.Join("repos", "apps", appName)
 	var found []DiscoveredAppSubRepo
@@ -59,8 +45,6 @@ func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, e
 			return nil, err
 		}
 
-		// Sort so the discovered order is deterministic across
-		// filesystem implementations (afero.MemMapFs, OS, etc.).
 		sort.Slice(infos, func(i, j int) bool {
 			return infos[i].Name() < infos[j].Name()
 		})
@@ -87,16 +71,6 @@ func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, e
 	return found, nil
 }
 
-// RegisterDiscoveredAppSubRepos discovers every sub-repo inside the
-// adopted/registered app and adds a workspace entry for each one that
-// is not yet registered. Already-registered sub-repos are skipped with
-// a log line; per-entry registration failures are logged but do not
-// abort the loop.
-//
-// Sub-repos discovered this way are NOT given a `remote` value because
-// they share the parent app's git history. The user can register a
-// sub-repo with its own remote separately if it later becomes a
-// polyrepo.
 func RegisterDiscoveredAppSubRepos(fs afero.Fs, out io.Writer, appName string) error {
 	discovered, err := DiscoverAppSubRepos(fs, appName)
 	if err != nil {
@@ -107,9 +81,7 @@ func RegisterDiscoveredAppSubRepos(fs afero.Fs, out io.Writer, appName string) e
 	}
 
 	for _, sub := range discovered {
-		// Re-read the config at the top of every iteration so the next
-		// staleness check (FindServiceIndex, NextServicePort, etc.) sees
-		// the entries written by the previous iteration.
+
 		config, err := ReadWorkspaceConfig(fs)
 		if err != nil {
 			return err

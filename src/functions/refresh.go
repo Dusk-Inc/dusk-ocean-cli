@@ -43,6 +43,10 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
+	if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+		return err
+	}
+
 	for _, key := range order {
 		node, ok := index[key]
 		if !ok {
@@ -85,7 +89,6 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 	return nil
 }
 
-// RunInstall resolves a repo by name and runs its install task (REQ 6.1/6.2).
 func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -103,10 +106,6 @@ func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	return runInstall(cmd, fs, label, target.Path)
 }
 
-// resolveNodeCloneTarget returns the expected on-disk path and the target
-// name to use with the workspace "clone" task for the given node. For app
-// sub-repos (services, app libraries, app tests) the clone target is the
-// parent app directory, since all sub-repos share a single git history.
 func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (dest string, taskTarget string, err error) {
 	switch node.Kind {
 	case NodeAppLib, NodeService, NodeAppTest:
@@ -131,9 +130,34 @@ func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (des
 	return "", "", fmt.Errorf("unsupported node kind: %v", node.Kind)
 }
 
-// cloneNodeRepoIfMissing runs the workspace "clone" task for the repo that
-// owns node if its destination directory does not already exist. If the
-// directory is already present the function is a no-op.
+func cloneNonCodeReposIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
+	for _, entry := range config.Infrastructure {
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirInfra, entry.Name)
+		if err := cloneNonCodeRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+			return err
+		}
+	}
+	for _, entry := range config.Docs {
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirDocs, entry.Name)
+		if err := cloneNonCodeRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cloneNonCodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, dest string, name string, remote string) error {
+	if info, statErr := fs.Stat(dest); statErr == nil && info.IsDir() {
+		return nil
+	}
+	if remote == "" || remote == tokens.RemoteNone {
+		fmt.Fprintf(cmd.OutOrStdout(), "skipping clone of %s: no remote configured\n", name)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "cloning %s\n", name)
+	return RunWorkspaceTaskAt(fs, root, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.WorkspaceTaskClone, name, "")
+}
+
 func cloneNodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, node Node) error {
 	dest, taskTarget, err := resolveNodeCloneTarget(root, config, node)
 	if err != nil {

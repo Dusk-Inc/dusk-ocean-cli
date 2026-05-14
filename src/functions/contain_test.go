@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// --- helpers ---
-
 func makeServiceInApp(appName string, serviceName string, deps ...WorkspaceDep) WorkspaceApp {
 	return WorkspaceApp{
 		Name: appName,
@@ -21,8 +19,6 @@ func makeServiceInApp(appName string, serviceName string, deps ...WorkspaceDep) 
 		Testing:   []WorkspaceTest{},
 	}
 }
-
-// --- substituteOceanPlaceholders ---
 
 func TestSubstituteOceanPlaceholders(t *testing.T) {
 	t.Run("replaces all four reserved tokens", func(t *testing.T) {
@@ -37,9 +33,7 @@ func TestSubstituteOceanPlaceholders(t *testing.T) {
 	})
 
 	t.Run("leaves unrecognized tokens verbatim", func(t *testing.T) {
-		// Contain historically tolerated unknown tokens; the general
-		// Substitute engine is stricter, so this preserves the legacy
-		// contract for contain tasks specifically.
+
 		got := substituteOceanPlaceholders(
 			"echo {{ocean:port}} {{var:org}} {{repo:name}}",
 			"svc-a", "3001", "img", "df",
@@ -50,8 +44,6 @@ func TestSubstituteOceanPlaceholders(t *testing.T) {
 		}
 	})
 }
-
-// --- ResolveContainTarget ---
 
 func TestResolveContainTarget(t *testing.T) {
 	t.Run("domain__resolve__single_service_match_returns_correct_app_and_service", func(t *testing.T) {
@@ -130,8 +122,6 @@ func TestResolveContainTarget(t *testing.T) {
 	})
 }
 
-// --- ReadOceanIgnorePatterns ---
-
 func TestReadOceanIgnorePatterns(t *testing.T) {
 	t.Run("domain__read_oceanignore__returns_patterns_from_file", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
@@ -164,8 +154,6 @@ func TestReadOceanIgnorePatterns(t *testing.T) {
 		}
 	})
 }
-
-// --- ReadOceanIncludePaths ---
 
 func TestReadOceanIncludePaths(t *testing.T) {
 	t.Run("domain__read_oceaninclude__returns_paths_from_file", func(t *testing.T) {
@@ -200,20 +188,16 @@ func TestReadOceanIncludePaths(t *testing.T) {
 	})
 }
 
-// --- StageServiceBuildContext ---
-
 func TestStageServiceBuildContext(t *testing.T) {
 	t.Run("domain__stage__service_only_staged_at_correct_relative_path", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/workspace"
 
-		// Seed workspace config.
 		config := MakeConfig(nil, []WorkspaceApp{makeServiceInApp("app-a", "svc-a")}, nil)
 		if err := writeTestWorkspaceConfig(fs, root, config); err != nil {
 			t.Fatalf("setup config: %v", err)
 		}
 
-		// Seed service source directory.
 		svcPath := filepath.Join(root, "repos", "apps", "app-a", "services", "svc-a")
 		if err := afero.WriteFile(fs, filepath.Join(svcPath, "main.go"), []byte("package main"), 0o644); err != nil {
 			t.Fatalf("setup svc: %v", err)
@@ -253,7 +237,6 @@ func TestStageServiceBuildContext(t *testing.T) {
 			t.Fatalf("setup config: %v", err)
 		}
 
-		// Seed source directories.
 		svcPath := filepath.Join(root, "repos", "apps", "app-a", "services", "svc-a")
 		libPath := filepath.Join(root, "repos", "libs", "lib-a")
 		if err := afero.WriteFile(fs, filepath.Join(svcPath, "main.go"), []byte("svc"), 0o644); err != nil {
@@ -291,11 +274,11 @@ func TestStageServiceBuildContext(t *testing.T) {
 		if err := afero.WriteFile(fs, filepath.Join(svcPath, "main.go"), []byte("svc"), 0o644); err != nil {
 			t.Fatalf("setup svc: %v", err)
 		}
-		// Add a node_modules dir that should be ignored.
+
 		if err := afero.WriteFile(fs, filepath.Join(svcPath, "node_modules", "some-pkg", "index.js"), []byte("pkg"), 0o644); err != nil {
 			t.Fatalf("setup node_modules: %v", err)
 		}
-		// Seed .oceanignore to exclude node_modules.
+
 		if err := afero.WriteFile(fs, filepath.Join(root, ".oceanignore"), []byte("node_modules/\n"), 0o644); err != nil {
 			t.Fatalf("setup oceanignore: %v", err)
 		}
@@ -325,11 +308,10 @@ func TestStageServiceBuildContext(t *testing.T) {
 			t.Fatalf("setup svc: %v", err)
 		}
 
-		// Create .oceaninclude listing pnpm-workspace.yaml.
 		if err := afero.WriteFile(fs, filepath.Join(root, ".oceaninclude"), []byte("pnpm-workspace.yaml\n"), 0o644); err != nil {
 			t.Fatalf("setup oceaninclude: %v", err)
 		}
-		// Create the workspace file to be included.
+
 		if err := afero.WriteFile(fs, filepath.Join(root, "pnpm-workspace.yaml"), []byte("packages:\n  - repos/**\n"), 0o644); err != nil {
 			t.Fatalf("setup pnpm-workspace: %v", err)
 		}
@@ -346,8 +328,6 @@ func TestStageServiceBuildContext(t *testing.T) {
 	})
 }
 
-// writeTestWorkspaceConfig writes a WorkspaceConfig to ocean.workspace.json for tests that
-// call StageServiceBuildContext (which reads the workspace root).
 func writeTestWorkspaceConfig(fs afero.Fs, root string, config WorkspaceConfig) error {
 	if err := fs.MkdirAll(root, 0o755); err != nil {
 		return err

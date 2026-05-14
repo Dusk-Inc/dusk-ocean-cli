@@ -207,6 +207,117 @@ func TestCloneNodeRepoIfMissing(t *testing.T) {
 	})
 }
 
+func TestCloneNonCodeReposIfMissing(t *testing.T) {
+	root := "/workspace"
+
+	t.Run("domain__missing_infra__runs_clone_task", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Infrastructure: []WorkspaceInfra{
+				{Name: "terraform-core", Remote: "https://github.com/example/terraform-core"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(rec.command, "terraform-core") {
+			t.Errorf("expected clone command to reference terraform-core, got: %q", rec.command)
+		}
+	})
+
+	t.Run("domain__missing_docs__runs_clone_task", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Docs: []WorkspaceDocs{
+				{Name: "handbook", Remote: "https://github.com/example/handbook"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(rec.command, "handbook") {
+			t.Errorf("expected clone command to reference handbook, got: %q", rec.command)
+		}
+	})
+
+	t.Run("domain__directory_exists__no_clone", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Infrastructure: []WorkspaceInfra{
+				{Name: "terraform-core", Remote: "https://github.com/example/terraform-core"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirInfra, "terraform-core")
+		if err := fs.MkdirAll(dest, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.command != "" {
+			t.Errorf("expected no clone, got: %q", rec.command)
+		}
+	})
+
+	t.Run("boundary__no_remote__skipped_with_message", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Infrastructure: []WorkspaceInfra{
+				{Name: "no-remote-here", Remote: tokens.RemoteNone},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.command != "" {
+			t.Errorf("expected no clone, got: %q", rec.command)
+		}
+		if !strings.Contains(out.String(), "no remote configured") {
+			t.Errorf("expected skip message, got: %q", out.String())
+		}
+	})
+}
+
 func TestRunInstall(t *testing.T) {
 	t.Run("domain__no_install_task__skips_with_message", func(t *testing.T) {
 		fs := afero.NewMemMapFs()

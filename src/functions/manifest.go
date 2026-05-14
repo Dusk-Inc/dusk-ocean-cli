@@ -10,29 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ManifestEntry records per-operation hashes for a single repository.
-// Each operation (build, check, contain) stores the dependency-tree hash at
-// the time it last succeeded. To determine whether an operation is stale,
-// compute the current tree hash and compare it to the stored value.
-//
-// Schema (.ocean/manifest.json):
-//
-//	{
-//	  "repos": {
-//	    "<node-key>": {
-//	      "kind":         "<NodeKind>",     // e.g. "service", "global-lib", "app-lib", "project", "app-test"
-//	      "app":          "<app-name>",     // owning app; omitted for global libs and projects
-//	      "name":         "<repo-name>",    // repo name within its kind/app scope
-//	      "build_hash":   "<sha256-hex>",   // tree hash at last successful build
-//	      "check_hash":   "<sha256-hex>",   // tree hash at last successful check
-//	      "contain_hash": "<sha256-hex>"    // tree hash at last successful contain
-//	    },
-//	    ...
-//	  }
-//	}
-//
-// Node keys use the format produced by nodeKey(): "service:<app>:<name>",
-// "lib:global:<name>", "lib:app:<app>:<name>", "project:<name>", "test:<app>:<name>".
 type ManifestEntry struct {
 	Kind        string `json:"kind"`
 	App         string `json:"app,omitempty"`
@@ -42,17 +19,14 @@ type ManifestEntry struct {
 	ContainHash string `json:"contain_hash"`
 }
 
-// Manifest is the in-memory representation of .ocean/manifest.json.
 type Manifest struct {
 	Repos map[string]ManifestEntry `json:"repos"`
 }
 
-// ManifestPath returns the absolute path to .ocean/manifest.json.
 func ManifestPath(root string) string {
 	return filepath.Join(root, ".ocean", "manifest.json")
 }
 
-// ReadManifest reads .ocean/manifest.json. Returns an empty manifest if the file is absent.
 func ReadManifest(fs afero.Fs, root string) (Manifest, error) {
 	path := ManifestPath(root)
 	data, err := afero.ReadFile(fs, path)
@@ -72,8 +46,6 @@ func ReadManifest(fs afero.Fs, root string) (Manifest, error) {
 	return m, nil
 }
 
-// WriteManifest writes the manifest atomically to .ocean/manifest.json.
-// It writes to a .tmp file first, then renames, preventing partial reads on concurrent access.
 func WriteManifest(fs afero.Fs, root string, m Manifest) error {
 	path := ManifestPath(root)
 	if err := fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -90,7 +62,6 @@ func WriteManifest(fs afero.Fs, root string, m Manifest) error {
 	return fs.Rename(tmpPath, path)
 }
 
-// HashAllRepos ensures manifest entries exist for every registered repository (REQ 12.1/12.7).
 func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -107,7 +78,6 @@ func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config Workspace
 	return nil
 }
 
-// HashSingleRepo ensures a manifest entry exists for one repo by name (REQ 12.2).
 func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, targetName string) error {
 	target, err := ResolveTargetByName(config, root, targetName)
 	if err != nil {
@@ -130,8 +100,6 @@ func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config Workspa
 	return nil
 }
 
-// SetManifestBuildHash stores the dependency-tree hash for a successful build (REQ 12.5).
-// No-op if the manifest is absent or the key is not present.
 func SetManifestBuildHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.BuildHash = hash
@@ -139,8 +107,6 @@ func SetManifestBuildHash(fs afero.Fs, root string, key string, hash string) err
 	})
 }
 
-// SetManifestCheckHash stores the dependency-tree hash for a successful check (REQ 12.6).
-// No-op if the manifest is absent or the key is not present.
 func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.CheckHash = hash
@@ -148,8 +114,6 @@ func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) err
 	})
 }
 
-// SetManifestContainHash stores the dependency-tree hash for a successful contain (REQ 12.8).
-// No-op if the manifest is absent or the key is not present.
 func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.ContainHash = hash
@@ -157,8 +121,6 @@ func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) e
 	})
 }
 
-// ensureManifestEntry creates a manifest entry for a node if one does not already exist.
-// Existing entries are left unchanged.
 func ensureManifestEntry(node Node, m *Manifest) {
 	key := nodeKey(node)
 	if _, ok := m.Repos[key]; ok {
@@ -171,8 +133,6 @@ func ensureManifestEntry(node Node, m *Manifest) {
 	}
 }
 
-// updateManifestEntry reads the manifest, applies fn to the named entry, and writes it back.
-// If the manifest is absent or the key is not present the function returns nil (no-op).
 func updateManifestEntry(fs afero.Fs, root string, key string, fn func(ManifestEntry) ManifestEntry) error {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -186,7 +146,6 @@ func updateManifestEntry(fs afero.Fs, root string, key string, fn func(ManifestE
 	return WriteManifest(fs, root, m)
 }
 
-// targetToNode converts a resolved Target to a Node, looking up dep lists from config.
 func targetToNode(config WorkspaceConfig, target Target) (Node, error) {
 	switch target.Kind {
 	case TargetGlobalLib:

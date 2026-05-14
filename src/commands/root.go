@@ -1,9 +1,8 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -133,12 +132,16 @@ func init() {
 	addCmd.AddCommand(addLibCmd)
 	addCmd.AddCommand(addPkgCmd)
 	addCmd.AddCommand(addTestCmd)
+	addCmd.AddCommand(addInfraCmd)
+	addCmd.AddCommand(addDocsCmd)
 
 	removeCmd.AddCommand(removeAppCmd)
 	removeCmd.AddCommand(removeLibCmd)
 	removeCmd.AddCommand(removePkgCmd)
 	removeCmd.AddCommand(removeServiceCmd)
 	removeCmd.AddCommand(removeTestCmd)
+	removeCmd.AddCommand(removeInfraCmd)
+	removeCmd.AddCommand(removeDocsCmd)
 
 	detachCmd.AddCommand(detachAppCmd)
 	detachCmd.AddCommand(detachPkgCmd)

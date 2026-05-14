@@ -2,7 +2,6 @@ package functions
 
 import (
 	"testing"
-
 )
 
 func TestMakeTestNode(t *testing.T) {
