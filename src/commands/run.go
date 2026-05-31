@@ -19,7 +19,11 @@ var runAppCmd = &cobra.Command{
 		if appName == "" {
 			return fmt.Errorf("--name is required")
 		}
-		return functions.RunApp(cmd, afero.NewOsFs(), appName)
+		skipCheck, err := cmd.Flags().GetBool("skip-check")
+		if err != nil {
+			return err
+		}
+		return functions.RunApp(cmd, afero.NewOsFs(), appName, skipCheck)
 	},
 }
 
@@ -38,12 +42,18 @@ var runServiceCmd = &cobra.Command{
 		if serviceName == "" {
 			return fmt.Errorf("--name is required")
 		}
-		return functions.RunService(cmd, afero.NewOsFs(), appName, serviceName)
+		skipCheck, err := cmd.Flags().GetBool("skip-check")
+		if err != nil {
+			return err
+		}
+		return functions.RunService(cmd, afero.NewOsFs(), appName, serviceName, skipCheck)
 	},
 }
 
 func init() {
 	runAppCmd.Flags().String("name", "", "Name of the app")
+	runAppCmd.Flags().Bool("skip-check", false, "Skip the pre-flight check (test) step")
 	runServiceCmd.Flags().String("name", "", "Name of the service")
 	runServiceCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
+	runServiceCmd.Flags().Bool("skip-check", false, "Skip the pre-flight check (test) step")
 }

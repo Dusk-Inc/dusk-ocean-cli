@@ -2,6 +2,7 @@ package functions
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string) error {
+func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, skipCheck bool) error {
 	serviceNode, err := MakeServiceNode(config, appName, serviceName)
 	if err != nil {
 		return err
@@ -21,7 +22,9 @@ func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config Works
 		return fmt.Errorf("pre-flight build failed for %s/%s: %w", appName, serviceName, err)
 	}
 
-	if err := RunCheckWithDependencies(cmd, root, config, serviceNode, built, nil); err != nil {
+	if skipCheck {
+		fmt.Fprintf(cmd.OutOrStdout(), "pre-flight check skipped for %s/%s (--skip-check)\n", appName, serviceName)
+	} else if err := RunCheckWithDependencies(cmd, root, config, serviceNode, built, nil); err != nil {
 		return fmt.Errorf("pre-flight check failed for %s/%s: %w", appName, serviceName, err)
 	}
 
@@ -39,7 +42,7 @@ func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config Works
 	return nil
 }
 
-func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
+func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string, skipCheck bool) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -65,19 +68,25 @@ func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName str
 		return nil
 	}
 
-	if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc); err != nil {
+	if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc, skipCheck); err != nil {
+		return err
+	}
+
+	envFile, err := LoadEnvFile(fs, root, cmd.OutOrStdout())
+	if err != nil {
 		return err
 	}
 
 	execCmd := exec.Command("bash", "-lc", runTask)
 	execCmd.Dir = servicePath
+	execCmd.Env = mergeEnvForExec(envFile)
 	execCmd.Stdout = cmd.OutOrStdout()
 	execCmd.Stderr = cmd.ErrOrStderr()
 	execCmd.Stdin = cmd.InOrStdin()
 	return execCmd.Run()
 }
 
-func RunApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
+func RunApp(cmd *cobra.Command, fs afero.Fs, appName string, skipCheck bool) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -104,15 +113,39 @@ func RunApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
 	}
 
 	for _, svc := range config.Apps[appIdx].Services {
-		if err := PreflightService(cmd, fs, root, config, appName, svc.Name); err != nil {
+		if err := PreflightService(cmd, fs, root, config, appName, svc.Name, skipCheck); err != nil {
 			return err
 		}
 	}
 
+	envFile, err := LoadEnvFile(fs, root, cmd.OutOrStdout())
+	if err != nil {
+		return err
+	}
+
 	execCmd := exec.Command("bash", "-lc", runTask)
 	execCmd.Dir = appPath
+	execCmd.Env = mergeEnvForExec(envFile)
 	execCmd.Stdout = cmd.OutOrStdout()
 	execCmd.Stderr = cmd.ErrOrStderr()
 	execCmd.Stdin = cmd.InOrStdin()
 	return execCmd.Run()
+}
+
+func mergeEnvForExec(envFile map[string]string) []string {
+	base := os.Environ()
+	seen := make(map[string]struct{}, len(base))
+	for _, kv := range base {
+		if eq := strings.IndexByte(kv, '='); eq > 0 {
+			seen[kv[:eq]] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(base)+len(envFile))
+	out = append(out, base...)
+	for k, v := range envFile {
+		if _, exists := seen[k]; !exists {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
 }

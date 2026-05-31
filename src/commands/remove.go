@@ -176,6 +176,10 @@ var removePkgCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		deleteDir, err := cmd.Flags().GetBool("delete")
+		if err != nil {
+			return err
+		}
 		root, err := functions.GetRoot()
 		if err != nil {
 			return err
@@ -188,8 +192,14 @@ var removePkgCmd = &cobra.Command{
 			name = selectedName
 		}
 
+		var label string
+		if deleteDir {
+			label = fmt.Sprintf("Remove project %q AND its directory on disk? Files are permanently deleted", name)
+		} else {
+			label = fmt.Sprintf("Remove project %q from workspace registration? (directory on disk is kept; pass --delete to also remove it)", name)
+		}
 		prompt := promptui.Prompt{
-			Label:     fmt.Sprintf("Remove project %q? This action is permanent", name),
+			Label:     label,
 			IsConfirm: true,
 		}
 		confirm, err := prompt.Run()
@@ -200,16 +210,16 @@ var removePkgCmd = &cobra.Command{
 			return fmt.Errorf("aborted")
 		}
 
-		path := filepath.Join(root, "repos", "projects", name)
 		fs := afero.NewOsFs()
-		if _, err := fs.Stat(path); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("project does not exist: %s", name)
+		if deleteDir {
+			path := filepath.Join(root, "repos", "projects", name)
+			if _, err := fs.Stat(path); err != nil {
+				if !os.IsNotExist(err) {
+					return err
+				}
+			} else if err := fs.RemoveAll(path); err != nil {
+				return err
 			}
-			return err
-		}
-		if err := fs.RemoveAll(path); err != nil {
-			return err
 		}
 		return functions.RemoveProjectFromWorkspace(fs, name)
 	},
@@ -401,6 +411,7 @@ func init() {
 	removeLibCmd.Flags().String("name", "", "Name of the library")
 	removeLibCmd.Flags().String("in", "", "App name for the library")
 	removePkgCmd.Flags().String("name", "", "Name of the project")
+	removePkgCmd.Flags().Bool("delete", false, "Also delete the project directory on disk (default: keep)")
 	removeServiceCmd.Flags().String("name", "", "Name of the service")
 	removeServiceCmd.Flags().String("in", "", "App name for the service")
 	removeTestCmd.Flags().String("name", "", "Name of the test")

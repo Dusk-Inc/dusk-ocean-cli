@@ -199,10 +199,50 @@ func TestPreflightService(t *testing.T) {
 	t.Run("complement__preflight_service__missing_service_returns_error", func(t *testing.T) {
 		fs, root, config := setupRunWorkspace(t, "", "")
 		cmd := makeTestCmd(&bytes.Buffer{})
-		err := PreflightService(cmd, fs, root, config, "app-a", "nonexistent")
+		err := PreflightService(cmd, fs, root, config, "app-a", "nonexistent", false)
 		if err == nil {
 			t.Fatalf("expected error for missing service")
 		}
 	})
 
+}
+
+func TestMergeEnvForExec(t *testing.T) {
+	t.Setenv("DUSK_OCEAN_TEST_PROCESS_KEY", "from_process")
+	t.Setenv("DUSK_OCEAN_TEST_SHARED_KEY", "from_process")
+
+	t.Run("domain__merge_env__envFileKeys_appended", func(t *testing.T) {
+		out := mergeEnvForExec(map[string]string{
+			"DUSK_OCEAN_TEST_FILE_KEY": "from_file",
+		})
+		assertEnvContains(t, out, "DUSK_OCEAN_TEST_PROCESS_KEY=from_process")
+		assertEnvContains(t, out, "DUSK_OCEAN_TEST_FILE_KEY=from_file")
+	})
+
+	t.Run("domain__merge_env__processEnv_winsOnConflict", func(t *testing.T) {
+		out := mergeEnvForExec(map[string]string{
+			"DUSK_OCEAN_TEST_SHARED_KEY": "from_file",
+		})
+		assertEnvContains(t, out, "DUSK_OCEAN_TEST_SHARED_KEY=from_process")
+		for _, kv := range out {
+			if kv == "DUSK_OCEAN_TEST_SHARED_KEY=from_file" {
+				t.Fatalf(".env value leaked past process env on conflict")
+			}
+		}
+	})
+
+	t.Run("boundary__merge_env__emptyEnvFile_returnsProcessEnvUnchanged", func(t *testing.T) {
+		out := mergeEnvForExec(map[string]string{})
+		assertEnvContains(t, out, "DUSK_OCEAN_TEST_PROCESS_KEY=from_process")
+	})
+}
+
+func assertEnvContains(t *testing.T, env []string, want string) {
+	t.Helper()
+	for _, kv := range env {
+		if kv == want {
+			return
+		}
+	}
+	t.Fatalf("expected env to contain %q; not found", want)
 }

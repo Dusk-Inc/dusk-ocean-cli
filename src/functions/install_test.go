@@ -297,6 +297,93 @@ func TestResolveTargetByName(t *testing.T) {
 	})
 }
 
+func TestResolveTargetByNameInApp(t *testing.T) {
+	root := "/workspace"
+
+	t.Run("domain__resolve_in_app__disambiguates_shared_service_name", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			{Name: "app-a", Services: []WorkspaceService{{Name: "client"}}},
+			{Name: "app-b", Services: []WorkspaceService{{Name: "client"}}},
+		}, nil)
+
+		target, err := ResolveTargetByNameInApp(config, root, "app-b", "client")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetService {
+			t.Fatalf("expected TargetService, got %v", target.Kind)
+		}
+		if target.App != "app-b" {
+			t.Fatalf("expected app-b, got %s", target.App)
+		}
+		if target.Path != filepath.Join(root, "repos", "apps", "app-b", "services", "client") {
+			t.Fatalf("unexpected path: %s", target.Path)
+		}
+	})
+
+	t.Run("domain__resolve_in_app__finds_app_lib", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			MakeApp("app-a", []WorkspaceLibrary{MakeLibrary("lib-a")}),
+		}, nil)
+
+		target, err := ResolveTargetByNameInApp(config, root, "app-a", "lib-a")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetAppLib {
+			t.Fatalf("expected TargetAppLib, got %v", target.Kind)
+		}
+		if target.App != "app-a" {
+			t.Fatalf("expected app-a, got %s", target.App)
+		}
+	})
+
+	t.Run("domain__resolve_in_app__finds_app_itself", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{{Name: "app-a"}}, nil)
+
+		target, err := ResolveTargetByNameInApp(config, root, "app-a", "app-a")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetApp {
+			t.Fatalf("expected TargetApp, got %v", target.Kind)
+		}
+	})
+
+	t.Run("complement__resolve_in_app__app_not_found_returns_error", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{{Name: "app-a"}}, nil)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-missing", "svc")
+		if err == nil {
+			t.Fatalf("expected error for missing app")
+		}
+	})
+
+	t.Run("complement__resolve_in_app__target_not_found_in_app_returns_error", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			{Name: "app-a", Services: []WorkspaceService{{Name: "svc-x"}}},
+		}, nil)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-a", "svc-y")
+		if err == nil {
+			t.Fatalf("expected error for missing target in app")
+		}
+	})
+
+	t.Run("complement__resolve_in_app__ignores_global_libs", func(t *testing.T) {
+		config := MakeConfig(
+			[]WorkspaceLibrary{MakeLibrary("global-lib")},
+			[]WorkspaceApp{{Name: "app-a"}},
+			nil,
+		)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-a", "global-lib")
+		if err == nil {
+			t.Fatalf("expected error: global libs are not scoped to an app")
+		}
+	})
+}
+
 func TestWireLocalDependencyValidation(t *testing.T) {
 	t.Run("complement__wire_local_dependency__scope_violation_returns_error", func(t *testing.T) {
 

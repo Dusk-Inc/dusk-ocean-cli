@@ -761,9 +761,55 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 		return Target{}, fmt.Errorf("target not found: %s", name)
 	}
 	if len(matches) > 1 {
-		return Target{}, fmt.Errorf("target name is ambiguous: %s (found in multiple repos)", name)
+		return Target{}, fmt.Errorf("target name is ambiguous: %s (found in multiple repos); disambiguate with --app", name)
 	}
 	return matches[0], nil
+}
+
+func ResolveTargetByNameInApp(config WorkspaceConfig, root string, appName string, name string) (Target, error) {
+	appIdx := FindAppIndex(config, appName)
+	if appIdx == -1 {
+		return Target{}, fmt.Errorf("app not found: %s", appName)
+	}
+	app := config.Apps[appIdx]
+	if app.Name == name {
+		return Target{
+			Kind: TargetApp,
+			Name: name,
+			Path: filepath.Join(root, "repos", "apps", name),
+		}, nil
+	}
+	for _, service := range app.Services {
+		if service.Name == name {
+			return Target{
+				Kind: TargetService,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "services", name),
+			}, nil
+		}
+	}
+	for _, lib := range app.Libraries {
+		if lib.Name == name {
+			return Target{
+				Kind: TargetAppLib,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "libs", name),
+			}, nil
+		}
+	}
+	for _, test := range app.Testing {
+		if test.Name == name {
+			return Target{
+				Kind: TargetTest,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "testing", name),
+			}, nil
+		}
+	}
+	return Target{}, fmt.Errorf("target not found in app %s: %s", appName, name)
 }
 
 func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
@@ -1111,6 +1157,8 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 		return config.Tasks.Contain, nil
 	case "run":
 		return config.Tasks.Run, nil
+	case "stop":
+		return config.Tasks.Stop, nil
 	case "setup":
 		return config.Tasks.Setup, nil
 	case "prebuild":

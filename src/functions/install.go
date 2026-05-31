@@ -165,7 +165,7 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
-func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -175,7 +175,12 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	target, err := ResolveTargetByName(config, root, targetName)
+	var target Target
+	if appName != "" {
+		target, err = ResolveTargetByNameInApp(config, root, appName, targetName)
+	} else {
+		target, err = ResolveTargetByName(config, root, targetName)
+	}
 	if err != nil {
 		return err
 	}

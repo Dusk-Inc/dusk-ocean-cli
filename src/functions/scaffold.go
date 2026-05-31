@@ -19,6 +19,12 @@ func CopyDir(fs afero.Fs, src string, dst string) error {
 }
 
 func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+	workspaceRoot, _ := GetRoot()
+	var ignorePatterns []string
+	if workspaceRoot != "" {
+		ignorePatterns, _ = ReadOceanIgnorePatterns(fs, workspaceRoot)
+	}
+
 	return afero.Walk(fs, src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -32,9 +38,20 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 			return fs.MkdirAll(dst, 0o755)
 		}
 
+		if ShouldIgnore(filepath.ToSlash(relPath), info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		targetPath := filepath.Join(dst, replacePlaceholders(relPath, replacements))
 		if info.IsDir() {
 			return fs.MkdirAll(targetPath, 0o755)
+		}
+
+		if !info.Mode().IsRegular() {
+			return nil
 		}
 
 		if err := fs.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {

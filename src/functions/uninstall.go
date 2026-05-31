@@ -64,7 +64,7 @@ func RunUninstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	return runUninstall(cmd, fs, target, dependency, UninstallOptions{})
 }
 
-func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -74,7 +74,12 @@ func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, 
 		return err
 	}
 
-	target, err := ResolveTargetByName(config, root, targetName)
+	var target Target
+	if appName != "" {
+		target, err = ResolveTargetByNameInApp(config, root, appName, targetName)
+	} else {
+		target, err = ResolveTargetByName(config, root, targetName)
+	}
 	if err != nil {
 		return err
 	}
