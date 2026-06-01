@@ -1,0 +1,14 @@
+feature: scoped-refresh
+requester:
+  name: Ryan Clark
+  email: ryan_clark@dusk-inc.com
+created: "2026-05-31"
+boundaries:
+  - id: refresh.scoped_cli
+active_boundaries:
+  - refresh.scoped_cli
+log:
+  - at: "2026-05-31"
+    boundary: refresh.scoped_cli
+    event: created
+    to: spec
