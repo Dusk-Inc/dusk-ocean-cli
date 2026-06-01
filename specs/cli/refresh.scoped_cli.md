@@ -2,7 +2,7 @@
 id: refresh.scoped_cli
 type: cli
 name: Scoped Refresh Command
-status: representation
+status: simulation
 owner: dusk-ocean
 version: 0.1.0
 contract:
