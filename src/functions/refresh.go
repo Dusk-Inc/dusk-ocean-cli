@@ -2,14 +2,35 @@ package functions
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
+
+type RefreshNodeStatus string
+
+const (
+	RefreshStatusOK          RefreshNodeStatus = "ok"
+	RefreshStatusNoAccess    RefreshNodeStatus = "no-access"
+	RefreshStatusMissingDeps RefreshNodeStatus = "missing-deps"
+)
+
+type RefreshNodeReport struct {
+	Key     string
+	Label   string
+	Status  RefreshNodeStatus
+	Missing []string
+}
+
+type RefreshReport struct {
+	Entries []RefreshNodeReport
+}
 
 func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
 	graph, index, err := BuildWorkspaceGraph(config)
@@ -55,11 +76,43 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 		if err != nil {
 			return err
 		}
-		if _, done := cloned[dest]; !done {
-			cloned[dest] = struct{}{}
-			if err := cloneNodeRepoIfMissing(cmd, fs, root, config, node); err != nil {
-				return err
+		if cached, done := cloneStatusByDest[dest]; done {
+			statusByKey[key] = cached
+			continue
+		}
+		statusByKey[key] = attemptCloneForRefresh(cmd, fs, root, config, node, dest)
+		cloneStatusByDest[dest] = statusByKey[key]
+	}
+
+	for _, key := range order {
+		if statusByKey[key] != RefreshStatusOK {
+			continue
+		}
+		node := index[key]
+		var missing []string
+		for _, dep := range node.Deps {
+			depNode, err := resolveDependencyNode(config, node, dep)
+			if err != nil {
+				missing = append(missing, strings.TrimSpace(dep.Lib))
+				continue
 			}
+			depKey := nodeKey(depNode)
+			if depStatus, known := statusByKey[depKey]; known && depStatus != RefreshStatusOK {
+				missing = append(missing, depKey)
+				continue
+			}
+			_, depPath, _, err := NodeBuildInfo(root, depNode)
+			if err != nil {
+				missing = append(missing, depKey)
+				continue
+			}
+			if !DirExists(fs, depPath) {
+				missing = append(missing, depKey)
+			}
+		}
+		if len(missing) > 0 {
+			statusByKey[key] = RefreshStatusMissingDeps
+			missingByKey[key] = missing
 		}
 	}
 
@@ -87,6 +140,7 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 		if err := buildNode(cmd, root, config, node); err != nil {
 			return err
 		}
+		built[key] = struct{}{}
 	}
 
 	for _, node := range order {
@@ -99,6 +153,8 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 		}
 	}
 
+	report := buildRefreshReport(order, index, statusByKey, missingByKey)
+	WriteRefreshReport(cmd.OutOrStdout(), report)
 	return nil
 }
 

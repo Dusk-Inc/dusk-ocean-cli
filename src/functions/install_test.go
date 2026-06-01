@@ -112,6 +112,35 @@ func TestValidateInstallFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("domain__template_target_global_lib__return_nil", func(t *testing.T) {
+		target := installTarget{Kind: targetTemplate, Name: "ts-ui"}
+		dep := installDependency{kind: dependencyGlobalLib, name: "iris"}
+		if err := validateInstallFlow(target, dep); err != nil {
+			t.Fatalf("expected allowed dependency for template, got %v", err)
+		}
+	})
+
+	t.Run("complement__template_target_app_lib__returns_error", func(t *testing.T) {
+		target := installTarget{Kind: targetTemplate, Name: "ts-ui"}
+		dep := installDependency{kind: dependencyAppLib, app: "app", name: "lib"}
+		err := validateInstallFlow(target, dep)
+		if err == nil {
+			t.Fatalf("expected error for app-lib dep on template")
+		}
+		if !strings.Contains(err.Error(), "invalid dependency for template") {
+			t.Fatalf("expected template-specific error, got: %v", err)
+		}
+	})
+
+	t.Run("complement__template_target_project_dep__returns_error", func(t *testing.T) {
+		target := installTarget{Kind: targetTemplate, Name: "ts-ui"}
+		dep := installDependency{kind: dependencyProject, name: "proj"}
+		err := validateInstallFlow(target, dep)
+		if err == nil {
+			t.Fatalf("expected error for project dep on template")
+		}
+	})
+
 	t.Run("complement__unsupported_target__returns_error", func(t *testing.T) {
 		target := installTarget{Kind: targetKind("unknown")}
 		dep := installDependency{kind: dependencyGlobalLib, name: "lib"}
@@ -167,6 +196,22 @@ func TestEnsureNoCycles(t *testing.T) {
 		dep := installDependency{kind: dependencyGlobalLib, name: "a"}
 		if err := ensureNoCycles(config, target, dep); err != nil {
 			t.Fatalf("expected no cycle check for service, got %v", err)
+		}
+	})
+
+	t.Run("boundary__template_target__skips_cycle_check", func(t *testing.T) {
+		config := MakeConfig(
+			[]WorkspaceLibrary{
+				MakeLibrary("a", "b"),
+				MakeLibrary("b"),
+			},
+			nil,
+			nil,
+		)
+		target := installTarget{Kind: targetTemplate, Name: "tpl"}
+		dep := installDependency{kind: dependencyGlobalLib, name: "a"}
+		if err := ensureNoCycles(config, target, dep); err != nil {
+			t.Fatalf("expected no cycle check for template, got %v", err)
 		}
 	})
 
@@ -281,6 +326,24 @@ func TestResolveTargetByName(t *testing.T) {
 		_, err := ResolveTargetByName(config, root, "ghost")
 		if err == nil {
 			t.Fatalf("expected error for unknown target")
+		}
+	})
+
+	t.Run("domain__resolve_target_by_name__finds_template", func(t *testing.T) {
+		config := MakeConfig(nil, nil, nil)
+		config.Templates = []WorkspaceTemplate{MakeTemplate("ts-ui", "service")}
+		target, err := ResolveTargetByName(config, root, "ts-ui")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetTemplate {
+			t.Fatalf("expected TargetTemplate, got %v", target.Kind)
+		}
+		if target.Name != "ts-ui" {
+			t.Fatalf("expected name ts-ui, got %s", target.Name)
+		}
+		if target.Path != filepath.Join(root, "repos", "templates", "ts-ui") {
+			t.Fatalf("unexpected path: %s", target.Path)
 		}
 	})
 

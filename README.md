@@ -1,5 +1,7 @@
+![dusk ocean image header](./resources/Dusk%20Ocean%20Github%20Readme.png "dusk ocean image header")
+
 # Dusk Ocean CLI
-Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
+Dusk Ocean is a polyglot polyrepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
 
 ## Source Layout
 - `src/commands`: Cobra command definitions — one file per top-level command.
@@ -9,7 +11,7 @@ Dusk Ocean is a polyglot monorepo CLI for scaffolding repositories, managing dep
 - `src/tokens`: Shared constants and enums for domain literals and kinds.
 
 ## Getting Started
-Run the following from the root of your monorepo to initialize the workspace:
+Run the following from the root of your polyrepo to initialize the workspace:
 ```bash
 dusk-ocean init --name <workspace_name>
 ```
@@ -161,6 +163,7 @@ Every app, service, library, project, and template has an `ocean.config.json` at
         "add": "pnpm add --workspace {{name}}",
         "uninstall": "pnpm remove {{name}}",
         "contain": "",
+        "publish": "",
         "run": ""
     }
 }
@@ -169,7 +172,8 @@ Every app, service, library, project, and template has an `ocean.config.json` at
 - `build` and `test`: invoked by `dusk-ocean build` and `dusk-ocean check`.
 - `install`: invoked by `dusk-ocean install` to run the package manager (e.g. `pnpm install`).
 - `add` and `uninstall`: invoked when wiring or unwiring this library as a local dependency in another repo.
-- `contain`: invoked by `dusk-ocean contain` to build and publish a service container image.
+- `contain`: invoked by `dusk-ocean contain` to build and publish a service or project container image.
+- `publish`: invoked by `dusk-ocean publish` to publish a project artifact to a package registry (e.g. `npm publish`).
 - `run`: invoked by `dusk-ocean run` to execute the app or service after pre-flight checks.
 
 ### Variables
@@ -376,12 +380,12 @@ Typical delegations a developer would drop in:
 
 Because the tasks are plain shell commands, there is no lock-in: Dusk Ocean never assumes a specific build tool. It only needs a command it can run in the repo's directory.
 
-### Build, Check, and Contain Caching
+### Build, Check, Contain, and Publish Caching
 To avoid redundant work, Dusk Ocean computes a dependency-tree hash for each repository and compares it to the stored per-operation hash in `.ocean/manifest.json`:
-- If the dependency-tree hash matches the stored `build_hash`, `check_hash`, or `contain_hash`, the corresponding operation is skipped.
+- If the dependency-tree hash matches the stored `build_hash`, `check_hash`, `contain_hash`, or `publish_hash`, the corresponding operation is skipped.
 - If the hash differs (or is missing), the operation executes and the new hash is saved on success.
 - For `check`, if the hash changed and a `build` task exists, Ocean rebuilds first, then runs the check.
-- The `contain` operation uses the same hash-based skip logic applied to the service's dependency tree.
+- The `contain` and `publish` operations use the same hash-based skip logic applied to the target's dependency tree.
 
 ## Commands
 
@@ -483,12 +487,14 @@ dusk-ocean refresh --clear-hashes  # remove hash records first to force a full r
 Skips install or build for nodes that have no corresponding task. Templates are skipped entirely — they are scaffolding sources and have no buildable artifact. **Infrastructure and docs repos are clone-only**: refresh runs the workspace `clone` task for any `infrastructure[]` or `docs[]` entry whose on-disk directory is missing, then skips them from the install/build/check loops. Fails on dependency graph cycles. Cleans up stale hash files for repos no longer in workspace config.
 
 ### `contain`
-Stage a minimal build context and execute the service's `contain` task to build and publish a container image.
+Stage a minimal build context and execute the service's or project's `contain` task to build and publish a container image.
 ```bash
-dusk-ocean contain --service <name>
-dusk-ocean contain --service <name> --app <app>  # required when service name is ambiguous
+dusk-ocean contain project --name <name>
+dusk-ocean contain service --name <name>
+dusk-ocean contain service --name <name> --in <app>   # required when service name is ambiguous
 ```
-Rather than enforcing a specific containerization tool, Dusk Ocean executes the service's `contain` task (defined in `ocean.config.json`) after staging the build context. Before executing, Dusk Ocean substitutes reserved placeholders (`{{ocean:service_name}}`, `{{ocean:port}}`, `{{ocean:image_path}}`, `{{ocean:container_file}}`) in the task command with runtime values. See [Variables](#variables) for the full substitution model; these four tokens are the built-in reserved `{{ocean:*}}` tokens used at contain time. Ocean copies the service directory and all of its transitive local dependencies into `.ocean/stage/`, preserving their paths relative to the workspace root. The staging directory is always removed after the contain task completes or fails.
+
+Rather than enforcing a specific containerization tool, Dusk Ocean executes the `contain` task (defined in `ocean.config.json`) after staging the build context. Before executing, Dusk Ocean substitutes reserved placeholders (`{{ocean:service_name}}`, `{{ocean:port}}`, `{{ocean:image_path}}`, `{{ocean:container_file}}`) in the task command with runtime values. Projects have no `port` or `image_path` fields in workspace config; for project targets, those two tokens are substituted with empty strings, and `{{ocean:container_file}}` falls back to `<staging>/repos/projects/<name>/Dockerfile`. See [Variables](#variables) for the full substitution model. Ocean copies the target directory and all of its transitive local dependencies into `.ocean/stage/`, preserving their paths relative to the workspace root. The staging directory is always removed after the contain task completes or fails.
 
 Each service may declare `container_file` (path to the container build recipe) and `image_path` (full registry path for the built image) in workspace config. A bare filename for `container_file` resolves to `repos/containers/<name>`; a value with path separators is treated as workspace-root-relative.
 
@@ -497,6 +503,18 @@ Dusk Ocean computes a dependency-tree hash before contain; if the hash matches t
 Two workspace-root files control staging:
 - `.oceanignore`: gitignore-format patterns for files to exclude (e.g. `node_modules/`). Absence is logged; no patterns are applied.
 - `.oceaninclude`: one workspace-relative path per line; files are copied to the staging root (e.g. `go.work`, `pnpm-workspace.yaml`). Absence is logged; no files are copied.
+
+### `publish`
+Execute a project's `publish` task (e.g. `npm publish`). Unlike `contain`, publish runs from the actual project directory — no staging — because package managers rely on the real repo layout (`package.json`, `.npmignore`, etc.).
+```bash
+dusk-ocean publish project --name <name>
+dusk-ocean publish project --name <name> --skip-preflight
+```
+Pre-flight requires a prior successful `build` and `contain` for the target (`build_hash` and `contain_hash` must be present in the manifest). This prevents publishing a stale artifact. Use `--skip-preflight` to bypass for emergency releases.
+
+Dusk Ocean computes a dependency-tree hash before publish; if the hash matches the stored `publish_hash` in the manifest, the publish is skipped.
+
+The `publish` task inherits the CI environment, so secrets (e.g. `NODE_AUTH_TOKEN`) flow through from the caller.
 
 ### `move`
 Relocate a library repository from one location to another within the workspace. Updates the physical directory, workspace config, hash store paths, and all dependency references.

@@ -235,10 +235,10 @@ Resolves the named workspace task from `config.Tasks`, infers the target repo's 
 ## WorkspaceTemplate registry
 
 ### Definition
-Helpers in `src/functions/templates.go` (`AddTemplateToWorkspace`, `RemoveTemplateFromWorkspace`, `FindTemplateIndex`, `FindTemplatesByKind`, `ValidateTemplateDepsForTarget`, `PropagateTemplateDeps`) backed by `WorkspaceConfig.Templates` and the `WorkspaceTemplate` model.
+Helpers in `src/functions/templates.go` (`AddTemplateToWorkspace`, `RemoveTemplateFromWorkspace`, `FindTemplateIndex`, `FindTemplatesByKind`, `FindTemplatesByKinds`, `ValidateTemplateDepsForTarget`, `PropagateTemplateDeps`) backed by `WorkspaceConfig.Templates` and the `WorkspaceTemplate` model.
 
 ### Function
-Manages the workspace registry of scaffold templates. Each `WorkspaceTemplate` carries a `kind` (`service`, `library`, or `project`) and a `deps` list. Apps are intentionally not template-able — `ValidateTemplateKind` and `FindTemplatesByKind` both reject the `app` kind. Templates are excluded from `BuildWorkspaceGraph`/`CollectWorkspaceNodes`, so they never participate in build/check/refresh/contain/hash flows. `ListTemplatesByType` consults `Templates` first and falls back to a filesystem walk under `repos/templates/` for unregistered template directories so the dev loop of "drop a folder, scaffold from it" still works.
+Manages the workspace registry of scaffold templates. Each `WorkspaceTemplate` carries a `kind` (`service`, `library`, or `project`) and a `deps` list. Apps are intentionally not template-able — `ValidateTemplateKind`, `FindTemplatesByKind`, and `FindTemplatesByKinds` all reject the `app` kind. Templates are excluded from `BuildWorkspaceGraph`/`CollectWorkspaceNodes`, so they never participate in build/check/refresh/contain/hash flows. `ListTemplatesByType` accepts one or more kinds, consults `Templates` first via `FindTemplatesByKinds`, and falls back to a filesystem walk under `repos/templates/` for unregistered template directories so the dev loop of "drop a folder, scaffold from it" still works. Service and library scaffolds invoke it with their own kind only; project scaffolds invoke it with `service`, `library`, and `project` so a project may seed from any non-app template kind (REQ 19.6.1).
 
 ## PropagateTemplateDeps
 

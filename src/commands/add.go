@@ -295,7 +295,7 @@ var addLibCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
 
@@ -328,7 +328,13 @@ var addPkgCmd = &cobra.Command{
 	Use:   "project",
 	Short: "Add a project to repos/projects",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		templateItems, err := functions.ListTemplatesByType("project")
+		// REQ 19.6.1: project scaffolds may seed from service, library, or
+		// project templates — apps remain non-template-able.
+		templateItems, err := functions.ListTemplatesByType(
+			tokens.TemplateKindService,
+			tokens.TemplateKindLibrary,
+			tokens.TemplateKindProject,
+		)
 		if err != nil {
 			return err
 		}
@@ -402,7 +408,7 @@ var addPkgCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDir(fs, templatePath, destPath); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, nil); err != nil {
 			return err
 		}
 		if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
@@ -538,7 +544,7 @@ var addTestCmd = &cobra.Command{
 			return err
 		}
 
-		if err := functions.CopyDirWithReplacements(fs, templatePath, destPath, replacements); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
 		if err := functions.AddTestToWorkspace(fs, appName, testName); err != nil {

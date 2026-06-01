@@ -115,16 +115,20 @@ Most commands require execution from a valid workspace root.
 
 ### 9 Workspace Refresh
 #### Context
-`refresh` performs full dependency-ordered install/build/check across the workspace.
+`refresh` performs full dependency-ordered install/build/check across the workspace. Workspace registries are designed to be shared with collaborators whose GitHub access is the source of truth for which repos they may pull; refresh must therefore tolerate repos the local user cannot fetch and report what was and was not processed.
 
 #### Requirements
 - [x] 9.1 Given `dusk-ocean refresh` is executed, when workspace graph is non-empty, then Dusk Ocean shall run the `install` task (if present), then build, then check for each node in dependency order.
 - [x] 9.2 Given a node has no install task, when refresh install phase runs, then Dusk Ocean shall skip install for that node and print a skip message.
 - [x] 9.3 Given `--clear-hashes` is set, when refresh begins, then Dusk Ocean shall remove build/check hash records before refresh execution.
 - [x] 9.4 Given refresh completes, when stale hashes remain for removed targets, then Dusk Ocean shall clean stale hash files.
+- [ ] 9.5 Given a registered repo's local directory does not exist, when refresh's clone phase runs, then Dusk Ocean shall attempt the workspace `clone` task once and, if the clone fails for any reason, mark the repo `no-access`, continue with the remaining workspace nodes, and not return a hard error from that failure.
+- [ ] 9.6 Given a node's transitive local dependency is unavailable (a dependency was marked `no-access`, was itself skipped for missing deps, or its repo directory is otherwise absent on disk), when refresh's install/build/check phases run, then Dusk Ocean shall skip those phases for the dependent node and record the unavailable dependency names in the run report.
+- [ ] 9.7 Given refresh has completed all phases, then Dusk Ocean shall print a report grouping every workspace node into one of: `installed` (all phases ran or were no-op skipped), `no access` (clone unavailable), or `missing dependencies` (skipped due to absent local deps); the missing-dependencies group shall list, per node, which dependencies were unavailable.
 
 #### Constraints
 - Refresh shall fail on dependency graph cycles.
+- A `no-access` or `missing-deps` skip shall not cause refresh to exit non-zero. Hard build/test failures on available nodes shall still surface as errors.
 
 ### 10 Container Publication
 #### Context
@@ -288,7 +292,8 @@ Templates are scaffolding sources used by `dusk-ocean menu create` to stamp out 
 - [x] 19.3 Given `--kind template` is supplied with `--template-kind app`, when validation runs, then Dusk Ocean shall reject the command with an error stating apps are not template-able.
 - [x] 19.4 Given `--kind template` is supplied with no `--template-kind`, when validation runs, then Dusk Ocean shall reject the command with a missing-flag error.
 - [x] 19.5 Given `--template-kind` is supplied with a `--kind` other than `template`, when validation runs, then Dusk Ocean shall reject the command.
-- [x] 19.6 Given `dusk-ocean menu create` selects service, library, or project type, when listing available templates, then Dusk Ocean shall include every workspace-registered template whose `kind` matches, plus any unregistered template directories under `repos/templates/` that classify themselves via `ocean.config.json`'s `type` field.
+- [x] 19.6 Given `dusk-ocean menu create` selects service or library type, when listing available templates, then Dusk Ocean shall include every workspace-registered template whose `kind` matches, plus any unregistered template directories under `repos/templates/` that classify themselves via `ocean.config.json`'s `type` field.
+- [ ] 19.6.1 Given `dusk-ocean menu create` selects project type, when listing available templates, then Dusk Ocean shall include every workspace-registered template whose `kind` is `service`, `library`, or `project`, plus any unregistered template directories under `repos/templates/` whose `ocean.config.json` `type` field is one of those three kinds — so a project may scaffold from a library or service template in addition to a project template.
 - [x] 19.7 Given a template registered in workspace config declares one or more entries in `deps`, when a repo is scaffolded from that template, then Dusk Ocean shall pre-validate every dep against the destination kind/app using the same scope, cycle, and flow rules as `dusk-ocean add` BEFORE any files are copied; if any dep would be illegal, the scaffold shall fail and no files shall be copied.
 - [x] 19.8 Given the pre-validation check passes, when scaffold completes and the new repo is registered in workspace config, then Dusk Ocean shall propagate each declared dep by invoking the same wiring path as `dusk-ocean add`, running each dep's `add` task in the new repo's directory and recording the relationship in the workspace dependency graph.
 - [x] 19.9 Given a template is registered in workspace config, when `build`, `check`, `install`, `run`, `contain`, `refresh`, or `hash` runs, then Dusk Ocean shall not include the template in the dependency graph or the hash manifest.

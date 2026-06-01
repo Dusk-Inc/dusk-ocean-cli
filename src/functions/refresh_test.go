@@ -2,6 +2,8 @@ package functions
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -352,4 +354,206 @@ func TestRunInstall(t *testing.T) {
 			t.Fatalf("expected skip message, got: %q", out.String())
 		}
 	})
+}
+
+// emptyTasksConfig is a starter ocean.config.json that declares every task
+// as empty. Refresh's install/build/check phases treat empty commands as
+// no-ops, so an end-to-end refresh test can run on the OS filesystem
+// without invoking real shell commands.
+const emptyTasksConfig = `{
+    "name": "%s",
+    "language": "go",
+    "type": "%s",
+    "tasks": {
+        "build": "",
+        "test": "",
+        "install": "",
+        "add": "",
+        "uninstall": "",
+        "contain": "",
+        "publish": "",
+        "run": ""
+    }
+}
+`
+
+func seedRepo(t *testing.T, root string, relPath string, name string, kind string) {
+	t.Helper()
+	full := filepath.Join(root, relPath)
+	if err := os.MkdirAll(full, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", full, err)
+	}
+	configPath := filepath.Join(full, "ocean.config.json")
+	payload := []byte(fmt.Sprintf(emptyTasksConfig, name, kind))
+	if err := os.WriteFile(configPath, payload, 0o644); err != nil {
+		t.Fatalf("write %s: %v", configPath, err)
+	}
+}
+
+// makeRefreshWorkspace seeds a workspace with a global library that a
+// project depends on. Caller decides which directories actually exist on
+// disk via the seed flags so each test can simulate access loss
+// independently.
+type refreshSeeds struct {
+	cloneAppDir bool
+	cloneLibDir bool
+	cloneProjDir bool
+}
+
+func makeRefreshWorkspace(t *testing.T, seeds refreshSeeds) (string, WorkspaceConfig) {
+	t.Helper()
+	root := t.TempDir()
+
+	if seeds.cloneAppDir {
+		seedRepo(t, root, filepath.Join("repos", "apps", "shop", "services", "api"), "api", "service")
+	}
+	if seeds.cloneLibDir {
+		seedRepo(t, root, filepath.Join("repos", "libs", "shared"), "shared", "library")
+	}
+	if seeds.cloneProjDir {
+		seedRepo(t, root, filepath.Join("repos", "projects", "tooling"), "tooling", "project")
+	}
+
+	config := WorkspaceConfig{
+		Workspace: "test",
+		Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+		Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+		Apps: []WorkspaceApp{
+			{
+				Name:   "shop",
+				Remote: "git@github.com:dusk-inc/shop.git",
+				Services: []WorkspaceService{
+					{Name: "api", Port: "3000", Deps: []WorkspaceDep{{Lib: "shared", From: "global"}}},
+				},
+			},
+		},
+		Libraries: []WorkspaceLibrary{
+			{Name: "shared", Remote: "git@github.com:dusk-inc/shared.git"},
+		},
+		Projects: []WorkspaceProject{
+			{Name: "tooling", Remote: "git@github.com:dusk-inc/tooling.git"},
+		},
+	}
+	chdirForTest(t, root)
+	if err := WriteWorkspaceConfig(afero.NewOsFs(), config); err != nil {
+		t.Fatalf("write workspace config: %v", err)
+	}
+	return root, config
+}
+
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+}
+
+func TestRunRefresh_ReportsAllInstalledWhenWorkspaceComplete(t *testing.T) {
+	root, config := makeRefreshWorkspace(t, refreshSeeds{cloneAppDir: true, cloneLibDir: true, cloneProjDir: true})
+	withStubRunShell(t, nil)
+
+	var out bytes.Buffer
+	cmd := makeTestCmd(&out)
+	if err := RunRefresh(cmd, afero.NewOsFs(), root, config); err != nil {
+		t.Fatalf("RunRefresh: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, "Refresh report") {
+		t.Fatalf("expected report header, got: %q", output)
+	}
+	if !strings.Contains(output, "installed: 3") {
+		t.Errorf("expected installed: 3 in summary, got: %q", output)
+	}
+	if strings.Contains(output, "No access") {
+		t.Errorf("expected no no-access section, got: %q", output)
+	}
+	if strings.Contains(output, "missing dependencies:") && !strings.Contains(output, "missing dependencies: 0") {
+		t.Errorf("expected zero missing-deps, got: %q", output)
+	}
+}
+
+func TestRunRefresh_MarksRepoNoAccessWhenCloneFails(t *testing.T) {
+	root, config := makeRefreshWorkspace(t, refreshSeeds{cloneAppDir: true, cloneLibDir: true, cloneProjDir: false})
+	// runShell errors, simulating `git clone` failing because the user
+	// has no access to the upstream repo.
+	withStubRunShell(t, fmt.Errorf("Permission denied (publickey)"))
+
+	var stdout, stderr bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	if err := RunRefresh(cmd, afero.NewOsFs(), root, config); err != nil {
+		t.Fatalf("RunRefresh should not return error for inaccessible repo: %v", err)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "No access") {
+		t.Errorf("expected no-access section in report, got: %q", output)
+	}
+	if !strings.Contains(output, "tooling") {
+		t.Errorf("expected tooling listed in report, got: %q", output)
+	}
+	if !strings.Contains(output, "installed: 2") {
+		t.Errorf("expected 2 installed (api+shared), got: %q", output)
+	}
+	if !strings.Contains(stderr.String(), "clone failed") {
+		t.Errorf("expected stderr to log clone failure, got: %q", stderr.String())
+	}
+}
+
+func TestRunRefresh_SkipsDependentWhenLocalDepMissing(t *testing.T) {
+	// Service `api` depends on global lib `shared`. The lib was never
+	// cloned (no access) — refresh should mark `api` as missing-deps and
+	// list `shared` as the unavailable dep.
+	root, config := makeRefreshWorkspace(t, refreshSeeds{cloneAppDir: true, cloneLibDir: false, cloneProjDir: true})
+	withStubRunShell(t, fmt.Errorf("Permission denied (publickey)"))
+
+	var stdout bytes.Buffer
+	cmd := makeTestCmd(&stdout)
+
+	if err := RunRefresh(cmd, afero.NewOsFs(), root, config); err != nil {
+		t.Fatalf("RunRefresh should not return error: %v", err)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "Skipped due to missing dependencies") {
+		t.Errorf("expected missing-deps section, got: %q", output)
+	}
+	if !strings.Contains(output, "service shop/api") {
+		t.Errorf("expected api listed under missing-deps, got: %q", output)
+	}
+	if !strings.Contains(output, "shared") {
+		t.Errorf("expected shared listed as missing dep for api, got: %q", output)
+	}
+	if !strings.Contains(output, "global library shared") {
+		t.Errorf("expected shared lib in no-access, got: %q", output)
+	}
+}
+
+func TestRunRefresh_EmptyWorkspacePrintsSkipMessage(t *testing.T) {
+	root := t.TempDir()
+	chdirForTest(t, root)
+	config := WorkspaceConfig{
+		Workspace: "empty",
+		Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+	}
+	if err := WriteWorkspaceConfig(afero.NewOsFs(), config); err != nil {
+		t.Fatalf("write workspace: %v", err)
+	}
+
+	var out bytes.Buffer
+	cmd := makeTestCmd(&out)
+	if err := RunRefresh(cmd, afero.NewOsFs(), root, config); err != nil {
+		t.Fatalf("RunRefresh: %v", err)
+	}
+	if !strings.Contains(out.String(), "no workspace repositories") {
+		t.Errorf("expected empty-workspace skip message, got: %q", out.String())
+	}
+	if strings.Contains(out.String(), "Refresh report") {
+		t.Errorf("expected no report on empty workspace, got: %q", out.String())
+	}
 }

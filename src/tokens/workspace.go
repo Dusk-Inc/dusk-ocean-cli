@@ -9,6 +9,7 @@ const (
 	TargetGlobalLibKind = "global-lib"
 	TargetProjectKind   = "project"
 	TargetTestKind      = "test"
+	TargetTemplateKind  = "template"
 
 	DependencySourceGlobal  = "global"
 	DependencySourceProject = "project"

@@ -143,7 +143,7 @@ func ListTemplatesByType(kind string) ([]string, error) {
 	var templates []string
 
 	if config, err := ReadWorkspaceConfig(afero.NewOsFs()); err == nil {
-		for _, name := range FindTemplatesByKind(config, kind) {
+		for _, name := range FindTemplatesByKinds(config, kinds...) {
 			if _, ok := seen[name]; ok {
 				continue
 			}
@@ -177,7 +177,7 @@ func ListTemplatesByType(kind string) ([]string, error) {
 		if err := json.Unmarshal(payload, &config); err != nil {
 			continue
 		}
-		if strings.TrimSpace(config.Type) != kind {
+		if _, ok := wanted[strings.TrimSpace(config.Type)]; !ok {
 			continue
 		}
 		seen[entry.Name()] = struct{}{}

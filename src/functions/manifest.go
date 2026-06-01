@@ -17,6 +17,7 @@ type ManifestEntry struct {
 	BuildHash   string `json:"build_hash"`
 	CheckHash   string `json:"check_hash"`
 	ContainHash string `json:"contain_hash"`
+	PublishHash string `json:"publish_hash,omitempty"`
 }
 
 type Manifest struct {

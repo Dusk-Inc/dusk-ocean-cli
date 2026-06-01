@@ -124,6 +124,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(containCmd)
+	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(refreshCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)

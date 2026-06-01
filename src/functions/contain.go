@@ -96,12 +96,7 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 		fmt.Fprintf(out, ".oceanignore not found; proceeding without ignore patterns\n")
 	}
 
-	serviceNode, err := MakeServiceNode(config, appName, serviceName)
-	if err != nil {
-		return "", err
-	}
-
-	deps, err := CollectDependencyOrder(config, serviceNode)
+	deps, err := CollectDependencyOrder(config, node)
 	if err != nil {
 		return "", err
 	}
@@ -328,4 +323,95 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 	}
 	key := ServiceKey(resolvedApp, resolvedSvc)
 	return SetManifestContainHash(fs, root, key, newHash)
+}
+
+// resolveProjectContainerFilePath returns the absolute path to the project
+// container file. Projects have no workspace-config ContainerFile/Dockerfile
+// fields, so the fallback is always <stagingPath>/repos/projects/<name>/Dockerfile.
+func resolveProjectContainerFilePath(stagingPath, projectName string) string {
+	return filepath.Join(stagingPath, "repos", "projects", projectName, "Dockerfile")
+}
+
+// ContainProject stages the build context and runs the project's contain task.
+// Mirrors ContainService but for project-kind repos, which have no app scope,
+// port, or image_path fields in workspace config.
+func ContainProject(cmd *cobra.Command, fs afero.Fs, projectName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+
+	projectNode, err := MakeProjectNode(config, projectName)
+	if err != nil {
+		return err
+	}
+
+	projectPath := filepath.Join(root, "repos", "projects", projectName)
+	containTask, err := ReadRepoCommand(fs, projectPath, "contain")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(containTask) == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "contain skipped for project %s: no contain task\n", projectName)
+		return nil
+	}
+
+	_, _, buildHashPath, err := NodeBuildInfo(root, projectNode)
+	if err != nil {
+		return err
+	}
+	containHashPath := MakeContainHashPath(buildHashPath)
+
+	newHash, err := CalcNodeTreeHash(fs, root, config, projectNode)
+	if err != nil {
+		return err
+	}
+	prevHash, hasPrev, err := ReadHashFile(fs, containHashPath)
+	if err != nil {
+		return err
+	}
+	if hasPrev && prevHash == newHash {
+		fmt.Fprintf(cmd.OutOrStdout(), "contain skipped for project %s: no changes\n", projectName)
+		return SetManifestContainHash(fs, root, ProjectKey(projectName), newHash)
+	}
+
+	stagingPath, err := StageBuildContextForNode(fs, root, config, projectNode, cmd.OutOrStdout())
+	if err != nil {
+		return err
+	}
+
+	// Projects have no port, image_path, or container_file fields in workspace
+	// config. Pass empty strings for port/image_path; fall back to the staged
+	// project Dockerfile for container_file. Unmatched tokens in the task are
+	// left verbatim (see substituteOceanPlaceholders).
+	containerFile := resolveProjectContainerFilePath(stagingPath, projectName)
+	task := substituteOceanPlaceholders(containTask, projectName, "", "", containerFile)
+
+	// Run the contain task from the staged project directory so tasks that
+	// assume cwd == project root (e.g. `docker build ... .`, `node -p
+	// "require('./package.json')"`) work naturally. Deps, if any, remain
+	// accessible at ../../libs/... relative to cwd.
+	stagedProjectPath := filepath.Join(stagingPath, "repos", "projects", projectName)
+	execCmd := exec.Command("bash", "-lc", task)
+	execCmd.Dir = stagedProjectPath
+	execCmd.Stdout = cmd.OutOrStdout()
+	execCmd.Stderr = cmd.ErrOrStderr()
+	execCmd.Stdin = cmd.InOrStdin()
+	runErr := execCmd.Run()
+
+	_ = fs.RemoveAll(stagingPath)
+
+	if runErr != nil {
+		return runErr
+	}
+
+	if err := WriteHashFile(fs, containHashPath, newHash); err != nil {
+		return err
+	}
+	return SetManifestContainHash(fs, root, ProjectKey(projectName), newHash)
 }

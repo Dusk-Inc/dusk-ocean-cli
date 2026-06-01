@@ -45,6 +45,7 @@ const (
 	TargetGlobalLib = models.TargetGlobalLib
 	TargetProject   = models.TargetProject
 	TargetTest      = models.TargetTest
+	TargetTemplate  = models.TargetTemplate
 )
 
 const defaultImageTag = "dev"
@@ -107,6 +108,14 @@ func MakeApp(name string, libraries []WorkspaceLibrary) WorkspaceApp {
 		Services:  nil,
 		Libraries: libraries,
 		Testing:   nil,
+	}
+}
+
+func MakeTemplate(name string, kind string, deps ...string) WorkspaceTemplate {
+	return WorkspaceTemplate{
+		Name: name,
+		Kind: kind,
+		Deps: makeGlobalDeps(deps...),
 	}
 }
 
@@ -717,6 +726,16 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 		}
 	}
 
+	for _, template := range config.Templates {
+		if template.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetTemplate,
+				Name: name,
+				Path: filepath.Join(root, "repos", "templates", name),
+			})
+		}
+	}
+
 	for _, app := range config.Apps {
 		if app.Name == name {
 			matches = append(matches, Target{
@@ -932,6 +951,10 @@ func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 		}
 		if FindAppTestIndex(config.Apps[appIndex], target.Name) == -1 {
 			return fmt.Errorf("test not registered in workspace: %s", target.Name)
+		}
+	case TargetTemplate:
+		if FindTemplateIndex(config, target.Name) == -1 {
+			return fmt.Errorf("template not registered in workspace: %s", target.Name)
 		}
 	default:
 		return fmt.Errorf("unsupported install target")
@@ -1155,6 +1178,8 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 		return config.Uninstall, nil
 	case "contain":
 		return config.Tasks.Contain, nil
+	case "publish":
+		return config.Tasks.Publish, nil
 	case "run":
 		return config.Tasks.Run, nil
 	case "stop":

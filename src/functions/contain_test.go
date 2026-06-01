@@ -334,3 +334,49 @@ func writeTestWorkspaceConfig(fs afero.Fs, root string, config WorkspaceConfig) 
 	}
 	return WriteWorkspaceConfig(fs, config)
 }
+
+// --- StageBuildContextForNode (project node) ---
+
+func TestStageBuildContextForNode_Project(t *testing.T) {
+	t.Run("domain__stage__project_only_staged_at_correct_relative_path", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/workspace"
+
+		config := MakeConfig(nil, nil, []WorkspaceProject{{Name: "proj-a", Deps: []WorkspaceDep{}}})
+		if err := writeTestWorkspaceConfig(fs, root, config); err != nil {
+			t.Fatalf("setup config: %v", err)
+		}
+
+		projPath := filepath.Join(root, "repos", "projects", "proj-a")
+		if err := afero.WriteFile(fs, filepath.Join(projPath, "main.ts"), []byte("export{}"), 0o644); err != nil {
+			t.Fatalf("setup project: %v", err)
+		}
+
+		node, err := MakeProjectNode(config, "proj-a")
+		if err != nil {
+			t.Fatalf("make node: %v", err)
+		}
+
+		stagingPath, err := StageBuildContextForNode(fs, root, config, node, io.Discard)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expected := filepath.Join(stagingPath, "repos", "projects", "proj-a", "main.ts")
+		if _, err := fs.Stat(expected); err != nil {
+			t.Fatalf("expected staged file at %s: %v", expected, err)
+		}
+	})
+}
+
+// --- resolveProjectContainerFilePath ---
+
+func TestResolveProjectContainerFilePath(t *testing.T) {
+	t.Run("domain__resolve__falls_back_to_staged_project_dockerfile", func(t *testing.T) {
+		got := resolveProjectContainerFilePath("/stage", "proj-a")
+		want := filepath.Join("/stage", "repos", "projects", "proj-a", "Dockerfile")
+		if got != want {
+			t.Fatalf("got %q\nwant %q", got, want)
+		}
+	})
+}

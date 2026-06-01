@@ -124,6 +124,7 @@ type RepoConfig struct {
 		Install   string `json:"install"`
 		Uninstall string `json:"uninstall"`
 		Contain   string `json:"contain"`
+		Publish   string `json:"publish"`
 		Run       string `json:"run"`
 		Stop      string `json:"stop"`
 		Setup     string `json:"setup"`
@@ -140,6 +141,7 @@ const (
 	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
 	TargetProject   TargetKind = tokens.TargetProjectKind
 	TargetTest      TargetKind = tokens.TargetTestKind
+	TargetTemplate  TargetKind = tokens.TargetTemplateKind
 )
 
 type Target struct {

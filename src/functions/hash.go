@@ -107,7 +107,7 @@ func matchesIgnorePattern(relPath string, isDir bool, pattern string) bool {
 }
 
 func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
-	ignorePatterns, err := ReadGitignorePatterns(fs, root)
+	ignorePatterns, err := CollectRepoIgnorePatterns(fs, root, repoPath)
 	if err != nil {
 		return "", err
 	}
@@ -121,11 +121,13 @@ func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Nod
 	}
 	nodesToHash := append(deps, node)
 
-	ignorePatterns, _ := ReadGitignorePatterns(fs, root)
-
 	combined := sha256.New()
 	for _, n := range nodesToHash {
 		_, srcPath, _, err := NodeBuildInfo(root, n)
+		if err != nil {
+			return "", err
+		}
+		ignorePatterns, err := CollectRepoIgnorePatterns(fs, root, srcPath)
 		if err != nil {
 			return "", err
 		}
@@ -180,6 +182,17 @@ func MakeContainHashPath(buildHashPath string) string {
 	for i, part := range parts {
 		if part == "build" {
 			parts[i] = "contain"
+			break
+		}
+	}
+	return filepath.Join(parts...)
+}
+
+func MakePublishHashPath(buildHashPath string) string {
+	parts := strings.Split(filepath.Clean(buildHashPath), string(filepath.Separator))
+	for i, part := range parts {
+		if part == "build" {
+			parts[i] = "publish"
 			break
 		}
 	}

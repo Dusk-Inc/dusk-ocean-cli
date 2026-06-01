@@ -321,3 +321,40 @@ func TestSetManifestContainHash(t *testing.T) {
 		}
 	})
 }
+
+// --- SetManifestPublishHash ---
+
+func TestSetManifestPublishHash(t *testing.T) {
+	t.Run("domain__set_manifest_publish_hash__stores_hash", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		m := Manifest{
+			Repos: map[string]ManifestEntry{
+				"project:proj-a": {Kind: "project", Name: "proj-a"},
+			},
+		}
+		if err := WriteManifest(fs, root, m); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		if err := SetManifestPublishHash(fs, root, "project:proj-a", "publish-hash-abc"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got, _ := ReadManifest(fs, root)
+		if got.Repos["project:proj-a"].PublishHash != "publish-hash-abc" {
+			t.Fatalf("expected publish_hash=publish-hash-abc, got %s", got.Repos["project:proj-a"].PublishHash)
+		}
+	})
+
+	t.Run("complement__set_manifest_publish_hash__no_op_when_entry_absent", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		if err := WriteManifest(fs, root, Manifest{Repos: map[string]ManifestEntry{}}); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := SetManifestPublishHash(fs, root, "project:ghost", "some-hash"); err != nil {
+			t.Fatalf("expected no-op, got error: %v", err)
+		}
+	})
+}

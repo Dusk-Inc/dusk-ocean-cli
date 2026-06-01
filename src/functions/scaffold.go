@@ -15,7 +15,7 @@ import (
 )
 
 func CopyDir(fs afero.Fs, src string, dst string) error {
-	return CopyDirWithReplacements(fs, src, dst, nil)
+	return CopyDirWithReplacements(fs, src, dst, nil, nil)
 }
 
 func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {
@@ -194,7 +194,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		return err
 	}
 
-	if err := CopyDirWithReplacements(fs, templatePath, servicePath, replacements); err != nil {
+	if err := CopyTemplate(fs, templatePath, servicePath, replacements); err != nil {
 		return err
 	}
 	return registerService(fs, appName, serviceName, dockerfile, containerFile)
