@@ -4,7 +4,7 @@ type: cli
 name: Scoped Refresh Command
 status: realization
 owner: dusk-ocean
-version: 0.1.0
+version: 0.2.0
 contract:
   inputs:
     command: refresh
@@ -58,6 +58,17 @@ refresh. The command reads no stdin.
   the command rejects it rather than silently refreshing the whole workspace.
 - **`--clear-hashes`** is the existing flag and composes with scoping: when set, build/check
   hashes are cleared first, and the subsequent refresh — scoped or full — recomputes them.
+
+**Cloning is by registration, not by graph membership.** A targeted repo that is **registered
+in `ocean.workspace.json` with a remote** is cloned when missing **even if it declares no
+buildable components** — most notably an **app** whose `services`/`libraries`/`testing` are all
+empty (a repo that exists upstream but has not yet been broken into Dusk Ocean components).
+Such an app is not part of any dependency graph, so it has nothing to install/build/check; the
+run clones it and moves on (clone-only). This holds in **both** modes: a whole-workspace
+`refresh` clones every registered repo with a remote that is missing (including empty app
+shells), and `refresh --repo <app>` clones that app even with no components. A repo with a
+remote of `none` (or unset) is skipped with `skipping clone of <name>: no remote configured`.
+A `--repo` name that matches **no** registered repo is still the unknown-repo failure.
 
 Scoping also changes one whole-workspace side effect: a full refresh additionally clones the
 workspace's **non-code** repositories (infra, docs). A scoped refresh does **not** — those are
@@ -126,3 +137,17 @@ machinery, but those are internal modules of the CLI, not separate specced bound
 > zero vs. non-zero, and inventing codes the requester didn't ask for would over-specify the
 > contract. *Rejected*: distinct codes (e.g. `2` for usage) — defensible later if a caller needs
 > to branch on failure kind, but unjustified now.
+
+> **Clone registered repos by registration, not graph membership (v0.2.0)** — *Context*: a repo
+> can be registered in `ocean.workspace.json` with a remote but not yet broken into Dusk Ocean
+> components — e.g. an `app` with empty `services`/`libraries`/`testing` (`board_education`).
+> The graph-driven clone step only cloned repos that contributed nodes, so such a shell was
+> never cloned by either the full or the scoped refresh, and `refresh --repo <it>` reported it
+> as having no buildable components. But teams need the repo on disk first in order to *do* that
+> componentization. *Decision*: clone any targeted, registered repo that has a remote and is
+> missing, regardless of declared components — in both whole-workspace and `--repo` runs; a
+> component-less app is clone-only (nothing to install/build/check). *Why*: it matches the
+> command's own stated purpose ("clones any that are missing where a remote is configured"), and
+> getting the code local is the prerequisite for the manual alignment work. Additive, so a MINOR
+> bump (0.1.0 → 0.2.0). *Rejected*: clone-shells only under `--repo` — leaves the whole-workspace
+> refresh silently skipping registered apps, which is the more surprising of the two.

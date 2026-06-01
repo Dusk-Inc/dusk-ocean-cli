@@ -16,11 +16,18 @@ func RunScopedRefresh(cmd *cobra.Command, fs afero.Fs, root string, config Works
 	if err != nil {
 		return err
 	}
-	if len(order) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "refresh skipped for %s: no buildable components\n", repo)
-		return nil
+	return runRefreshNodes(cmd, fs, root, config, order, scopedAppShells(config, repo), false)
+}
+
+// scopedAppShells returns the apps a scoped run must clone by remote even if they
+// contribute no graph nodes: the --repo target when it names an app. An app that does
+// declare components is cloned via those nodes (and deduped), so naming it here is
+// harmless; an empty app shell is cloned only because it is named here.
+func scopedAppShells(config WorkspaceConfig, repo string) []string {
+	if FindAppIndex(config, repo) != -1 {
+		return []string{repo}
 	}
-	return runRefreshNodes(cmd, fs, root, config, order, false)
+	return nil
 }
 
 // ScopedRefreshOrder resolves the nodes a scoped refresh must process, in dependency

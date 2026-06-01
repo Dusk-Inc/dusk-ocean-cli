@@ -28,16 +28,23 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 		order = append(order, node)
 	}
-	return runRefreshNodes(cmd, fs, root, config, order, true)
+	appNames := make([]string, 0, len(config.Apps))
+	for _, app := range config.Apps {
+		appNames = append(appNames, app.Name)
+	}
+	return runRefreshNodes(cmd, fs, root, config, order, appNames, true)
 }
 
 // runRefreshNodes clones (if missing), installs, builds, and checks the given nodes
 // in the order provided (which the caller has already topologically sorted, so every
-// dependency precedes the node that needs it). When cloneNonCode is set it also clones
+// dependency precedes the node that needs it). appShells names registered apps to clone
+// by remote even though they contribute no nodes (an app with no declared
+// services/libraries/tests) — deduped against the node clones, so an app already cloned
+// via one of its components is not cloned twice. When cloneNonCode is set it also clones
 // the workspace's non-code repos (infra/docs) — a whole-workspace concern a scoped run
 // deliberately skips.
-func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, order []Node, cloneNonCode bool) error {
-	if len(order) == 0 {
+func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, order []Node, appShells []string, cloneNonCode bool) error {
+	if len(order) == 0 && len(appShells) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "refresh skipped: no workspace repositories")
 		return nil
 	}
@@ -54,6 +61,10 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 				return err
 			}
 		}
+	}
+
+	if err := cloneAppShellsIfMissing(cmd, fs, root, config, appShells, cloned); err != nil {
+		return err
 	}
 
 	if cloneNonCode {
@@ -154,20 +165,45 @@ func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (des
 func cloneNonCodeReposIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
 	for _, entry := range config.Infrastructure {
 		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirInfra, entry.Name)
-		if err := cloneNonCodeRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
 			return err
 		}
 	}
 	for _, entry := range config.Docs {
 		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirDocs, entry.Name)
-		if err := cloneNonCodeRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func cloneNonCodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, dest string, name string, remote string) error {
+// cloneAppShellsIfMissing clones each named app by its remote when the app directory is
+// missing — covering apps registered in the workspace that declare no
+// services/libraries/tests and so contribute no graph nodes. The cloned set is shared
+// with the node-clone pass so an app already cloned via one of its components is skipped.
+func cloneAppShellsIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appNames []string, cloned map[string]struct{}) error {
+	for _, name := range appNames {
+		idx := FindAppIndex(config, name)
+		if idx == -1 {
+			continue
+		}
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirApps, name)
+		if _, done := cloned[dest]; done {
+			continue
+		}
+		cloned[dest] = struct{}{}
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, name, config.Apps[idx].Remote); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cloneRepoIfMissing clones a single repo (at dest, named name, from remote) when its
+// directory is missing. A repo with no remote (or remote "none") is skipped with a note
+// rather than failing. Used for non-code repos and for app shells alike.
+func cloneRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, dest string, name string, remote string) error {
 	if info, statErr := fs.Stat(dest); statErr == nil && info.IsDir() {
 		return nil
 	}

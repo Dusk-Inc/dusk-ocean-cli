@@ -1,10 +1,13 @@
 package functions
 
 import (
+	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
+	"github.com/spf13/afero"
 )
 
 // makeScopedConfig builds a workspace with a small, deliberate dependency graph:
@@ -144,6 +147,77 @@ func TestScopedRefreshOrder(t *testing.T) {
 		}
 		if len(nodes) != 0 {
 			t.Fatalf("a present-but-empty app should resolve to an empty scope, got %v", keysOf(nodes))
+		}
+	})
+}
+
+func TestScopedAppShells(t *testing.T) {
+	config := makeScopedConfig()
+	config.Apps = append(config.Apps, WorkspaceApp{Name: "empty-app", Remote: "https://example.com/empty.git"})
+
+	t.Run("domain__scopedAppShells__namesTheAppTarget", func(t *testing.T) {
+		if got := scopedAppShells(config, "empty-app"); len(got) != 1 || got[0] != "empty-app" {
+			t.Fatalf("scoping an app should yield that app shell, got %v", got)
+		}
+		if got := scopedAppShells(config, "web"); len(got) != 1 || got[0] != "web" {
+			t.Fatalf("scoping an app with components should still name it (deduped later), got %v", got)
+		}
+	})
+
+	t.Run("domain__scopedAppShells__emptyForNonApps", func(t *testing.T) {
+		for _, repo := range []string{"core", "app-cli", "ghost"} {
+			if got := scopedAppShells(config, repo); len(got) != 0 {
+				t.Fatalf("a non-app repo (%q) yields no app shell, got %v", repo, got)
+			}
+		}
+	})
+}
+
+func TestCloneAppShellsIfMissing(t *testing.T) {
+	t.Run("boundary__cloneAppShellsIfMissing__skipsAppAlreadyOnDisk", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/ws"
+		_ = fs.MkdirAll(filepath.Join(root, "repos", "apps", "present-app"), 0o755)
+		config := WorkspaceConfig{Apps: []WorkspaceApp{{Name: "present-app", Remote: "https://example.com/x.git"}}}
+
+		out := &bytes.Buffer{}
+		cmd := makeTestCmd(out)
+		if err := cloneAppShellsIfMissing(cmd, fs, root, config, []string{"present-app"}, map[string]struct{}{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("a present app must not be cloned (no output), got %q", out.String())
+		}
+	})
+
+	t.Run("boundary__cloneAppShellsIfMissing__skipsWhenNoRemote", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/ws"
+		config := WorkspaceConfig{Apps: []WorkspaceApp{{Name: "no-remote-app"}}}
+
+		out := &bytes.Buffer{}
+		cmd := makeTestCmd(out)
+		if err := cloneAppShellsIfMissing(cmd, fs, root, config, []string{"no-remote-app"}, map[string]struct{}{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out.String(), "skipping clone of no-remote-app: no remote configured") {
+			t.Fatalf("an app with no remote should be skipped with a note, got %q", out.String())
+		}
+	})
+
+	t.Run("boundary__cloneAppShellsIfMissing__skipsWhenAlreadyInClonedSet", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/ws"
+		config := WorkspaceConfig{Apps: []WorkspaceApp{{Name: "dup-app", Remote: "https://example.com/x.git"}}}
+		cloned := map[string]struct{}{filepath.Join(root, "repos", "apps", "dup-app"): {}}
+
+		out := &bytes.Buffer{}
+		cmd := makeTestCmd(out)
+		if err := cloneAppShellsIfMissing(cmd, fs, root, config, []string{"dup-app"}, cloned); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("an app already in the cloned set must not be cloned again, got %q", out.String())
 		}
 	})
 }
