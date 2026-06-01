@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// VariableContext holds the four namespaces consulted by Substitute.
-// Each map is keyed by the bare variable name (no namespace prefix).
 type VariableContext struct {
 	Env   map[string]string
 	Var   map[string]string
@@ -22,14 +20,8 @@ type VariableContext struct {
 	Repo  map[string]string
 }
 
-// variablePattern matches {{ns:name}} tokens. The namespace and name are
-// captured in groups 1 and 2 respectively. Whitespace inside the braces
-// is tolerated.
 var variablePattern = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^{}\s]+)\s*\}\}`)
 
-// Substitute replaces every {{ns:name}} token in template with the matching
-// value from ctx. Unknown namespaces and missing keys are hard errors —
-// substitution never silently inserts an empty string.
 func Substitute(template string, ctx VariableContext) (string, error) {
 	var firstErr error
 	out := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
@@ -68,10 +60,6 @@ func Substitute(template string, ctx VariableContext) (string, error) {
 	return out, nil
 }
 
-// LoadEnvFile reads a workspace-root .env file and returns its KEY=VALUE pairs.
-// A missing file is logged to out and returns an empty map (no error). This
-// matches the project's "no silent defaults" guidance for developer-managed
-// config files in docs/LEARNING.md.
 func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, error) {
 	path := filepath.Join(root, ".env")
 	f, err := fs.Open(path)
@@ -110,9 +98,6 @@ func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, er
 	return values, nil
 }
 
-// LoadWorkspaceVariables returns the user-defined workspace-level variables
-// map. It is a thin convenience wrapper so callers do not need to remember
-// that nil maps are valid.
 func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	if config.Variables == nil {
 		return map[string]string{}
@@ -120,12 +105,6 @@ func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	return config.Variables
 }
 
-// BuildRepoVariables walks the workspace config to find the entry identified
-// by kind/appName/repoName and returns its full {{repo:*}} map. Reserved
-// fields (name, kind, path, scopes, remote, plus service/app extras) are
-// auto-populated from the entry. User-declared variables on the entry are
-// merged in afterward, but a user variable that collides with a reserved
-// name is rejected with an error.
 func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName string) (map[string]string, error) {
 	switch kind {
 	case tokens.RepoKindProject:
@@ -193,6 +172,36 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 		}
 		return mergeRepoVariables(reserved, app.Variables, kind, app.Name)
 
+	case tokens.RepoKindInfra:
+		idx := FindInfraIndex(config, repoName)
+		if idx == -1 {
+			return nil, fmt.Errorf("infrastructure repo not registered in workspace: %s", repoName)
+		}
+		entry := config.Infrastructure[idx]
+		reserved := map[string]string{
+			"name":   entry.Name,
+			"kind":   tokens.RepoKindInfra,
+			"path":   filepath.Join("repos", tokens.RepoDirInfra, entry.Name),
+			"scopes": "",
+			"remote": entry.Remote,
+		}
+		return mergeRepoVariables(reserved, entry.Variables, kind, entry.Name)
+
+	case tokens.RepoKindDocs:
+		idx := FindDocsIndex(config, repoName)
+		if idx == -1 {
+			return nil, fmt.Errorf("docs repo not registered in workspace: %s", repoName)
+		}
+		entry := config.Docs[idx]
+		reserved := map[string]string{
+			"name":   entry.Name,
+			"kind":   tokens.RepoKindDocs,
+			"path":   filepath.Join("repos", tokens.RepoDirDocs, entry.Name),
+			"scopes": "",
+			"remote": entry.Remote,
+		}
+		return mergeRepoVariables(reserved, entry.Variables, kind, entry.Name)
+
 	case tokens.RepoKindService:
 		if appName == "" {
 			return nil, fmt.Errorf("service variable lookup requires an app name")
@@ -225,10 +234,6 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 	return nil, fmt.Errorf("unknown repo kind: %s", kind)
 }
 
-// mergeRepoVariables overlays user-declared variables onto the reserved set.
-// A collision (user key shadowing a reserved key) is a hard error so misuse
-// is caught at validation/execution time rather than silently overwriting
-// the reserved value.
 func mergeRepoVariables(reserved map[string]string, user map[string]string, kind, repoName string) (map[string]string, error) {
 	for key := range user {
 		if _, exists := reserved[key]; exists {

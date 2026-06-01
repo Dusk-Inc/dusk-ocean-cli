@@ -1,9 +1,8 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,6 +176,10 @@ var removePkgCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		deleteDir, err := cmd.Flags().GetBool("delete")
+		if err != nil {
+			return err
+		}
 		root, err := functions.GetRoot()
 		if err != nil {
 			return err
@@ -189,8 +192,14 @@ var removePkgCmd = &cobra.Command{
 			name = selectedName
 		}
 
+		var label string
+		if deleteDir {
+			label = fmt.Sprintf("Remove project %q AND its directory on disk? Files are permanently deleted", name)
+		} else {
+			label = fmt.Sprintf("Remove project %q from workspace registration? (directory on disk is kept; pass --delete to also remove it)", name)
+		}
 		prompt := promptui.Prompt{
-			Label:     fmt.Sprintf("Remove project %q? This action is permanent", name),
+			Label:     label,
 			IsConfirm: true,
 		}
 		confirm, err := prompt.Run()
@@ -201,16 +210,16 @@ var removePkgCmd = &cobra.Command{
 			return fmt.Errorf("aborted")
 		}
 
-		path := filepath.Join(root, "repos", "projects", name)
 		fs := afero.NewOsFs()
-		if _, err := fs.Stat(path); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("project does not exist: %s", name)
+		if deleteDir {
+			path := filepath.Join(root, "repos", "projects", name)
+			if _, err := fs.Stat(path); err != nil {
+				if !os.IsNotExist(err) {
+					return err
+				}
+			} else if err := fs.RemoveAll(path); err != nil {
+				return err
 			}
-			return err
-		}
-		if err := fs.RemoveAll(path); err != nil {
-			return err
 		}
 		return functions.RemoveProjectFromWorkspace(fs, name)
 	},
@@ -332,13 +341,81 @@ var removeTestCmd = &cobra.Command{
 	},
 }
 
+var removeInfraCmd = &cobra.Command{
+	Use:   "infra",
+	Short: "Remove an infrastructure repo from repos/infra",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runRemoveNonCodeRepo(cmd, "infra")
+	},
+}
+
+var removeDocsCmd = &cobra.Command{
+	Use:   "docs",
+	Short: "Remove a docs repo from repos/docs",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runRemoveNonCodeRepo(cmd, "docs")
+	},
+}
+
+func runRemoveNonCodeRepo(cmd *cobra.Command, kind string) error {
+	name, err := cmd.Flags().GetString("name")
+	if err != nil {
+		return err
+	}
+	fs := afero.NewOsFs()
+	if name == "" {
+		config, err := functions.ReadWorkspaceConfig(fs)
+		if err != nil {
+			return err
+		}
+		var names []string
+		switch kind {
+		case "infra":
+			names = functions.InfraNames(config)
+		case "docs":
+			names = functions.DocsNames(config)
+		}
+		if len(names) == 0 {
+			return fmt.Errorf("no %s repos registered", kind)
+		}
+		selected, err := functions.SelectFromList(fmt.Sprintf("Select %s repo", kind), names)
+		if err != nil {
+			return err
+		}
+		name = selected
+	}
+
+	prompt := promptui.Prompt{
+		Label:     fmt.Sprintf("Remove %s repo %q? This action is permanent", kind, name),
+		IsConfirm: true,
+	}
+	confirm, err := prompt.Run()
+	if err != nil {
+		return err
+	}
+	if strings.ToLower(confirm) != "y" {
+		return fmt.Errorf("aborted")
+	}
+
+	switch kind {
+	case "infra":
+		return functions.RemoveInfra(fs, name)
+	case "docs":
+		return functions.RemoveDocs(fs, name)
+	}
+	return fmt.Errorf("unsupported kind: %s", kind)
+}
+
 func init() {
 	removeAppCmd.Flags().String("name", "", "Name of the app")
 	removeLibCmd.Flags().String("name", "", "Name of the library")
 	removeLibCmd.Flags().String("in", "", "App name for the library")
 	removePkgCmd.Flags().String("name", "", "Name of the project")
+	removePkgCmd.Flags().Bool("delete", false, "Also delete the project directory on disk (default: keep)")
 	removeServiceCmd.Flags().String("name", "", "Name of the service")
 	removeServiceCmd.Flags().String("in", "", "App name for the service")
 	removeTestCmd.Flags().String("name", "", "Name of the test")
 	removeTestCmd.Flags().String("in", "", "App name for the test")
+	removeInfraCmd.Flags().String("name", "", "Name of the infra repo")
+	removeDocsCmd.Flags().String("name", "", "Name of the docs repo")
 }

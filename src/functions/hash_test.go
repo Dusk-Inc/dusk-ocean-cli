@@ -1,10 +1,10 @@
 package functions
 
 import (
+	"github.com/spf13/afero"
 	"path/filepath"
 	"testing"
 	"time"
-	"github.com/spf13/afero"
 )
 
 func TestCalcDirHash(t *testing.T) {

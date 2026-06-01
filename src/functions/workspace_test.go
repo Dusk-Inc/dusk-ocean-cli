@@ -42,8 +42,6 @@ func TestInitWorkspace(t *testing.T) {
 			}
 		}
 
-		// Apps are not template-able. The init layout must NOT include a
-		// repos/templates/apps/ tree.
 		if _, err := fs.Stat(filepath.Join("repos", "templates", "apps")); err == nil {
 			t.Fatalf("repos/templates/apps must not be created by init")
 		}
@@ -66,8 +64,6 @@ func TestInitWorkspace(t *testing.T) {
 			t.Fatalf("expected no projects, got %d", len(config.Projects))
 		}
 
-		// Variables map should be present-but-empty so the slot is
-		// visible in the freshly-written ocean.workspace.json.
 		if config.Variables == nil {
 			t.Fatalf("expected initialized Variables map, got nil")
 		}
@@ -75,8 +71,6 @@ func TestInitWorkspace(t *testing.T) {
 			t.Fatalf("expected empty Variables map, got %v", config.Variables)
 		}
 
-		// Tasks map should be pre-populated with each default workspace
-		// task name and an empty command string for each one.
 		if config.Tasks == nil {
 			t.Fatalf("expected initialized Tasks map, got nil")
 		}

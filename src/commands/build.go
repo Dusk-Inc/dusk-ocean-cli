@@ -1,9 +1,8 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"

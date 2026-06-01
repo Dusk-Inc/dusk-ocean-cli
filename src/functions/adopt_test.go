@@ -12,10 +12,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// withStubGitClone replaces the package-level gitClone function for the
-// duration of a test, restoring the original on cleanup. The stub creates
-// the destination directory in the test's afero.Fs to mimic a successful
-// clone without touching the network or executing git.
 func withStubGitClone(t *testing.T, fs afero.Fs) {
 	t.Helper()
 	original := gitClone
@@ -23,7 +19,7 @@ func withStubGitClone(t *testing.T, fs afero.Fs) {
 		if err := fs.MkdirAll(dest, 0o755); err != nil {
 			return err
 		}
-		// Drop a marker file so the test can verify the stub ran.
+
 		return afero.WriteFile(fs, filepath.Join(dest, ".cloned"), []byte(url), 0o644)
 	}
 	t.Cleanup(func() { gitClone = original })
@@ -156,9 +152,7 @@ func TestAdoptRepo_DirectoryWithoutConfigErrorsSuggestRegister(t *testing.T) {
 }
 
 func TestAdoptRepo_AlreadyRegisteredErrors(t *testing.T) {
-	// Workspace registry is the source of truth: an existing entry in
-	// ocean.workspace.json is what makes a repo "already registered",
-	// not the presence of an ocean.config.json on disk.
+
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
 	if err := AddProjectToWorkspace(fs, "tooling"); err != nil {
@@ -175,17 +169,10 @@ func TestAdoptRepo_AlreadyRegisteredErrors(t *testing.T) {
 	}
 }
 
-// TestAdoptRepo_PreservesClonedConfig covers the gap a user hit in
-// practice: cloning a repo that is itself a dusk-ocean project (so it
-// brings its own ocean.config.json) must register the workspace entry
-// AND leave the cloned config untouched. The previous behavior errored
-// out before registration, leaving the workspace registry empty.
 func TestAdoptRepo_PreservesClonedConfig(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
 
-	// Stub git clone to drop a cloned ocean.config.json into the target
-	// path, simulating a repo that ships dusk-ocean management.
 	original := []byte(`{"name":"iris-components","language":"typescript","type":"library"}`)
 	prev := gitClone
 	t.Cleanup(func() { gitClone = prev })
@@ -201,7 +188,6 @@ func TestAdoptRepo_PreservesClonedConfig(t *testing.T) {
 		t.Fatalf("AdoptRepo: %v", err)
 	}
 
-	// Workspace entry was added.
 	cfg, _ := ReadWorkspaceConfig(fs)
 	if len(cfg.Libraries) != 1 || cfg.Libraries[0].Name != "iris-components" {
 		t.Fatalf("expected library registered: %+v", cfg.Libraries)
@@ -210,7 +196,6 @@ func TestAdoptRepo_PreservesClonedConfig(t *testing.T) {
 		t.Errorf("unexpected remote: %q", cfg.Libraries[0].Remote)
 	}
 
-	// Cloned ocean.config.json was preserved verbatim.
 	got, err := afero.ReadFile(fs, "repos/libs/iris-components/ocean.config.json")
 	if err != nil {
 		t.Fatalf("read config: %v", err)
@@ -246,7 +231,7 @@ func TestAdoptRepo_InvalidFlagsRejected(t *testing.T) {
 
 func TestDeriveNameFromRemote(t *testing.T) {
 	cases := map[string]string{
-		"git@github.com:dusk-inc/svc-a.git":  "svc-a",
+		"git@github.com:dusk-inc/svc-a.git": "svc-a",
 		"https://github.com/foo/bar.git":    "bar",
 		"https://github.com/foo/bar":        "bar",
 		"git@gitlab.com:group/sub/proj.git": "proj",

@@ -360,63 +360,100 @@ func TestResolveTargetByName(t *testing.T) {
 	})
 }
 
-func TestRegisterDependency_Template(t *testing.T) {
-	t.Run("domain__registerDependency__appends_dep_to_template", func(t *testing.T) {
-		config := MakeConfig(nil, nil, nil)
-		config.Templates = []WorkspaceTemplate{MakeTemplate("ts-ui", "service")}
+func TestResolveTargetByNameInApp(t *testing.T) {
+	root := "/workspace"
 
-		target := installTarget{Kind: targetTemplate, Name: "ts-ui"}
-		dep := installDependency{kind: dependencyGlobalLib, name: "iris"}
+	t.Run("domain__resolve_in_app__disambiguates_shared_service_name", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			{Name: "app-a", Services: []WorkspaceService{{Name: "client"}}},
+			{Name: "app-b", Services: []WorkspaceService{{Name: "client"}}},
+		}, nil)
 
-		updated, err := registerDependency(config, target, dep)
+		target, err := ResolveTargetByNameInApp(config, root, "app-b", "client")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if len(updated.Templates[0].Deps) != 1 {
-			t.Fatalf("expected 1 dep, got %d", len(updated.Templates[0].Deps))
+		if target.Kind != TargetService {
+			t.Fatalf("expected TargetService, got %v", target.Kind)
 		}
-		if updated.Templates[0].Deps[0].Lib != "iris" {
-			t.Fatalf("expected dep lib iris, got %s", updated.Templates[0].Deps[0].Lib)
+		if target.App != "app-b" {
+			t.Fatalf("expected app-b, got %s", target.App)
 		}
-		if updated.Templates[0].Deps[0].From != "global" {
-			t.Fatalf("expected dep from global, got %s", updated.Templates[0].Deps[0].From)
-		}
-	})
-
-	t.Run("complement__registerDependency__template_not_registered__returns_error", func(t *testing.T) {
-		config := MakeConfig(nil, nil, nil)
-		target := installTarget{Kind: targetTemplate, Name: "ghost"}
-		dep := installDependency{kind: dependencyGlobalLib, name: "lib"}
-
-		_, err := registerDependency(config, target, dep)
-		if err == nil {
-			t.Fatalf("expected error for unregistered template")
+		if target.Path != filepath.Join(root, "repos", "apps", "app-b", "services", "client") {
+			t.Fatalf("unexpected path: %s", target.Path)
 		}
 	})
 
-	t.Run("complement__registerDependency__template_duplicate_dep__returns_error", func(t *testing.T) {
-		config := MakeConfig(nil, nil, nil)
-		config.Templates = []WorkspaceTemplate{MakeTemplate("ts-ui", "service", "iris")}
+	t.Run("domain__resolve_in_app__finds_app_lib", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			MakeApp("app-a", []WorkspaceLibrary{MakeLibrary("lib-a")}),
+		}, nil)
 
-		target := installTarget{Kind: targetTemplate, Name: "ts-ui"}
-		dep := installDependency{kind: dependencyGlobalLib, name: "iris"}
+		target, err := ResolveTargetByNameInApp(config, root, "app-a", "lib-a")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetAppLib {
+			t.Fatalf("expected TargetAppLib, got %v", target.Kind)
+		}
+		if target.App != "app-a" {
+			t.Fatalf("expected app-a, got %s", target.App)
+		}
+	})
 
-		_, err := registerDependency(config, target, dep)
+	t.Run("domain__resolve_in_app__finds_app_itself", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{{Name: "app-a"}}, nil)
+
+		target, err := ResolveTargetByNameInApp(config, root, "app-a", "app-a")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if target.Kind != TargetApp {
+			t.Fatalf("expected TargetApp, got %v", target.Kind)
+		}
+	})
+
+	t.Run("complement__resolve_in_app__app_not_found_returns_error", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{{Name: "app-a"}}, nil)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-missing", "svc")
 		if err == nil {
-			t.Fatalf("expected error for duplicate dep")
+			t.Fatalf("expected error for missing app")
+		}
+	})
+
+	t.Run("complement__resolve_in_app__target_not_found_in_app_returns_error", func(t *testing.T) {
+		config := MakeConfig(nil, []WorkspaceApp{
+			{Name: "app-a", Services: []WorkspaceService{{Name: "svc-x"}}},
+		}, nil)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-a", "svc-y")
+		if err == nil {
+			t.Fatalf("expected error for missing target in app")
+		}
+	})
+
+	t.Run("complement__resolve_in_app__ignores_global_libs", func(t *testing.T) {
+		config := MakeConfig(
+			[]WorkspaceLibrary{MakeLibrary("global-lib")},
+			[]WorkspaceApp{{Name: "app-a"}},
+			nil,
+		)
+
+		_, err := ResolveTargetByNameInApp(config, root, "app-a", "global-lib")
+		if err == nil {
+			t.Fatalf("expected error: global libs are not scoped to an app")
 		}
 	})
 }
 
 func TestWireLocalDependencyValidation(t *testing.T) {
 	t.Run("complement__wire_local_dependency__scope_violation_returns_error", func(t *testing.T) {
-		// app-lib from app-a cannot be wired into a target in app-b without a shared scope
+
 		root := "/workspace"
 		target := installTarget{Kind: TargetService, App: "app-b", Name: "svc-b", Path: filepath.Join(root, "repos", "apps", "app-b", "services", "svc-b")}
 		dependency := installDependency{kind: dependencyAppLib, app: "app-a", name: "lib-a", path: filepath.Join(root, "repos", "apps", "app-a", "libs", "lib-a")}
 
-		// WireLocalDependency rejects cross-app app-lib wiring with a scope-violation error.
-		// Verify that the condition that triggers the rejection is true for this fixture.
 		if !(dependency.kind == dependencyAppLib && target.App != dependency.app) {
 			t.Fatalf("expected cross-app app-lib condition to be true")
 		}

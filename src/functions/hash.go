@@ -43,6 +43,10 @@ func CalcDirHash(fs afero.Fs, root string, ignorePatterns []string) (string, err
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+func ShouldIgnore(relPath string, isDir bool, patterns []string) bool {
+	return shouldIgnore(relPath, isDir, patterns)
+}
+
 func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 	ignored := false
 	for _, raw := range patterns {
@@ -66,7 +70,7 @@ func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 
 func matchesIgnorePattern(relPath string, isDir bool, pattern string) bool {
 	pattern = filepath.ToSlash(pattern)
-	if after, ok :=strings.CutPrefix(pattern, "/"); ok  {
+	if after, ok := strings.CutPrefix(pattern, "/"); ok {
 		pattern = after
 	}
 	dirOnly := strings.HasSuffix(pattern, "/")
@@ -102,10 +106,6 @@ func matchesIgnorePattern(relPath string, isDir bool, pattern string) bool {
 	return false
 }
 
-// CalcRepoHash computes the directory hash for a repository, using .gitignore
-// patterns from the workspace root AND the repo root for ignore filtering. This
-// is the single entry point for computing repo hashes across build, check, and
-// manifest operations.
 func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
 	ignorePatterns, err := CollectRepoIgnorePatterns(fs, root, repoPath)
 	if err != nil {
@@ -114,12 +114,6 @@ func CalcRepoHash(fs afero.Fs, root string, repoPath string) (string, error) {
 	return CalcDirHash(fs, repoPath, ignorePatterns)
 }
 
-// CalcNodeTreeHash computes a combined hash of a node and all its transitive
-// dependency directories. Ignore patterns are collected per-node from both the
-// workspace-root .gitignore and the node's own repo-local .gitignore, so each
-// repo's build artifacts (e.g. dist/, coverage/) are excluded from its hash.
-// This is the single entry point for computing dependency-tree hashes used by
-// the manifest and operation skip logic.
 func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Node) (string, error) {
 	deps, err := CollectDependencyOrder(config, node)
 	if err != nil {
@@ -146,8 +140,6 @@ func CalcNodeTreeHash(fs afero.Fs, root string, config WorkspaceConfig, node Nod
 	return hex.EncodeToString(combined.Sum(nil)), nil
 }
 
-// CalcContainTreeHash computes a dependency-tree hash for a service.
-// Convenience wrapper around CalcNodeTreeHash for the contain command (REQ 10.7/10.8).
 func CalcContainTreeHash(fs afero.Fs, root string, config WorkspaceConfig, appName, serviceName string) (string, error) {
 	serviceNode, err := MakeServiceNode(config, appName, serviceName)
 	if err != nil {

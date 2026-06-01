@@ -169,8 +169,7 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
-// WireLocalDependency wires a local dependency by name using --payload and --target flags (REQ 5.1).
-func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -180,17 +179,37 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	target, err := ResolveTargetByName(config, root, targetName)
+	var target Target
+	if appName != "" {
+		target, err = ResolveTargetByNameInApp(config, root, appName, targetName)
+	} else {
+		target, err = ResolveTargetByName(config, root, targetName)
+	}
 	if err != nil {
 		return err
 	}
 
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName string, target Target) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+func wireDependencyForTarget(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, payloadName string, target Target) error {
 	dependency, err := resolveDependency(root, target, payloadName, config)
 	if err != nil {
 		return err
 	}
 
-	// REQ 7.4 / REQ 5.3: cross-app app-lib dependency requires shared scopes.
 	if dependency.kind == dependencyAppLib && target.App != dependency.app {
 		payloadLookup := Target{Kind: TargetAppLib, App: dependency.app, Name: dependency.name}
 		payloadScopes := FindTargetScopes(config, payloadLookup)
@@ -199,7 +218,7 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 			return fmt.Errorf("scope violation: %s has no declared scopes; cannot be used across app boundaries", payloadName)
 		}
 		if !HasCommonScope(payloadScopes, targetScopes) {
-			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, targetName)
+			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, target.Name)
 		}
 	}
 
@@ -207,7 +226,6 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	// REQ 5.2: payload and target cannot be the same repo.
 	targetKey := installTargetKey(target)
 	depKey := installDependencyKey(dependency)
 	if targetKey != "" && targetKey == depKey {
@@ -311,7 +329,7 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 		return fmt.Errorf("unsupported install target")
 	}
 	if !allowedDeps[dependency.kind] {
-		// REQ 15.4: projects cannot be used as dependencies.
+
 		if dependency.kind == dependencyProject {
 			return fmt.Errorf("projects cannot be used as dependencies")
 		}

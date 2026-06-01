@@ -149,7 +149,6 @@ func AddServiceToWorkspace(fs afero.Fs, appName string, serviceName string, port
 	return WriteWorkspaceConfig(fs, workspaceConfig)
 }
 
-// RemoveServiceFromWorkspace removes a service entry from ocean.workspace.json.
 func RemoveServiceFromWorkspace(fs afero.Fs, appName string, serviceName string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		appIndex := FindAppIndex(config, appName)

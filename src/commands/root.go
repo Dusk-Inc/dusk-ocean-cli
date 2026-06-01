@@ -1,9 +1,8 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -33,13 +32,17 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		app, err := cmd.Flags().GetString("app")
+		if err != nil {
+			return err
+		}
 		if payload == "" && target == "" {
 			return cmd.Help()
 		}
 		if payload == "" || target == "" {
 			return fmt.Errorf("both --payload and --target are required")
 		}
-		return functions.WireLocalDependency(cmd, afero.NewOsFs(), payload, target)
+		return functions.WireLocalDependency(cmd, afero.NewOsFs(), payload, target, app)
 	},
 }
 
@@ -55,13 +58,17 @@ var removeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		app, err := cmd.Flags().GetString("app")
+		if err != nil {
+			return err
+		}
 		if payload == "" && target == "" {
 			return cmd.Help()
 		}
 		if payload == "" || target == "" {
 			return fmt.Errorf("both --payload and --target are required")
 		}
-		return functions.UnwireLocalDependency(cmd, afero.NewOsFs(), payload, target)
+		return functions.UnwireLocalDependency(cmd, afero.NewOsFs(), payload, target, app)
 	},
 }
 
@@ -83,6 +90,11 @@ var checkCmd = &cobra.Command{
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Use to run a service, app, or collection.",
+}
+
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Use to stop a service or app via its `stop` task.",
 }
 
 var initCmd = &cobra.Command{
@@ -110,6 +122,7 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(containCmd)
 	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(refreshCmd)
@@ -134,12 +147,16 @@ func init() {
 	addCmd.AddCommand(addLibCmd)
 	addCmd.AddCommand(addPkgCmd)
 	addCmd.AddCommand(addTestCmd)
+	addCmd.AddCommand(addInfraCmd)
+	addCmd.AddCommand(addDocsCmd)
 
 	removeCmd.AddCommand(removeAppCmd)
 	removeCmd.AddCommand(removeLibCmd)
 	removeCmd.AddCommand(removePkgCmd)
 	removeCmd.AddCommand(removeServiceCmd)
 	removeCmd.AddCommand(removeTestCmd)
+	removeCmd.AddCommand(removeInfraCmd)
+	removeCmd.AddCommand(removeDocsCmd)
 
 	detachCmd.AddCommand(detachAppCmd)
 	detachCmd.AddCommand(detachPkgCmd)
@@ -159,15 +176,14 @@ func init() {
 	runCmd.AddCommand(runAppCmd)
 	runCmd.AddCommand(runServiceCmd)
 
-	containCmd.AddCommand(containProjectCmd)
-	containCmd.AddCommand(containServiceCmd)
-
-	publishCmd.AddCommand(publishProjectCmd)
-	publishCmd.AddCommand(publishServiceCmd)
+	stopCmd.AddCommand(stopAppCmd)
+	stopCmd.AddCommand(stopServiceCmd)
 
 	initCmd.Flags().String("name", "", "Workspace name")
 	addCmd.Flags().String("payload", "", "Library to wire as a dependency")
 	addCmd.Flags().String("target", "", "Target repo to receive the dependency")
+	addCmd.Flags().String("app", "", "App that contains the target (required if target name is ambiguous across apps)")
 	removeCmd.Flags().String("payload", "", "Library to unwire from the target")
 	removeCmd.Flags().String("target", "", "Target repo to remove the dependency from")
+	removeCmd.Flags().String("app", "", "App that contains the target (required if target name is ambiguous across apps)")
 }

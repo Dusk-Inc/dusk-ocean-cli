@@ -10,9 +10,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// starterConfigFile mirrors the README's "auto-generated starter
-// ocean.config.json" shape: name + language + type + an explicit empty
-// task block. The developer fills the task strings in afterward.
 type starterConfigFile struct {
 	Name     string            `json:"name"`
 	Language string            `json:"language"`
@@ -30,11 +27,6 @@ type starterConfigTask struct {
 	Run       string `json:"run"`
 }
 
-// WriteStarterRepoConfig drops the canonical empty ocean.config.json into
-// the given repo directory. The caller is expected to have already
-// confirmed the file does not exist (adopt/register both check), but the
-// helper double-checks so it never silently overwrites a developer's
-// existing configuration.
 func WriteStarterRepoConfig(fs afero.Fs, repoPath string, name string, kind string) error {
 	configPath := filepath.Join(repoPath, "ocean.config.json")
 	if _, err := fs.Stat(configPath); err == nil {
@@ -59,9 +51,6 @@ func WriteStarterRepoConfig(fs afero.Fs, repoPath string, name string, kind stri
 	return afero.WriteFile(fs, configPath, payload, 0o644)
 }
 
-// starterConfigTypeFromKind maps adopt/register kinds to the `type` field
-// written into ocean.config.json. The CLI uses these as classification
-// hints for downstream commands.
 func starterConfigTypeFromKind(kind string) string {
 	switch kind {
 	case tokens.RepoKindProject:
@@ -72,6 +61,10 @@ func starterConfigTypeFromKind(kind string) string {
 		return "app"
 	case tokens.RepoKindService:
 		return "service"
+	case tokens.RepoKindInfra:
+		return "infra"
+	case tokens.RepoKindDocs:
+		return "docs"
 	}
 	return ""
 }

@@ -37,24 +37,41 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 	if err != nil {
 		return err
 	}
-	order, err := SortDependencyGraph(graph)
+	keys, err := SortDependencyGraph(graph)
 	if err != nil {
 		return err
 	}
-	if len(order) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "refresh skipped: no workspace repositories")
-		return nil
-	}
-
-	statusByKey := map[string]RefreshNodeStatus{}
-	missingByKey := map[string][]string{}
-	cloneStatusByDest := map[string]RefreshNodeStatus{}
-
-	for _, key := range order {
+	order := make([]Node, 0, len(keys))
+	for _, key := range keys {
 		node, ok := index[key]
 		if !ok {
 			return fmt.Errorf("dependency node missing: %s", key)
 		}
+		order = append(order, node)
+	}
+	appNames := make([]string, 0, len(config.Apps))
+	for _, app := range config.Apps {
+		appNames = append(appNames, app.Name)
+	}
+	return runRefreshNodes(cmd, fs, root, config, order, appNames, true)
+}
+
+// runRefreshNodes clones (if missing), installs, builds, and checks the given nodes
+// in the order provided (which the caller has already topologically sorted, so every
+// dependency precedes the node that needs it). appShells names registered apps to clone
+// by remote even though they contribute no nodes (an app with no declared
+// services/libraries/tests) — deduped against the node clones, so an app already cloned
+// via one of its components is not cloned twice. When cloneNonCode is set it also clones
+// the workspace's non-code repos (infra/docs) — a whole-workspace concern a scoped run
+// deliberately skips.
+func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, order []Node, appShells []string, cloneNonCode bool) error {
+	if len(order) == 0 && len(appShells) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "refresh skipped: no workspace repositories")
+		return nil
+	}
+
+	cloned := map[string]struct{}{}
+	for _, node := range order {
 		dest, _, err := resolveNodeCloneTarget(root, config, node)
 		if err != nil {
 			return err
@@ -99,11 +116,17 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
-	for _, key := range order {
-		if statusByKey[key] != RefreshStatusOK {
-			continue
+	if err := cloneAppShellsIfMissing(cmd, fs, root, config, appShells, cloned); err != nil {
+		return err
+	}
+
+	if cloneNonCode {
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			return err
 		}
-		node := index[key]
+	}
+
+	for _, node := range order {
 		label, path, _, err := NodeBuildInfo(root, node)
 		if err != nil {
 			return err
@@ -113,27 +136,14 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
-	built := map[string]struct{}{}
-	for _, key := range order {
-		if statusByKey[key] != RefreshStatusOK {
-			continue
-		}
-		node := index[key]
-		label, path, hashPath, err := NodeBuildInfo(root, node)
-		if err != nil {
-			return err
-		}
-		if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
+	for _, node := range order {
+		if err := buildNode(cmd, root, config, node); err != nil {
 			return err
 		}
 		built[key] = struct{}{}
 	}
 
-	for _, key := range order {
-		if statusByKey[key] != RefreshStatusOK {
-			continue
-		}
-		node := index[key]
+	for _, node := range order {
 		label, path, hashPath, err := NodeCheckInfo(root, node)
 		if err != nil {
 			return err
@@ -148,106 +158,25 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 	return nil
 }
 
-// attemptCloneForRefresh resolves the clone target for node; if the local
-// directory already exists it returns OK without invoking the clone task,
-// otherwise it runs the workspace clone task and returns NoAccess if the
-// clone command fails (or the target directory is still absent after).
-func attemptCloneForRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, node Node, dest string) RefreshNodeStatus {
-	if info, err := fs.Stat(dest); err == nil && info.IsDir() {
-		return RefreshStatusOK
+// buildNode builds a single node and records its build hash — the same effect
+// RunBuildWithDependencies has for its target, but without re-walking dependencies.
+// The caller has already placed every dependency earlier in the order, and a
+// --no-deps scoped run intentionally omits them, so building the node alone here is
+// correct for both the whole-workspace and scoped paths.
+func buildNode(cmd *cobra.Command, root string, config WorkspaceConfig, node Node) error {
+	label, path, hashPath, err := NodeBuildInfo(root, node)
+	if err != nil {
+		return err
 	}
-	if err := cloneNodeRepoIfMissing(cmd, fs, root, config, node); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "skip %s: clone failed (%v)\n", dest, err)
-		return RefreshStatusNoAccess
+	if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
+		return err
 	}
-	if info, err := fs.Stat(dest); err != nil || !info.IsDir() {
-		fmt.Fprintf(cmd.ErrOrStderr(), "skip %s: clone reported success but directory is absent\n", dest)
-		return RefreshStatusNoAccess
+	if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, node); err == nil {
+		_ = SetManifestBuildHash(afero.NewOsFs(), root, nodeKey(node), treeHash)
 	}
-	return RefreshStatusOK
+	return nil
 }
 
-func buildRefreshReport(order []string, index map[string]Node, statusByKey map[string]RefreshNodeStatus, missingByKey map[string][]string) RefreshReport {
-	report := RefreshReport{}
-	keys := append([]string(nil), order...)
-	sort.Strings(keys)
-	for _, key := range keys {
-		node, ok := index[key]
-		if !ok {
-			continue
-		}
-		entry := RefreshNodeReport{
-			Key:    key,
-			Label:  refreshNodeLabel(node),
-			Status: statusByKey[key],
-		}
-		if entry.Status == RefreshStatusMissingDeps {
-			entry.Missing = append(entry.Missing, missingByKey[key]...)
-			sort.Strings(entry.Missing)
-		}
-		report.Entries = append(report.Entries, entry)
-	}
-	return report
-}
-
-func refreshNodeLabel(node Node) string {
-	switch node.Kind {
-	case NodeService:
-		return fmt.Sprintf("service %s/%s", node.App, node.Name)
-	case NodeAppLib:
-		return fmt.Sprintf("app library %s/%s", node.App, node.Name)
-	case NodeAppTest:
-		return fmt.Sprintf("test %s/%s", node.App, node.Name)
-	case NodeGlobalLib:
-		return fmt.Sprintf("global library %s", node.Name)
-	case NodeProject:
-		return fmt.Sprintf("project %s", node.Name)
-	}
-	return node.Name
-}
-
-// WriteRefreshReport prints a grouped summary of refresh outcomes. Groups
-// are emitted only when populated so a fully-clean run prints just the
-// installed list. The output is intended to be human-readable; agents and
-// scripts consume the manifest hashes for machine state.
-func WriteRefreshReport(out io.Writer, report RefreshReport) {
-	var ok, noAccess, missing []RefreshNodeReport
-	for _, entry := range report.Entries {
-		switch entry.Status {
-		case RefreshStatusOK:
-			ok = append(ok, entry)
-		case RefreshStatusNoAccess:
-			noAccess = append(noAccess, entry)
-		case RefreshStatusMissingDeps:
-			missing = append(missing, entry)
-		}
-	}
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Refresh report")
-	fmt.Fprintln(out, "==============")
-	fmt.Fprintf(out, "installed: %d  no access: %d  missing dependencies: %d\n",
-		len(ok), len(noAccess), len(missing))
-	if len(ok) > 0 {
-		fmt.Fprintln(out, "\nInstalled:")
-		for _, entry := range ok {
-			fmt.Fprintf(out, "  - %s\n", entry.Label)
-		}
-	}
-	if len(noAccess) > 0 {
-		fmt.Fprintln(out, "\nNo access (clone unavailable):")
-		for _, entry := range noAccess {
-			fmt.Fprintf(out, "  - %s\n", entry.Label)
-		}
-	}
-	if len(missing) > 0 {
-		fmt.Fprintln(out, "\nSkipped due to missing dependencies:")
-		for _, entry := range missing {
-			fmt.Fprintf(out, "  - %s -> missing: %s\n", entry.Label, strings.Join(entry.Missing, ", "))
-		}
-	}
-}
-
-// RunInstall resolves a repo by name and runs its install task (REQ 6.1/6.2).
 func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -265,10 +194,6 @@ func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	return runInstall(cmd, fs, label, target.Path)
 }
 
-// resolveNodeCloneTarget returns the expected on-disk path and the target
-// name to use with the workspace "clone" task for the given node. For app
-// sub-repos (services, app libraries, app tests) the clone target is the
-// parent app directory, since all sub-repos share a single git history.
 func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (dest string, taskTarget string, err error) {
 	switch node.Kind {
 	case NodeAppLib, NodeService, NodeAppTest:
@@ -293,9 +218,59 @@ func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (des
 	return "", "", fmt.Errorf("unsupported node kind: %v", node.Kind)
 }
 
-// cloneNodeRepoIfMissing runs the workspace "clone" task for the repo that
-// owns node if its destination directory does not already exist. If the
-// directory is already present the function is a no-op.
+func cloneNonCodeReposIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
+	for _, entry := range config.Infrastructure {
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirInfra, entry.Name)
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+			return err
+		}
+	}
+	for _, entry := range config.Docs {
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirDocs, entry.Name)
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cloneAppShellsIfMissing clones each named app by its remote when the app directory is
+// missing — covering apps registered in the workspace that declare no
+// services/libraries/tests and so contribute no graph nodes. The cloned set is shared
+// with the node-clone pass so an app already cloned via one of its components is skipped.
+func cloneAppShellsIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appNames []string, cloned map[string]struct{}) error {
+	for _, name := range appNames {
+		idx := FindAppIndex(config, name)
+		if idx == -1 {
+			continue
+		}
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirApps, name)
+		if _, done := cloned[dest]; done {
+			continue
+		}
+		cloned[dest] = struct{}{}
+		if err := cloneRepoIfMissing(cmd, fs, root, dest, name, config.Apps[idx].Remote); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cloneRepoIfMissing clones a single repo (at dest, named name, from remote) when its
+// directory is missing. A repo with no remote (or remote "none") is skipped with a note
+// rather than failing. Used for non-code repos and for app shells alike.
+func cloneRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, dest string, name string, remote string) error {
+	if info, statErr := fs.Stat(dest); statErr == nil && info.IsDir() {
+		return nil
+	}
+	if remote == "" || remote == tokens.RemoteNone {
+		fmt.Fprintf(cmd.OutOrStdout(), "skipping clone of %s: no remote configured\n", name)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "cloning %s\n", name)
+	return RunWorkspaceTaskAt(fs, root, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.WorkspaceTaskClone, name, "")
+}
+
 func cloneNodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, node Node) error {
 	dest, taskTarget, err := resolveNodeCloneTarget(root, config, node)
 	if err != nil {

@@ -144,7 +144,7 @@ func TestRemoveScopeFromWorkspaceTarget(t *testing.T) {
 
 func TestFindDepsReliantOnScope(t *testing.T) {
 	t.Run("boundary__remove_scope__prints_warning_for_affected_cross_app_deps", func(t *testing.T) {
-		// lib-a in app-a has scope "shared"; svc-b in app-b also has scope "shared" and depends on lib-a.
+
 		libA := WorkspaceLibrary{Name: "lib-a", Scopes: []string{"shared"}, Deps: []WorkspaceDep{}}
 		svcB := WorkspaceService{
 			Name:   "svc-b",
@@ -214,25 +214,24 @@ func TestWriteAndReadRepoConfig(t *testing.T) {
 
 func TestScopeValidationInWireLocalDependency(t *testing.T) {
 	t.Run("complement__wire_local_dependency__payload_no_scopes_returns_scope_violation", func(t *testing.T) {
-		// lib-a in app-a has NO scopes; svc-b is in app-b → should be rejected
+
 		target := installTarget{Kind: TargetAppLib, App: "app-b", Name: "svc-b"}
 		dependency := installDependency{kind: dependencyAppLib, app: "app-a", name: "lib-a"}
 
-		// Verify the condition: cross-app app-lib + payload has no scopes → violation
 		if dependency.kind != dependencyAppLib {
 			t.Fatalf("expected dependencyAppLib kind")
 		}
 		if target.App == dependency.app {
 			t.Fatalf("expected different apps")
 		}
-		payloadScopes := []string{} // no scopes
+		payloadScopes := []string{}
 		if len(payloadScopes) != 0 {
 			t.Fatalf("expected no payload scopes for this fixture")
 		}
 	})
 
 	t.Run("domain__wire_local_dependency__shared_scope_allows_cross_app", func(t *testing.T) {
-		// lib-a (app-a) and target (app-b) both have scope "shared" → HasCommonScope must return true
+
 		payloadScopes := []string{"shared", "internal"}
 		targetScopes := []string{"shared"}
 		if !HasCommonScope(payloadScopes, targetScopes) {

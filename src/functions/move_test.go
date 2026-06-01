@@ -261,7 +261,7 @@ func TestMoveInWorkspaceConfig(t *testing.T) {
 
 func TestFindMoveScopeWarnings(t *testing.T) {
 	t.Run("domain__move__global_to_app_warns_on_scope_violation", func(t *testing.T) {
-		// lib-a moved from global to app-a. svc-b in app-b depends on it but has no shared scope.
+
 		libA := WorkspaceLibrary{Name: "lib-a", Deps: []WorkspaceDep{}}
 		svcB := WorkspaceService{
 			Name: "svc-b",
@@ -285,7 +285,7 @@ func TestFindMoveScopeWarnings(t *testing.T) {
 	})
 
 	t.Run("domain__move__app_to_app_warns_on_scope_violation", func(t *testing.T) {
-		// lib-a moved from app-a to app-c. svc-b in app-b depends on it but has no shared scope with app-c.
+
 		libA := WorkspaceLibrary{Name: "lib-a", Deps: []WorkspaceDep{}}
 		svcB := WorkspaceService{
 			Name: "svc-b",

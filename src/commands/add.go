@@ -1,10 +1,9 @@
 package cmd
 
-import
-(
+import (
+	"fmt"
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	tokens "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,8 +23,11 @@ var addAppCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		return functions.AddApp(afero.NewOsFs(), name)
+		fs := afero.NewOsFs()
+		if err := functions.AddApp(fs, name); err != nil {
+			return err
+		}
+		return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindApp, name, "")
 	},
 }
 
@@ -121,9 +123,6 @@ var addServiceCmd = &cobra.Command{
 			}
 		}
 
-		// REQ 19: pre-validate template-declared deps BEFORE any files
-		// are copied, so an illegal propagation aborts cleanly with no
-		// half-scaffolded state on disk.
 		if template != "" {
 			workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
 			if err != nil {
@@ -148,7 +147,6 @@ var addServiceCmd = &cobra.Command{
 			return err
 		}
 
-		// REQ 19: propagate template deps after the new repo is registered.
 		if template != "" {
 			target := functions.Target{
 				Kind: functions.TargetService,
@@ -160,6 +158,7 @@ var addServiceCmd = &cobra.Command{
 				return err
 			}
 		}
+
 		return nil
 	},
 }
@@ -273,7 +272,6 @@ var addLibCmd = &cobra.Command{
 			return err
 		}
 
-		// REQ 19: pre-validate template-declared deps before copy.
 		workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
 		if err != nil {
 			return err
@@ -315,8 +313,14 @@ var addLibCmd = &cobra.Command{
 			}
 		}
 
-		// REQ 19: propagate template deps after registration.
-		return functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical)
+		if err := functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical); err != nil {
+			return err
+		}
+		if location == "app" {
+
+			return nil
+		}
+		return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindLibrary, libName, "")
 	},
 }
 
@@ -387,7 +391,6 @@ var addPkgCmd = &cobra.Command{
 			return err
 		}
 
-		// REQ 19: pre-validate template-declared deps before copy.
 		root, err := functions.GetRoot()
 		if err != nil {
 			return err
@@ -411,7 +414,10 @@ var addPkgCmd = &cobra.Command{
 		if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
 			return err
 		}
-		return functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical)
+		if err := functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical); err != nil {
+			return err
+		}
+		return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindProject, projectName, "")
 	},
 }
 
@@ -520,7 +526,6 @@ var addTestCmd = &cobra.Command{
 			replacements[key] = value
 		}
 
-		// REQ 19: pre-validate template-declared deps before copy.
 		root, err := functions.GetRoot()
 		if err != nil {
 			return err
@@ -549,6 +554,101 @@ var addTestCmd = &cobra.Command{
 	},
 }
 
+var addInfraCmd = &cobra.Command{
+	Use:   "infra",
+	Short: "Add an infrastructure repo to repos/infra",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runAddNonCodeRepo(cmd, tokens.RepoKindInfra)
+	},
+}
+
+var addDocsCmd = &cobra.Command{
+	Use:   "docs",
+	Short: "Add a docs repo to repos/docs",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runAddNonCodeRepo(cmd, tokens.RepoKindDocs)
+	},
+}
+
+func runAddNonCodeRepo(cmd *cobra.Command, kind string) error {
+	fs := afero.NewOsFs()
+
+	namePrompt := promptui.Prompt{
+		Label: fmt.Sprintf("%s repo name", kind),
+		Validate: func(input string) error {
+			value := strings.TrimSpace(input)
+			if value == "" {
+				return fmt.Errorf("name is required")
+			}
+			if strings.ContainsAny(value, " \t\n") {
+				return fmt.Errorf("name cannot include spaces")
+			}
+			for _, ch := range value {
+				if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+					return fmt.Errorf("name must only use letters, numbers, dashes, and underscores")
+				}
+			}
+			return nil
+		},
+	}
+	entered, err := namePrompt.Run()
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSpace(entered)
+
+	workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	availableTemplates := functions.FindTemplatesByKind(workspaceConfig, kind)
+
+	template := ""
+	if len(availableTemplates) > 0 {
+		const noneOption = "none (empty repo)"
+		items := append([]string{noneOption}, availableTemplates...)
+		templatePrompt := promptui.Select{
+			Label: "Select template",
+			Items: items,
+		}
+		_, choice, err := templatePrompt.Run()
+		if err != nil {
+			return err
+		}
+		if choice != noneOption {
+			template = choice
+		}
+	}
+
+	replacements := map[string]string{}
+	if template != "" {
+		templatePath := filepath.Join("repos", "templates", template)
+		placeholders, err := collectPlaceholders(fs, templatePath)
+		if err != nil {
+			return err
+		}
+		replacements, err = promptPlaceholderValues(placeholders)
+		if err != nil {
+			return err
+		}
+	}
+
+	switch kind {
+	case tokens.RepoKindInfra:
+		if err := functions.AddInfra(fs, name, template, replacements); err != nil {
+			return err
+		}
+	case tokens.RepoKindDocs:
+		if err := functions.AddDocs(fs, name, template, replacements); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported kind: %s", kind)
+	}
+
+	return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), kind, name, "")
+}
+
 func init() {
 	addAppCmd.Flags().String("name", "", "Name of the app")
 }
@@ -557,6 +657,11 @@ var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
 
 func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 	placeholders := map[string]struct{}{}
+	workspaceRoot, _ := functions.GetRoot()
+	var ignorePatterns []string
+	if workspaceRoot != "" {
+		ignorePatterns, _ = functions.ReadOceanIgnorePatterns(fs, workspaceRoot)
+	}
 	err := afero.Walk(fs, root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -565,10 +670,20 @@ func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if relPath != "." {
-			addPlaceholders(relPath, placeholders)
+		if relPath == "." {
+			return nil
 		}
+		if functions.ShouldIgnore(filepath.ToSlash(relPath), info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		addPlaceholders(relPath, placeholders)
 		if info.IsDir() {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
 			return nil
 		}
 		content, err := afero.ReadFile(fs, path)
@@ -589,9 +704,6 @@ func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 	return keys, nil
 }
 
-// reservedPlaceholderPrefix marks tokens that Dusk Ocean substitutes at
-// runtime. These are NOT prompted at scaffold time and survive verbatim in
-// the generated files so the runtime engine can fill them in later.
 const reservedPlaceholderPrefix = tokens.VarNsOcean + ":"
 
 func addPlaceholders(value string, placeholders map[string]struct{}) {
@@ -604,8 +716,7 @@ func addPlaceholders(value string, placeholders map[string]struct{}) {
 		if key == "" {
 			continue
 		}
-		// REQ 3.9: skip reserved {{ocean:*}} tokens — they are filled in
-		// at runtime by Dusk Ocean, not at scaffold time by the user.
+
 		if strings.HasPrefix(key, reservedPlaceholderPrefix) {
 			continue
 		}
@@ -613,14 +724,6 @@ func addPlaceholders(value string, placeholders map[string]struct{}) {
 	}
 }
 
-// promptForContainerFile asks the user how to assign a service's
-// container_file (REQ 3.8). Three branches:
-//
-//   - existing: pick a file already present under repos/containers/.
-//   - custom:   accept an arbitrary workspace-relative or bare path.
-//   - none:     leave the field empty.
-//
-// The returned string goes straight into WorkspaceService.ContainerFile.
 func promptForContainerFile(root string) (string, error) {
 	containerOptionExisting := "existing"
 	containerOptionCustom := "custom"
