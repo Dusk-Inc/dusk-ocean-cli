@@ -17,3 +17,8 @@ log:
     event: advanced
     to: representation
     commit: 488fdfc33952608f67c42a346861f16666adf8d3
+  - at: "2026-06-01"
+    boundary: refresh.scoped_cli
+    event: advanced
+    to: simulation
+    commit: 6505adaac2525297808882e553e3526425ccea8f
