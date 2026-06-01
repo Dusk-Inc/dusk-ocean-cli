@@ -91,10 +91,11 @@ codes (e.g. a separate code for usage vs. runtime failure); see Decisions.
 
 ## Simulation
 
-`command_stub`: a fake `refresh` that parses `--repo` / `--no-deps` / `--clear-hashes`, prints
-schema-valid progress lines for a canned scoped repo set, and returns `0` — or the declared
-non-zero on a simulated usage error / unknown repo — without cloning, building, or checking
-anything.
+N/A — a cli boundary's simulation rung is a no-op (see `.claude/rules/status-gating.md`). This
+command has no programmatic consumer that must integrate against it before it is built — its
+callers are humans at a terminal and CI steps — so no `command_stub` is generated; the boundary
+advances `representation → realization` directly. A stub would be optional and is deliberately
+skipped here.
 
 ## Dependencies
 
