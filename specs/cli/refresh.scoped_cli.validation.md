@@ -1,7 +1,7 @@
-# Validation Evidence — refresh.scoped_cli
+# Check Evidence — refresh.scoped_cli
 
-Evidence for the `realization → validation` advance of the [refresh.scoped_cli](refresh.scoped_cli.md)
-boundary: the realized command verified against its contract under real conditions.
+Evidence for the `build → check` advance of the [refresh.scoped_cli](refresh.scoped_cli.md)
+boundary: the built command verified against its contract under real conditions.
 
 - **Date:** 2026-06-01
 - **Artifact:** the real `dusk-ocean` binary, built from this repo via `go build .` (the project's
@@ -31,7 +31,7 @@ boundary: the realized command verified against its contract under real conditio
   runs and clones it into `repos/apps/board_education`. Exit `0`. Re-running with the repo now
   present is a clean no-op (exit `0`, no output). This is the v0.2.0 behavior: a registered repo
   with a remote is cloned even with no declared components (clone-only). (Earlier iterations
-  during validation first misreported this app as "not found", then skipped it as "no buildable
+  during check first misreported this app as "not found", then skipped it as "no buildable
   components"; the contract was amended to clone-by-registration after the requester confirmed
   the app must be cloned regardless of declared components.)
 
@@ -43,12 +43,12 @@ boundary: the realized command verified against its contract under real conditio
 | unknown `--repo` (names the repo) | `refresh --repo ghost` | `1` | `Error: repo "ghost" not found in workspace config` |
 | dependency cycle among targeted repos | `refresh --repo a` (a↔b) | `1` | `Error: dependency cycle detected` |
 
-The non-zero exits depend on the CLI-wide exit-code fix made during realization (`main` now
+The non-zero exits depend on the CLI-wide exit-code fix made during build (`main` now
 `os.Exit(1)`s when `Execute` returns an error); before it, every failure exited `0`.
 
 ## Contract-test corroboration
 
-The process-edge runs above are backed by the contract tests committed in realization
+The process-edge runs above are backed by the contract tests committed in build
 (`src/functions/scoped_refresh_test.go`, `src/commands/refresh_test.go`): scope ordering,
 transitive-dep inclusion, non-code exclusion, `--no-deps`, the usage error, the unknown-repo
 error (asserting the message names the repo), and the cycle error — across the
@@ -56,6 +56,6 @@ domain/boundary/error/chaos sets. `go test ./...` is green.
 
 ## Verdict
 
-The realized command satisfies `contract.inputs` / `contract.outputs` and maps all three
+The built command satisfies `contract.inputs` / `contract.outputs` and maps all three
 declared `failure_modes` to their non-zero exits with stderr diagnostics, verified against the
 real binary. `verified_under_real_conditions` is met.

@@ -2,7 +2,7 @@
 id: refresh.scoped_cli
 type: cli
 name: Scoped Refresh Command
-status: validation
+status: check
 owner: dusk-ocean
 version: 0.2.0
 contract:
@@ -100,12 +100,12 @@ non-zero exit are the frontmatter `failure_modes`: a usage error (`--no-deps` wi
 in any clone/install/build/check step. This version does not subdivide non-zero into distinct
 codes (e.g. a separate code for usage vs. runtime failure); see Decisions.
 
-## Simulation
+## Mock
 
-N/A — a cli boundary's simulation rung is a no-op (see `.claude/rules/status-gating.md`). This
+N/A — a cli boundary's mock rung is a no-op (see `.claude/rules/status-gating.md`). This
 command has no programmatic consumer that must integrate against it before it is built — its
 callers are humans at a terminal and CI steps — so no `command_stub` is generated; the boundary
-advances `representation → realization` directly. A stub would be optional and is deliberately
+advances `wire → build` directly. A stub would be optional and is deliberately
 skipped here.
 
 ## Dependencies
