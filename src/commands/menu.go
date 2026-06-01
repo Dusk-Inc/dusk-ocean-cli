@@ -182,7 +182,11 @@ func runMenuCreateApp(fs afero.Fs) error {
 	if err != nil {
 		return err
 	}
-	return functions.AddApp(fs, strings.TrimSpace(name))
+	root, err := functions.GetRoot()
+	if err != nil {
+		return err
+	}
+	return functions.AddApp(fs, strings.TrimSpace(name), root)
 }
 
 // runMenuRemoveApp removes an app (REQ 3.5).
