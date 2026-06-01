@@ -16,21 +16,34 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 	if err != nil {
 		return err
 	}
-	order, err := SortDependencyGraph(graph)
+	keys, err := SortDependencyGraph(graph)
 	if err != nil {
 		return err
 	}
+	order := make([]Node, 0, len(keys))
+	for _, key := range keys {
+		node, ok := index[key]
+		if !ok {
+			return fmt.Errorf("dependency node missing: %s", key)
+		}
+		order = append(order, node)
+	}
+	return runRefreshNodes(cmd, fs, root, config, order, true)
+}
+
+// runRefreshNodes clones (if missing), installs, builds, and checks the given nodes
+// in the order provided (which the caller has already topologically sorted, so every
+// dependency precedes the node that needs it). When cloneNonCode is set it also clones
+// the workspace's non-code repos (infra/docs) — a whole-workspace concern a scoped run
+// deliberately skips.
+func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, order []Node, cloneNonCode bool) error {
 	if len(order) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "refresh skipped: no workspace repositories")
 		return nil
 	}
 
 	cloned := map[string]struct{}{}
-	for _, key := range order {
-		node, ok := index[key]
-		if !ok {
-			return fmt.Errorf("dependency node missing: %s", key)
-		}
+	for _, node := range order {
 		dest, _, err := resolveNodeCloneTarget(root, config, node)
 		if err != nil {
 			return err
@@ -43,15 +56,13 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
-	if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
-		return err
+	if cloneNonCode {
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			return err
+		}
 	}
 
-	for _, key := range order {
-		node, ok := index[key]
-		if !ok {
-			return fmt.Errorf("dependency node missing: %s", key)
-		}
+	for _, node := range order {
 		label, path, _, err := NodeBuildInfo(root, node)
 		if err != nil {
 			return err
@@ -61,22 +72,13 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
-	built := map[string]struct{}{}
-	for _, key := range order {
-		node, ok := index[key]
-		if !ok {
-			return fmt.Errorf("dependency node missing: %s", key)
-		}
-		if err := RunBuildWithDependencies(cmd, root, config, node, built); err != nil {
+	for _, node := range order {
+		if err := buildNode(cmd, root, config, node); err != nil {
 			return err
 		}
 	}
 
-	for _, key := range order {
-		node, ok := index[key]
-		if !ok {
-			return fmt.Errorf("dependency node missing: %s", key)
-		}
+	for _, node := range order {
 		label, path, hashPath, err := NodeCheckInfo(root, node)
 		if err != nil {
 			return err
@@ -86,6 +88,25 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 		}
 	}
 
+	return nil
+}
+
+// buildNode builds a single node and records its build hash — the same effect
+// RunBuildWithDependencies has for its target, but without re-walking dependencies.
+// The caller has already placed every dependency earlier in the order, and a
+// --no-deps scoped run intentionally omits them, so building the node alone here is
+// correct for both the whole-workspace and scoped paths.
+func buildNode(cmd *cobra.Command, root string, config WorkspaceConfig, node Node) error {
+	label, path, hashPath, err := NodeBuildInfo(root, node)
+	if err != nil {
+		return err
+	}
+	if err := RunBuild(cmd, label, path, hashPath, root); err != nil {
+		return err
+	}
+	if treeHash, err := CalcNodeTreeHash(afero.NewOsFs(), root, config, node); err == nil {
+		_ = SetManifestBuildHash(afero.NewOsFs(), root, nodeKey(node), treeHash)
+	}
 	return nil
 }
 
