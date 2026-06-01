@@ -131,6 +131,21 @@ func TestScopedRefreshOrder(t *testing.T) {
 			t.Fatalf("a repo with no deps should return only itself, got %v", keys)
 		}
 	})
+
+	t.Run("boundary__ScopedRefreshOrder__presentAppWithNoComponentsIsEmptyNotError", func(t *testing.T) {
+		// An app that exists in config but declares no services/libraries/tests is a
+		// valid, empty scope — not the "absent from config" failure mode.
+		config := makeScopedConfig()
+		config.Apps = append(config.Apps, WorkspaceApp{Name: "empty-app"})
+
+		nodes, err := ScopedRefreshOrder(config, "empty-app", false)
+		if err != nil {
+			t.Fatalf("a present-but-empty app must not error, got: %v", err)
+		}
+		if len(nodes) != 0 {
+			t.Fatalf("a present-but-empty app should resolve to an empty scope, got %v", keysOf(nodes))
+		}
+	})
 }
 
 func TestScopedRefreshFailureModes(t *testing.T) {

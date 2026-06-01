@@ -16,6 +16,10 @@ func RunScopedRefresh(cmd *cobra.Command, fs afero.Fs, root string, config Works
 	if err != nil {
 		return err
 	}
+	if len(order) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "refresh skipped for %s: no buildable components\n", repo)
+		return nil
+	}
 	return runRefreshNodes(cmd, fs, root, config, order, false)
 }
 
@@ -51,16 +55,24 @@ func ScopedRefreshOrder(config WorkspaceConfig, repo string, noDeps bool) ([]Nod
 
 // scopedSeedKeys resolves a workspace repo name to the graph keys that belong to it:
 // a global library or a project is a single node; an app contributes all of its
-// services, libraries, and tests.
+// services, libraries, and tests. It errors only when the name matches no repo in the
+// config at all; a name that DOES match — e.g. an app that exists but declares no
+// services/libraries/tests — resolves to an empty seed set (a valid, empty scope), not
+// an error, since "absent from config" and "present but has no buildable components"
+// are different conditions.
 func scopedSeedKeys(config WorkspaceConfig, repo string) ([]string, error) {
+	matched := false
 	var seeds []string
 	if FindGlobalLibraryIndex(config, repo) != -1 {
+		matched = true
 		seeds = append(seeds, GlobalLibKey(repo))
 	}
 	if FindProjectIndex(config, repo) != -1 {
+		matched = true
 		seeds = append(seeds, ProjectKey(repo))
 	}
 	if idx := FindAppIndex(config, repo); idx != -1 {
+		matched = true
 		app := config.Apps[idx]
 		for _, service := range app.Services {
 			seeds = append(seeds, ServiceKey(app.Name, service.Name))
@@ -72,7 +84,7 @@ func scopedSeedKeys(config WorkspaceConfig, repo string) ([]string, error) {
 			seeds = append(seeds, fmt.Sprintf("test:%s:%s", app.Name, test.Name))
 		}
 	}
-	if len(seeds) == 0 {
+	if !matched {
 		return nil, fmt.Errorf("repo %q not found in workspace config", repo)
 	}
 	return seeds, nil
