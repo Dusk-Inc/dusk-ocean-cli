@@ -27,3 +27,8 @@ log:
     event: advanced
     to: realization
     commit: 1ea9e23272b6fa8fc7889a58380c35ce7c460e32
+  - at: "2026-06-01"
+    boundary: refresh.scoped_cli
+    event: advanced
+    to: validation
+    commit: 65f2b73d03a1ee443624f986c187d1bf724aafa1
