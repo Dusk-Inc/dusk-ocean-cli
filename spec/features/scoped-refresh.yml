@@ -3,32 +3,32 @@ requester:
   name: Ryan Clark
   email: ryan_clark@dusk-inc.com
 created: "2026-05-31"
-boundaries:
+interfaces:
   - id: refresh.scoped_cli
-active_boundaries:
+active_interfaces:
   - refresh.scoped_cli
 log:
   - at: "2026-05-31"
-    boundary: refresh.scoped_cli
+    interface: refresh.scoped_cli
     event: created
     to: spec
   - at: "2026-06-01"
-    boundary: refresh.scoped_cli
+    interface: refresh.scoped_cli
     event: advanced
     to: wire
     commit: 488fdfc33952608f67c42a346861f16666adf8d3
   - at: "2026-06-01"
-    boundary: refresh.scoped_cli
+    interface: refresh.scoped_cli
     event: advanced
     to: mock
     commit: 6505adaac2525297808882e553e3526425ccea8f
   - at: "2026-06-01"
-    boundary: refresh.scoped_cli
+    interface: refresh.scoped_cli
     event: advanced
     to: build
     commit: 1ea9e23272b6fa8fc7889a58380c35ce7c460e32
   - at: "2026-06-01"
-    boundary: refresh.scoped_cli
+    interface: refresh.scoped_cli
     event: advanced
     to: check
     commit: 65f2b73d03a1ee443624f986c187d1bf724aafa1

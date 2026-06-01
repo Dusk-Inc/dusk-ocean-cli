@@ -1,6 +1,6 @@
 # Check Evidence — refresh.scoped_cli
 
-Evidence for the `build → check` advance of the [refresh.scoped_cli](refresh.scoped_cli.md)
+Evidence for the `build → check` advance of the [refresh.scoped_cli](spec.md)
 boundary: the built command verified against its contract under real conditions.
 
 - **Date:** 2026-06-01
