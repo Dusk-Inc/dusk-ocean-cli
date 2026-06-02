@@ -15,7 +15,15 @@ import (
 )
 
 func CopyDir(fs afero.Fs, src string, dst string) error {
-	return CopyDirWithReplacements(fs, src, dst, nil, nil)
+	return CopyDirWithReplacements(fs, src, dst, nil)
+}
+
+// CopyTemplate copies a scaffold template from src to dst, applying the
+// workspace's .oceanignore rules so directories like .git, node_modules, and
+// build artifacts don't propagate from a template into a newly scaffolded
+// entity. Use this for any `add` command that seeds from repos/templates/.
+func CopyTemplate(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+	return CopyDirWithReplacements(fs, src, dst, replacements)
 }
 
 func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {

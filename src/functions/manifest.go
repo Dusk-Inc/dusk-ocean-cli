@@ -122,6 +122,13 @@ func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) e
 	})
 }
 
+func SetManifestPublishHash(fs afero.Fs, root string, key string, hash string) error {
+	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
+		e.PublishHash = hash
+		return e
+	})
+}
+
 func ensureManifestEntry(node Node, m *Manifest) {
 	key := nodeKey(node)
 	if _, ok := m.Repos[key]; ok {

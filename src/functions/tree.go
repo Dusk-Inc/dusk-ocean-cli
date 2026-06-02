@@ -129,8 +129,26 @@ type templateConfig struct {
 	Type     string `json:"type"`
 }
 
-func ListTemplatesByType(kind string) ([]string, error) {
-	if kind == "app" {
+// ListTemplatesByType returns the names of every template that scaffolds
+// any of the requested kinds. Workspace-registered templates are returned
+// first; any unregistered template directories under repos/templates/ that
+// classify themselves via ocean.config.json's `type` field are included
+// afterward, deduplicated against the registry, so the dev loop of "drop a
+// template folder, scaffold from it" still works.
+//
+// Service and library scaffolds invoke this with a single kind. Project
+// scaffolds invoke it with service+library+project so a project may seed
+// from any non-app template kind. Apps are intentionally not template-able
+// and are silently filtered out.
+func ListTemplatesByType(kinds ...string) ([]string, error) {
+	wanted := map[string]struct{}{}
+	for _, kind := range kinds {
+		if kind == "app" {
+			continue
+		}
+		wanted[kind] = struct{}{}
+	}
+	if len(wanted) == 0 {
 		return nil, nil
 	}
 
