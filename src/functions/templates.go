@@ -58,6 +58,30 @@ func FindTemplatesByKind(config WorkspaceConfig, kind string) []string {
 	return names
 }
 
+func FindTemplatesByKinds(config WorkspaceConfig, kinds ...string) []string {
+	if len(kinds) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var names []string
+	for _, kind := range kinds {
+		if kind == tokens.RepoKindApp {
+			continue
+		}
+		for _, template := range config.Templates {
+			if template.Kind != kind {
+				continue
+			}
+			if _, ok := seen[template.Name]; ok {
+				continue
+			}
+			seen[template.Name] = struct{}{}
+			names = append(names, template.Name)
+		}
+	}
+	return names
+}
+
 func ValidateTemplateDepsForTarget(root string, config WorkspaceConfig, templateName string, target Target) error {
 	idx := FindTemplateIndex(config, templateName)
 	if idx == -1 {

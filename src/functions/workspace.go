@@ -323,6 +323,35 @@ func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 	return patterns, nil
 }
 
+// CollectRepoIgnorePatterns returns the workspace-root .gitignore patterns
+// plus the repo-local .gitignore patterns, in that order. This ensures that
+// repo-scoped ignores (e.g. `dist/`, `coverage/`) are honored when hashing a
+// repo directory — without which every rebuild produces a new dependency-tree
+// hash and defeats Ocean's skip cache. Patterns with leading `/` in the repo's
+// .gitignore are rooted at the repo directory, which matches the walk origin
+// in CalcDirHash. Nested .gitignore files below the repo root are not yet
+// consulted.
+func CollectRepoIgnorePatterns(fs afero.Fs, workspaceRoot string, repoPath string) ([]string, error) {
+	workspacePatterns, err := ReadGitignorePatterns(fs, workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	if repoPath == "" || repoPath == workspaceRoot {
+		return workspacePatterns, nil
+	}
+	repoPatterns, err := ReadGitignorePatterns(fs, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(repoPatterns) == 0 {
+		return workspacePatterns, nil
+	}
+	merged := make([]string, 0, len(workspacePatterns)+len(repoPatterns))
+	merged = append(merged, workspacePatterns...)
+	merged = append(merged, repoPatterns...)
+	return merged, nil
+}
+
 func UpdateConfig(fs afero.Fs, update func(WorkspaceConfig) (WorkspaceConfig, error)) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -699,6 +728,15 @@ func ProjectNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Projects))
 	for _, project := range config.Projects {
 		names = append(names, project.Name)
+	}
+	return names
+}
+
+// TemplateNames returns names of all registered templates.
+func TemplateNames(config WorkspaceConfig) []string {
+	names := make([]string, 0, len(config.Templates))
+	for _, template := range config.Templates {
+		names = append(names, template.Name)
 	}
 	return names
 }

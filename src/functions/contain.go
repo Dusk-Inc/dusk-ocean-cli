@@ -81,7 +81,11 @@ func ReadOceanIncludePaths(fs afero.Fs, root string) ([]string, bool) {
 	return paths, true
 }
 
-func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, out io.Writer) (string, error) {
+// StageBuildContextForNode creates a staging directory at .ocean/stage/ containing
+// the node's directory and its transitive local deps, mirroring their paths from the
+// workspace root. Returns the staging root path. This generic form backs both
+// StageServiceBuildContext and ContainProject.
+func StageBuildContextForNode(fs afero.Fs, root string, config WorkspaceConfig, node Node, out io.Writer) (string, error) {
 	stagingPath := filepath.Join(root, ".ocean", "stage")
 
 	if err := fs.RemoveAll(stagingPath); err != nil {
@@ -101,9 +105,10 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 		return "", err
 	}
 
-	nodesToStage := append(deps, serviceNode)
-	for _, node := range nodesToStage {
-		_, srcPath, _, err := NodeBuildInfo(root, node)
+	// Stage the target node itself and each transitive dep.
+	nodesToStage := append(deps, node)
+	for _, n := range nodesToStage {
+		_, srcPath, _, err := NodeBuildInfo(root, n)
 		if err != nil {
 			return "", err
 		}
@@ -117,6 +122,7 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 		}
 	}
 
+	// Copy .oceaninclude files to staging root.
 	includePaths, found := ReadOceanIncludePaths(fs, root)
 	if !found {
 		fmt.Fprintf(out, ".oceaninclude not found; no workspace files will be copied to staging root\n")
@@ -130,6 +136,16 @@ func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, 
 	}
 
 	return stagingPath, nil
+}
+
+// StageServiceBuildContext creates a staging directory for a service and its
+// transitive deps (REQ 10.5/10.6). Delegates to StageBuildContextForNode.
+func StageServiceBuildContext(fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, out io.Writer) (string, error) {
+	serviceNode, err := MakeServiceNode(config, appName, serviceName)
+	if err != nil {
+		return "", err
+	}
+	return StageBuildContextForNode(fs, root, config, serviceNode, out)
 }
 
 func copyDir(fs afero.Fs, src string, dst string, ignorePatterns []string) error {
