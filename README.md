@@ -3,6 +3,17 @@
 # Dusk Ocean CLI
 Dusk Ocean is a polyglot polyrepo CLI for scaffolding repositories, managing dependency wiring, and executing cached build/check workflows. Most commands are fully flag-driven and composable in scripts or agent workflows.
 
+## Use Cases
+Reach for a cold can of Dusk Ocean when one team owns many repositories across more than one language and wants a single tool to wire and operate them.
+
+- **Run a polyglot polyrepo from one CLI.** TypeScript, Go, Python, and R repos coexist in one workspace; every repo declares its own build/test/install commands in `ocean.config.json`, so Dusk Ocean drives them all without assuming a build tool.
+- **Skip work that hasn't changed.** `build`, `check`, `contain`, `publish`, and `refresh` compute a dependency-tree hash per repo and skip any whose hash matches the last successful run, so large workspaces rebuild only what moved.
+- **Build and test in dependency order.** Dusk Ocean reads the workspace dependency graph and builds each repo's dependencies before the repo itself; `refresh` walks the whole graph (or a scoped subset) in topological order.
+- **Scaffold and auto-wire new repos.** `menu create` (and `add`) stamp out services, libraries, and projects from templates and automatically wire each template's declared dependencies into the new repo.
+- **Adopt existing repos into a unified layout.** `adopt` clones an external git repo into the deterministic workspace path and registers it; `register` brings an already-on-disk repo under management — no hand-editing of config.
+- **Ship containers and packages with no lock-in.** `contain` stages a minimal build context and runs your `contain` task; `publish` releases a package artifact — both delegate to whatever tooling the repo already ships.
+- **Drive it from scripts and agents.** Commands are flag-driven and exit non-zero on failure, `check` emits JUnit XML to `.ocean/results/`, and `.ocean/manifest.json` is queryable to find which repos need attention.
+
 ## Source Layout
 - `src/commands`: Cobra command definitions — one file per top-level command.
 - `src/functions`: All business logic, pure helpers, and domain operations.
@@ -17,9 +28,6 @@ dusk-ocean init --name <workspace_name>
 ```
 All CLI commands must be prefixed with `dusk-ocean`.
 
-
-Testing
-
 `init` creates:
 - `ocean.workspace.json` — workspace registry (apps, libraries, projects, templates, ports).
 - `.ocean/` with `results/` and `hashes/` subfolders.
@@ -28,6 +36,71 @@ Testing
 - A `.gitignore` entry for `.ocean` (created or updated; no duplicates added).
 
 Note: Apps are not template-able. `dusk-ocean menu create` (app type) scaffolds the app folder structure directly in code, so `init` does not create a `repos/templates/apps/` tree.
+
+## Tutorial: Multi-Repo Workspace Setup
+This walkthrough sets up Dusk Ocean as the orchestrator for a polyglot polyrepo — many git repositories, in more than one language, operated from a single workspace. It mirrors the layout this repository ships inside: a dev container with Node, Go, and Python toolchains, a `pnpm` workspace for TypeScript, and a `go.work` for Go.
+
+### 1. Prerequisites
+- **Git** and a host you can create repos on (GitHub, GitLab, etc.).
+- A **Go toolchain** (to build the CLI from source) or a prebuilt `dusk-ocean` binary.
+- The **package managers** each language uses — e.g. `pnpm` for TypeScript, the Go toolchain for Go, `uv`/`pip` for Python. Dusk Ocean shells out to these; it does not bundle them.
+- Optional: a **dev container** so every contributor gets the same toolchain (see step 5).
+
+### 2. Install the CLI
+Build it from source and put the binary on your `PATH`:
+```bash
+# from the CLI source directory
+go build -o dusk-ocean .
+# or install into your Go bin
+go install .
+```
+A common workspace pattern is to keep a prebuilt binary inside the workspace (e.g. `.bin/dusk-ocean`) and add that directory to `PATH`, so the workspace pins its own CLI version. All commands are prefixed with `dusk-ocean`.
+
+### 3. Initialize the workspace
+From the directory that will become your workspace root:
+```bash
+dusk-ocean init --name <workspace_name>
+```
+This writes `ocean.workspace.json`, the `.ocean/` metadata directory, and the `repos/` layout (see [Getting Started](#getting-started)). Run every later command from this root — all commands except `init`, `version`, and `help` require a workspace root.
+
+### 4. Layer in polyglot workspace manifests
+Dusk Ocean owns the repo graph; the per-language package managers still own their own workspace files. For a mixed TypeScript + Go workspace you add, at the workspace root:
+- `pnpm-workspace.yaml` — globs that point `pnpm` at `repos/apps/*`, `repos/libs/*`, `repos/projects/*`, etc.
+- `go.work` — a Go workspace listing each Go module under `repos/`.
+
+Because `contain` stages a minimal build context, list any root-level manifest a containerized build needs in `.oceaninclude` (one workspace-relative path per line) so it is copied into the staging root:
+```
+# .oceaninclude
+pnpm-workspace.yaml
+package.json
+pnpm-lock.yaml
+go.work
+go.work.sum
+```
+See [`contain`](#contain) for how staging consumes `.oceaninclude` and `.oceanignore`.
+
+### 5. (Optional) Develop inside a dev container
+For a reproducible environment, run the workspace inside a VS Code / Docker dev container. A typical `.devcontainer/devcontainer.json` builds a "toolbox" image with Node, Go, Python, and any infra tooling (kubectl, helm, etc.), mounts the workspace, and makes `dusk-ocean` available on `PATH` inside the container. This keeps the polyglot toolchain identical across contributors and CI. Use the `.devcontainer/` in a Dusk workspace as a reference example.
+
+### 6. Add or adopt repos
+Scaffold new repos, or pull in ones that already exist:
+```bash
+dusk-ocean add app --name storefront                 # scaffold a new app shell
+dusk-ocean menu create                               # interactive: service / library / project from a template
+dusk-ocean adopt git@github.com:acme/shared-ts.git --kind library   # clone + register an external repo
+```
+See [`add`](#add--dependency-wiring), [`menu`](#menu), and [Polyrepo & Remotes](#polyrepo--remotes).
+
+### 7. Wire dependencies and build the graph
+Wire a shared library into a repo, then build and test the whole workspace in dependency order:
+```bash
+dusk-ocean add --payload shared-ts --target storefront   # record the dependency
+dusk-ocean refresh                                       # install, build, and check every repo in order
+```
+`refresh` skips repos whose hash is unchanged; use `dusk-ocean refresh --repo <name>` to scope a run to one repo and its dependencies (see [`refresh`](#refresh)).
+
+### 8. Secrets and environment
+Tasks can read values from a workspace-root `.env` via the `{{env:NAME}}` token (see [Variables](#variables)). Keep a committed `.env.tpl` describing the required keys, and have each contributor generate their own untracked `.env` from it. Never commit real secrets; resolve them from the environment inside the task command itself.
 
 ## Core Concepts
 
@@ -366,6 +439,7 @@ Both `adopt` and `register` drop the same starter file at the repo root. It is i
         "add":       "",
         "uninstall": "",
         "contain":   "",
+        "publish":   "",
         "run":       ""
     }
 }
@@ -420,8 +494,10 @@ Template files containing `{{placeholder}}` tokens will trigger prompts for repl
 ### `add` — Dependency Wiring
 Wire a local dependency into another repository. This runs the library's `add` task inside the target directory and registers the relationship in workspace config.
 ```bash
-dusk-ocean add --payload <lib-name> --target <repo-name>
+dusk-ocean add --payload <lib-name> --target <repo-name> [--app <app>]
 ```
+Pass `--app <app>` when the target name is ambiguous across apps.
+
 Rules:
 - A repo cannot depend on itself.
 - Projects cannot be used as dependencies by apps, services, or libraries.
@@ -431,29 +507,45 @@ Rules:
 ### `remove` — Dependency Unwiring
 Remove a local dependency from a repository. This runs the library's `uninstall` task inside the target directory and removes the dependency entry from workspace config.
 ```bash
-dusk-ocean remove --payload <lib-name> --target <repo-name>
+dusk-ocean remove --payload <lib-name> --target <repo-name> [--app <app>]
 ```
-The library must have an `uninstall` task in its `ocean.config.json` or the command will fail.
+The library must have an `uninstall` task in its `ocean.config.json` or the command will fail. Pass `--app <app>` when the target name is ambiguous across apps.
+
+### `adopt`
+Clone an external git repo into its deterministic workspace path and register it. See [Polyrepo & Remotes](#polyrepo--remotes) for the full behavior and the path-state table.
+```bash
+dusk-ocean adopt <remote-url> --kind <kind> [--name <name>] [--app <app>] [--template-kind <kind>]
+```
+
+### `register`
+Bring an already-on-disk repo under Dusk Ocean management without cloning. See [Polyrepo & Remotes](#polyrepo--remotes) for details.
+```bash
+dusk-ocean register --kind <kind> --name <name> [--app <app>] [--remote <url>] [--template-kind <kind>]
+```
 
 ### `build`
 Build a repository and its dependencies in dependency order. Skips targets whose source hash is unchanged.
 ```bash
-dusk-ocean build service  --name <name> [--app <app>]
-dusk-ocean build library  --name <name>
-dusk-ocean build test     --name <name> --app <app>
+dusk-ocean build app      --name <name>
+dusk-ocean build service  --name <name> [--in <app>]
+dusk-ocean build library  --name <name> [--in <app>]
+dusk-ocean build test     --name <name> --in <app>
 dusk-ocean build project  --name <name>
 ```
+The `--in <app>` flag scopes a service, app-scoped library, or test to its parent app; it is required when the name is ambiguous across apps. `build app` builds every service, library, and test contained in the app.
 
 ### `check`
 Run tests for a repository (builds dependencies first if needed). Writes JUnit XML results to `.ocean/results/`.
 ```bash
-dusk-ocean check service  --name <name> [--app <app>]
-dusk-ocean check library  --name <name>
-dusk-ocean check test     --name <name> --app <app>
+dusk-ocean check app      --name <name>
+dusk-ocean check service  --name <name> [--in <app>]
+dusk-ocean check library  --name <name> [--in <app>]
+dusk-ocean check test     --name <name> --in <app>
 dusk-ocean check project  --name <name>
 # Pass extra args to the test runner:
 dusk-ocean check library --name <name> -- --watch
 ```
+As with `build`, `--in <app>` scopes a service, app-scoped library, or test to its parent app and is required when the name is ambiguous.
 Pass-through args require `--` as a separator and are appended to the configured test command.
 
 ### `install`
@@ -462,6 +554,12 @@ Run the package manager install task for a single repository (e.g. `pnpm install
 dusk-ocean install --library <repo-name>
 ```
 Skips with a message if the repo has no `install` task.
+
+### `uninstall`
+Unwire a local dependency from a target repository. This is the interactive counterpart to [`remove`](#remove--dependency-unwiring): it prompts for the dependency and the target, runs the dependency's `uninstall` task in the target directory, and removes the relationship from workspace config.
+```bash
+dusk-ocean uninstall
+```
 
 ### `add-scope` / `remove-scope`
 Assign or remove a named scope on a repository. Scopes are the only mechanism that allows cross-app dependency relationships.
@@ -474,16 +572,20 @@ Two repos sharing at least one scope name may depend on each other regardless of
 ### `rename`
 Rename a repository and propagate the change to all references (directory, workspace config, hash store, and all dependency entries).
 ```bash
-dusk-ocean rename --repo <old-name> --new-name <new-name>
+dusk-ocean rename --repo <old-name> --new-name <new-name> [--in <app>]
 ```
-Fails if the new name conflicts with an existing repository or the old name is not found.
+Pass `--in <app>` when renaming a service or app-scoped library so the target resolves unambiguously. Fails if the new name conflicts with an existing repository or the old name is not found.
 
 ### `refresh`
 Install, build, and check every node in the workspace in dependency order.
 ```bash
 dusk-ocean refresh
-dusk-ocean refresh --clear-hashes  # remove hash records first to force a full rebuild
+dusk-ocean refresh --clear-hashes        # remove hash records first to force a full rebuild
+dusk-ocean refresh --repo <name>         # scope to one repo plus its transitive dependencies
+dusk-ocean refresh --repo <name> --no-deps  # scope to that repo alone
 ```
+`--repo <name>` narrows the run to a single workspace repo and the transitive closure of its dependencies, walked in topological order. `--no-deps` further restricts the run to just the named repo; it is a usage error without `--repo`. A scoped run skips the non-code (infra/docs) repos that a full refresh clones. Bare `refresh` is unchanged (whole-workspace).
+
 Skips install or build for nodes that have no corresponding task. Templates are skipped entirely — they are scaffolding sources and have no buildable artifact. **Infrastructure and docs repos are clone-only**: refresh runs the workspace `clone` task for any `infrastructure[]` or `docs[]` entry whose on-disk directory is missing, then skips them from the install/build/check loops. Fails on dependency graph cycles. Cleans up stale hash files for repos no longer in workspace config.
 
 ### `contain`
@@ -528,10 +630,25 @@ Fails if the destination name conflicts with an existing repository. When a move
 ### `run`
 Execute a user-defined `run` task for an app or service. Before running, Dusk Ocean performs hash-based pre-flight checks for build, check, and contain across all repos in the target's dependency tree. Stale tasks are executed in dependency order (build → check → contain) before the run task begins. If any pre-flight task fails, the run is aborted.
 ```bash
-dusk-ocean run app     --name <app-name>
-dusk-ocean run service --name <service-name> [--app <app>]
+dusk-ocean run app     --name <app-name> [--skip-check]
+dusk-ocean run service --name <service-name> [--app <app>] [--skip-check]
 ```
-For an app, pre-flight checks are performed for each service in the app. If no `run` task is defined, the command skips with a message.
+For an app, pre-flight checks are performed for each service in the app. If no `run` task is defined, the command skips with a message. Use `--skip-check` to bypass the pre-flight check (test) step while still running build and contain.
+
+### `stop`
+Execute a user-defined `stop` task for an app or service — the counterpart to [`run`](#run). No pre-flight checks are performed.
+```bash
+dusk-ocean stop app     --name <app-name>
+dusk-ocean stop service --name <service-name> [--app <app>]
+```
+Pass `--app <app>` when the service name is ambiguous across apps.
+
+### `task`
+Run a workspace-level task (a command template declared under `tasks` in `ocean.workspace.json`) against a single repo. The task's `{{repo:*}}` tokens resolve against the target repo. See [Workspace Tasks](#workspace-tasks).
+```bash
+dusk-ocean task --name <task-name> --target <repo> [--app <app>]
+```
+Pass `--app <app>` for a service or app-scoped library target. Iteration across multiple repos is intentionally not supported yet.
 
 ### `hash`
 Compute directory hashes for all registered repositories (or a single target) and write the results to `.ocean/manifest.json`. Does not build or test anything.
@@ -550,8 +667,9 @@ The manifest records per-repo:
 | `build_hash` | string | Dependency-tree hash at last successful build |
 | `check_hash` | string | Dependency-tree hash at last successful check |
 | `contain_hash` | string | Dependency-tree hash at last successful contain |
+| `publish_hash` | string | Dependency-tree hash at last successful publish (omitted until first publish) |
 
-`build_hash`, `check_hash`, and `contain_hash` are set by `dusk-ocean build`, `dusk-ocean check`, and `dusk-ocean contain` respectively on success. Staleness is determined by comparing the current dependency-tree hash against the stored operation hash; a missing or empty hash is treated as stale. This lets scripts and agent workflows query `.ocean/manifest.json` to determine which repos need attention without re-running expensive operations.
+`build_hash`, `check_hash`, `contain_hash`, and `publish_hash` are set by `dusk-ocean build`, `dusk-ocean check`, `dusk-ocean contain`, and `dusk-ocean publish` respectively on success. Staleness is determined by comparing the current dependency-tree hash against the stored operation hash; a missing or empty hash is treated as stale. This lets scripts and agent workflows query `.ocean/manifest.json` to determine which repos need attention without re-running expensive operations.
 
 Templates are not hashed and never appear in `.ocean/manifest.json` — they have no buildable output to track staleness for.
 
@@ -560,6 +678,9 @@ Print the configured CLI version string.
 ```bash
 dusk-ocean version
 ```
+
+### `detach`
+Reserved for splitting a managed component out into its own standalone repository (`detach app`, `detach project`). **Not yet implemented** — both subcommands are registered but currently return a "not yet implemented" error. Tracked in the [Roadmap](#roadmap).
 
 ## VS Code Integration
 Dusk Ocean writes JUnit XML to `.ocean/results/` after every `check` run, which VS Code test explorer extensions can consume to display results inline.
@@ -607,3 +728,13 @@ Dusk Ocean writes JUnit XML to `.ocean/results/` after every `check` run, which 
     }
 }
 ```
+
+## Roadmap
+Planned and in-progress directions. Shipped changes are recorded in [LOG.md](LOG.md).
+
+- **Build & CI/CD backend.** A remote backend to copy a repo's code into, build it off the developer's machine, and integrate the result into CI/CD pipelines — moving today's local-only build/check/contain workflow into a shared, automatable service.
+- **AI tools.** AI-assisted scaffolding, dependency wiring, and workflow automation layered on top of the existing deterministic commands.
+- **Dedicated template library.** A curated, shareable set of templates beyond the per-workspace `repos/templates/`, so common service/library/project starters don't have to be recreated per workspace.
+- **Non-interactive library install.** A flag-only form (e.g. `dusk-ocean install --payload <lib> --target <repo>`) that performs the package-manager install end-to-end for scripted/CI use, matching `add`'s flag shape.
+- **`detach`.** Finish the `detach app` / `detach project` commands for splitting a managed component out into its own standalone repository (currently stubbed).
+- **Continued bug fixes.** Ongoing stability and correctness work across scaffolding, refresh, and caching; see the Fixes log in [LOG.md](LOG.md).
