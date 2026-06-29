@@ -37,6 +37,7 @@ const (
 
 	WorkspaceTaskClone            = "clone"
 	WorkspaceTaskInit             = "init"
+	WorkspaceTaskInitialCommit    = "initial_commit"
 	WorkspaceTaskCreateRemote     = "create_remote"
 	WorkspaceTaskCheckoutExisting = "checkout_existing"
 	WorkspaceTaskCheckoutNew      = "checkout_new"
@@ -65,6 +66,7 @@ const (
 var DefaultWorkspaceTaskNames = []string{
 	WorkspaceTaskClone,
 	WorkspaceTaskInit,
+	WorkspaceTaskInitialCommit,
 	WorkspaceTaskCreateRemote,
 	WorkspaceTaskCheckoutExisting,
 	WorkspaceTaskCheckoutNew,

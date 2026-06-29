@@ -137,6 +137,7 @@ func init() {
 	rootCmd.AddCommand(hashCmd)
 	rootCmd.AddCommand(adoptCmd)
 	rootCmd.AddCommand(registerCmd)
+	rootCmd.AddCommand(initRepoCmd)
 	rootCmd.AddCommand(taskCmd)
 
 	menuCmd.AddCommand(menuCreateCmd)
