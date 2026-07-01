@@ -48,7 +48,6 @@ func emptyCtx() VariableContext {
 	}
 }
 
-// #145 Valid overrides config parses and registers group
 func TestReq145_ValidOverridesRegistersGroup(t *testing.T) {
 	groups, err := ValidateOverrides(desktopConfig())
 	if err != nil {
@@ -62,7 +61,6 @@ func TestReq145_ValidOverridesRegistersGroup(t *testing.T) {
 	}
 }
 
-// #146 Duplicate group name is a validation error
 func TestReq146_DuplicateGroupIsError(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{
@@ -76,7 +74,6 @@ func TestReq146_DuplicateGroupIsError(t *testing.T) {
 	}
 }
 
-// #147 Group entry with no name is a validation error
 func TestReq147_EmptyGroupNameIsError(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{{Group: "", Tasks: models.TaskOverlay{Build: "a"}}}
@@ -87,7 +84,6 @@ func TestReq147_EmptyGroupNameIsError(t *testing.T) {
 	}
 }
 
-// #148 Group override of an unknown base task is a validation error
 func TestReq148_UnknownBaseTaskIsError(t *testing.T) {
 	c := models.RepoConfig{}
 	c.Tasks.Build = "go build ./..."
@@ -104,7 +100,6 @@ func TestReq148_UnknownBaseTaskIsError(t *testing.T) {
 	}
 }
 
-// #149 --group selects a group's task command
 func TestReq149_GroupSelectsGroupCommand(t *testing.T) {
 	c := desktopConfig()
 	groups, _ := ValidateOverrides(c)
@@ -120,7 +115,6 @@ func TestReq149_GroupSelectsGroupCommand(t *testing.T) {
 	}
 }
 
-// #150 Unlisted task under a group inherits the base command
 func TestReq150_UnlistedTaskInheritsBase(t *testing.T) {
 	c := desktopConfig()
 	groups, _ := ValidateOverrides(c)
@@ -136,7 +130,6 @@ func TestReq150_UnlistedTaskInheritsBase(t *testing.T) {
 	}
 }
 
-// #151 No group selected runs the base command
 func TestReq151_NoGroupRunsBase(t *testing.T) {
 	c := desktopConfig()
 	groups, _ := ValidateOverrides(c)
@@ -152,7 +145,6 @@ func TestReq151_NoGroupRunsBase(t *testing.T) {
 	}
 }
 
-// #152 Unknown --group value is a hard error
 func TestReq152_UnknownGroupIsHardError(t *testing.T) {
 	c := desktopConfig()
 	groups, _ := ValidateOverrides(c)
@@ -166,7 +158,6 @@ func TestReq152_UnknownGroupIsHardError(t *testing.T) {
 	}
 }
 
-// #153 Overrides apply to non-build lifecycle tasks
 func TestReq153_OverrideAppliesToContain(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{
@@ -185,7 +176,6 @@ func TestReq153_OverrideAppliesToContain(t *testing.T) {
 	}
 }
 
-// #154 Group commands resolve tokens like base tasks
 func TestReq154_GroupCommandExpandsTokens(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{
@@ -208,7 +198,6 @@ func TestReq154_GroupCommandExpandsTokens(t *testing.T) {
 	}
 }
 
-// #155 Operation under a group writes the per-(repo,group) hash slot
 func TestReq155_GroupOpWritesGroupSlot(t *testing.T) {
 	fs, root := newManifestFsWithEntry(t, "project:app")
 	slot, err := WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop", true)
@@ -225,7 +214,6 @@ func TestReq155_GroupOpWritesGroupSlot(t *testing.T) {
 	}
 }
 
-// #156 Base mode uses a slot distinct from any group's
 func TestReq156_BaseSlotDistinctFromGroup(t *testing.T) {
 	fs, root := newManifestFsWithEntry(t, "project:app")
 	if _, err := WriteGroupCacheSlot(fs, root, "project:app", SelectGroup(""), "build", "hash-base", true); err != nil {
@@ -247,14 +235,12 @@ func TestReq156_BaseSlotDistinctFromGroup(t *testing.T) {
 	}
 }
 
-// #157 Changing one group's override invalidates only that group's cache
 func TestReq157_ChangeInvalidatesOnlyThatGroup(t *testing.T) {
 	fs, root := newManifestFsWithEntry(t, "project:app")
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup(""), "build", "hash-base", true)
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop-v1", true)
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("web"), "build", "hash-web", true)
 
-	// desktop override changes -> rewrite desktop slot only
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop-v2", true)
 
 	m, _ := ReadManifest(fs, root)
@@ -270,7 +256,6 @@ func TestReq157_ChangeInvalidatesOnlyThatGroup(t *testing.T) {
 	}
 }
 
-// #158 A matching group-slot hash skips the operation as fresh
 func TestReq158_MatchingGroupHashIsFresh(t *testing.T) {
 	fs, root := newManifestFsWithEntry(t, "project:app")
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop", true)
@@ -286,10 +271,8 @@ func TestReq158_MatchingGroupHashIsFresh(t *testing.T) {
 	}
 }
 
-// #159 A missing or mismatched group-slot hash rebuilds
 func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
 	fs, root := newManifestFsWithEntry(t, "project:app")
-	// missing: no slot written yet
 	fresh, _, err := ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -297,7 +280,6 @@ func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
 	if fresh {
 		t.Fatalf("expected fresh=false for missing desktop slot")
 	}
-	// mismatched: slot exists with a different hash
 	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-old", true)
 	fresh, _, err = ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-new")
 	if err != nil {
@@ -306,7 +288,6 @@ func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
 	if fresh {
 		t.Fatalf("expected fresh=false for mismatched desktop slot")
 	}
-	// contrast: the same slot, queried with its stored hash, must rebuild no longer
 	fresh, _, err = ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-old")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -316,7 +297,6 @@ func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
 	}
 }
 
-// #160 run honors --group but writes no cache slot
 func TestReq160_RunHonorsGroupWritesNoSlot(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{
@@ -344,7 +324,6 @@ func TestReq160_RunHonorsGroupWritesNoSlot(t *testing.T) {
 	}
 }
 
-// #161 stop honors --group but writes no cache slot
 func TestReq161_StopHonorsGroupWritesNoSlot(t *testing.T) {
 	c := baseConfig()
 	c.Overrides = []models.OverrideGroup{
