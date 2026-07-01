@@ -6,18 +6,45 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
 type ManifestEntry struct {
-	Kind        string `json:"kind"`
-	App         string `json:"app,omitempty"`
-	Name        string `json:"name"`
-	BuildHash   string `json:"build_hash"`
-	CheckHash   string `json:"check_hash"`
-	ContainHash string `json:"contain_hash"`
-	PublishHash string `json:"publish_hash,omitempty"`
+	Kind        string                      `json:"kind"`
+	App         string                      `json:"app,omitempty"`
+	Name        string                      `json:"name"`
+	BuildHash   string                      `json:"build_hash"`
+	CheckHash   string                      `json:"check_hash"`
+	ContainHash string                      `json:"contain_hash"`
+	PublishHash string                      `json:"publish_hash,omitempty"`
+	Groups      map[string]models.CacheSlot `json:"groups,omitempty"`
+}
+
+func (e ManifestEntry) baseSlot() models.CacheSlot {
+	return models.CacheSlot{
+		BuildHash:   e.BuildHash,
+		CheckHash:   e.CheckHash,
+		ContainHash: e.ContainHash,
+		PublishHash: e.PublishHash,
+	}
+}
+
+func (e ManifestEntry) applyBaseSlot(slot models.CacheSlot) ManifestEntry {
+	e.BuildHash = slot.BuildHash
+	e.CheckHash = slot.CheckHash
+	e.ContainHash = slot.ContainHash
+	e.PublishHash = slot.PublishHash
+	return e
+}
+
+func (e ManifestEntry) slotFor(selection models.GroupSelection) (models.CacheSlot, bool) {
+	if selection.IsBase {
+		return e.baseSlot(), true
+	}
+	slot, ok := e.Groups[selection.Group]
+	return slot, ok
 }
 
 type Manifest struct {
@@ -127,6 +154,57 @@ func SetManifestPublishHash(fs afero.Fs, root string, key string, hash string) e
 		e.PublishHash = hash
 		return e
 	})
+}
+
+func ReadGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string) (bool, *models.CacheSlot, error) {
+	m, err := ReadManifest(fs, root)
+	if err != nil {
+		return false, nil, err
+	}
+	entry, ok := m.Repos[repoKey]
+	if !ok {
+		return false, nil, nil
+	}
+	slot, ok := entry.slotFor(selection)
+	if !ok {
+		return false, nil, nil
+	}
+	stored, has := slotHash(slot, task)
+	fresh := has && stored == resolvedHash
+	slotCopy := slot
+	return fresh, &slotCopy, nil
+}
+
+func WriteGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string, cacheable bool) (*models.CacheSlot, error) {
+	if !cacheable {
+		return nil, nil
+	}
+	var written *models.CacheSlot
+	err := updateManifestEntry(fs, root, repoKey, func(e ManifestEntry) ManifestEntry {
+		if selection.IsBase {
+			slot := withSlotHash(e.baseSlot(), task, resolvedHash)
+			e = e.applyBaseSlot(slot)
+			written = &slot
+			return e
+		}
+		if e.Groups == nil {
+			e.Groups = map[string]models.CacheSlot{}
+		}
+		key := slotKey(selection)
+		slot := withSlotHash(e.Groups[key], task, resolvedHash)
+		slot.Group = selection.Group
+		e.Groups[key] = slot
+		written = &slot
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return written, nil
+}
+
+func RecordCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string) (*models.CacheSlot, error) {
+	return WriteGroupCacheSlot(fs, root, repoKey, selection, task, resolvedHash, cacheableTask(task))
 }
 
 func ensureManifestEntry(node Node, m *Manifest) {

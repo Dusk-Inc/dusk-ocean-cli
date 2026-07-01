@@ -207,3 +207,20 @@ func TestReq154_GroupCommandExpandsTokens(t *testing.T) {
 		t.Fatalf("expected expanded command %q, got %q", want, resolved.Command)
 	}
 }
+
+// #155 Operation under a group writes the per-(repo,group) hash slot
+func TestReq155_GroupOpWritesGroupSlot(t *testing.T) {
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	slot, err := WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if slot == nil || slot.BuildHash != "hash-desktop" || slot.Group != "desktop" {
+		t.Fatalf("expected desktop slot with build hash, got %+v", slot)
+	}
+	m, _ := ReadManifest(fs, root)
+	got := m.Repos["project:app"].Groups["desktop"]
+	if got.BuildHash != "hash-desktop" {
+		t.Fatalf("expected persisted desktop build hash, got %q", got.BuildHash)
+	}
+}
