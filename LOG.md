@@ -45,3 +45,4 @@ initial commit and recorded `remote: None`, and re-running errors as already-a-g
 - #156 base mode uses a slot distinct from any group's — Then asserted end-to-end vs real deps; PASS stable x3.
 - #157 changing one group's override invalidates only that group's cache — Then asserted end-to-end vs real deps; PASS stable x3.
 - #158 a matching group-slot hash skips the operation as fresh — Then asserted end-to-end vs real deps; PASS stable x3.
+- #159 a missing or mismatched group-slot hash rebuilds — Then asserted end-to-end vs real deps; PASS stable x3.
