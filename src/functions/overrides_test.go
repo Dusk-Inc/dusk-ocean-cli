@@ -86,3 +86,20 @@ func TestReq147_EmptyGroupNameIsError(t *testing.T) {
 		t.Fatalf("expected empty_group_name validation error, got %v", err)
 	}
 }
+
+// #148 Group override of an unknown base task is a validation error
+func TestReq148_UnknownBaseTaskIsError(t *testing.T) {
+	c := models.RepoConfig{}
+	c.Tasks.Build = "go build ./..."
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Publish: "npm publish"}},
+	}
+	_, err := ValidateOverrides(c)
+	var ve *oceanerrors.OverridesValidationError
+	if !errors.As(err, &ve) || ve.Kind != oceanerrors.KindUnknownBaseTask {
+		t.Fatalf("expected unknown_base_task validation error, got %v", err)
+	}
+	if ve.Task != "publish" {
+		t.Fatalf("expected offending task 'publish', got %q", ve.Task)
+	}
+}
