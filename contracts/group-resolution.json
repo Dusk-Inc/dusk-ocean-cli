@@ -1,0 +1,116 @@
+{
+  "model": "dusk-ocean-cli",
+  "slice": "group-resolution",
+  "description": "The Lifecycle Command interface surface for deployment-mode overrides: the --group selector every lifecycle op accepts, the validation of the overrides array on config load, and the resolution of a (task, group) pair to a concrete command with base-map inheritance and token expansion. Feature #65, Unit: Core CLI, Interface: Lifecycle Command.",
+  "entities": [
+    {
+      "name": "GroupSelection",
+      "description": "The resolved mode a lifecycle op runs under, derived from the explicit --group flag. Base mode when no --group is given; a named group when --group matches a declared OverrideGroup; a hard error when --group names no declared group. Explicit selection only — no env var or default group. Requirements #149, #151, #152.",
+      "fields": [
+        {
+          "name": "group",
+          "type": "string",
+          "optional": true,
+          "description": "The selected group name, or absent for base mode (#151). When present, must match a declared OverrideGroup.group or the op is a hard error (#152)."
+        },
+        {
+          "name": "isBase",
+          "type": "boolean",
+          "optional": false,
+          "description": "True when no --group was supplied (base mode)."
+        }
+      ],
+      "relations": [
+        { "name": "selects", "entity": "OverrideGroup", "cardinality": "many-to-one" }
+      ]
+    },
+    {
+      "name": "ResolvedCommand",
+      "description": "The concrete command a lifecycle op will run after group resolution and token expansion. For a group op, each task resolves to the group's overlay command when the overlay lists it, else to the base command (inheritance); tokens then expand identically to base tasks. This is the value whose hash is stored in the manifest cache slot. Requirements #149, #150, #153, #154.",
+      "fields": [
+        {
+          "name": "task",
+          "type": "string",
+          "optional": false,
+          "description": "The lifecycle-op name being resolved (build/check/contain/publish/run/stop/...). Overrides apply across every lifecycle task, not just build (#153)."
+        },
+        {
+          "name": "group",
+          "type": "string",
+          "optional": true,
+          "description": "The group whose overlay was applied, or absent for base mode."
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "optional": false,
+          "description": "Whether the command text came from the group overlay or was inherited from the base map. Enum-valued: \"group\" | \"base\". Distinguishes an explicit override (#149) from base-map inheritance (#150/#151)."
+        },
+        {
+          "name": "template",
+          "type": "string",
+          "optional": false,
+          "description": "The command template before token expansion, carrying {{env:*}}/{{var:*}}/{{ocean:*}}/{{repo:*}} tokens."
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "optional": false,
+          "description": "The command after token expansion. Group templates expand through the identical VariableContext (env/var/ocean/repo) as base tasks (#154)."
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "OverridesValidationError",
+      "description": "Raised on config load when the `overrides` array is malformed: a duplicate group name (#146), an entry with a missing/empty group name (#147), or an overlay task absent from the base map (#148). A validation error rejects the config load itself, distinct from the run-time hard error of an unknown --group (#152).",
+      "payload": [
+        { "name": "kind", "type": "string", "optional": false, "description": "\"duplicate_group\" | \"empty_group_name\" | \"unknown_base_task\"." },
+        { "name": "group", "type": "string", "optional": true },
+        { "name": "task", "type": "string", "optional": true },
+        { "name": "message", "type": "string", "optional": false }
+      ],
+      "emits": ["Core CLI"],
+      "consumes": ["Build Environment"]
+    },
+    {
+      "name": "UnknownGroupError",
+      "description": "Raised at op time when --group names no declared OverrideGroup for the target repo. A hard error that aborts the op — distinct from load-time validation errors. Requirement #152.",
+      "payload": [
+        { "name": "group", "type": "string", "optional": false },
+        { "name": "known", "type": "string[]", "optional": false, "description": "The declared group names, for the error message." },
+        { "name": "message", "type": "string", "optional": false }
+      ],
+      "emits": ["Core CLI"],
+      "consumes": ["Build Environment"]
+    }
+  ],
+  "operations": [
+    {
+      "name": "ValidateOverrides",
+      "description": "Parse and validate a repo config's `overrides` array on load, registering each valid group with its partial overlay. Enforces unique non-empty names and overlay-against-base-task-existence. Requirements #145, #146, #147, #148.",
+      "in": [
+        { "name": "config", "entity": "RepoConfigOverrides", "optional": false }
+      ],
+      "out": [
+        { "name": "groups", "entity": "OverrideGroup[]", "optional": false, "description": "The registered valid groups (#145)." }
+      ],
+      "raises": ["OverridesValidationError"]
+    },
+    {
+      "name": "ResolveGroupCommand",
+      "description": "Resolve a (task, GroupSelection) pair to a ResolvedCommand: pick the group overlay command when present, else inherit the base command, then expand tokens identically to base tasks. A --group value naming no declared group is a hard error. Requirements #149, #150, #151, #152, #153, #154.",
+      "in": [
+        { "name": "task", "type": "string", "optional": false },
+        { "name": "selection", "entity": "GroupSelection", "optional": false },
+        { "name": "base", "entity": "LifecycleTaskMap", "optional": false },
+        { "name": "groups", "entity": "OverrideGroup[]", "optional": false }
+      ],
+      "out": [
+        { "name": "resolved", "entity": "ResolvedCommand", "optional": false }
+      ],
+      "raises": ["UnknownGroupError"]
+    }
+  ]
+}

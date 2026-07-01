@@ -1,0 +1,84 @@
+{
+  "model": "dusk-ocean-cli",
+  "slice": "overrides-config",
+  "description": "The ocean.config.json shape that declares deployment-mode override groups: the base lifecycle task map every repo already carries, plus a named-group overlay array where each group partially overrides tasks and inherits the rest from the base map. Feature #65, Unit: Core CLI, Interface: Lifecycle Command.",
+  "entities": [
+    {
+      "name": "LifecycleTaskMap",
+      "description": "The base tasks map on a repo config: lifecycle-op name -> shell command template. The existing RepoConfig.tasks. Group overlays are validated and resolved against the task names this map declares.",
+      "fields": [
+        { "name": "build", "type": "string", "optional": true },
+        { "name": "check", "type": "string", "optional": true },
+        { "name": "contain", "type": "string", "optional": true },
+        { "name": "publish", "type": "string", "optional": true },
+        { "name": "run", "type": "string", "optional": true },
+        { "name": "stop", "type": "string", "optional": true },
+        { "name": "install", "type": "string", "optional": true },
+        { "name": "uninstall", "type": "string", "optional": true },
+        { "name": "add", "type": "string", "optional": true },
+        { "name": "setup", "type": "string", "optional": true },
+        { "name": "prebuild", "type": "string", "optional": true }
+      ]
+    },
+    {
+      "name": "OverrideGroup",
+      "description": "One named deployment-mode override entry in a repo config's `overrides` array. Carries a group name and a partial task overlay declaring only the tasks that differ from the base LifecycleTaskMap; omitted tasks inherit the base command. Requirements #145, #146, #147, #148, #150.",
+      "fields": [
+        {
+          "name": "group",
+          "type": "string",
+          "optional": false,
+          "description": "The group's selector name (e.g. \"desktop\"). Must be unique across the array (#146) and non-empty (#147). Matched against the --group flag value at op time; an unmatched --group is a hard error (#152)."
+        },
+        {
+          "name": "tasks",
+          "type": "TaskOverlay",
+          "optional": false,
+          "description": "The partial overlay: a subset of lifecycle-op names, each mapped to this group's command template. Every overlay key must name a task present in the base LifecycleTaskMap (#148). Overlaid task names not listed here fall back to the base command (#150)."
+        }
+      ],
+      "relations": [
+        { "name": "overlayAppliesTo", "entity": "LifecycleTaskMap", "cardinality": "many-to-one" }
+      ]
+    },
+    {
+      "name": "TaskOverlay",
+      "description": "A group's partial task map: lifecycle-op name -> this group's command template. Same field vocabulary as LifecycleTaskMap but every field optional, since a group declares only what it overrides. Command templates carry the same {{env:*}}/{{var:*}}/{{ocean:*}}/{{repo:*}} tokens as base tasks (#154).",
+      "fields": [
+        { "name": "build", "type": "string", "optional": true },
+        { "name": "check", "type": "string", "optional": true },
+        { "name": "contain", "type": "string", "optional": true },
+        { "name": "publish", "type": "string", "optional": true },
+        { "name": "run", "type": "string", "optional": true },
+        { "name": "stop", "type": "string", "optional": true },
+        { "name": "install", "type": "string", "optional": true },
+        { "name": "uninstall", "type": "string", "optional": true },
+        { "name": "add", "type": "string", "optional": true },
+        { "name": "setup", "type": "string", "optional": true },
+        { "name": "prebuild", "type": "string", "optional": true }
+      ]
+    },
+    {
+      "name": "RepoConfigOverrides",
+      "description": "The additive extension to the existing RepoConfig (ocean.config.json): an `overrides` array of OverrideGroup entries alongside the existing base `tasks` map. Additive and backward-compatible — a config with no `overrides` key behaves exactly as before (base mode only). Requirement #145.",
+      "fields": [
+        {
+          "name": "tasks",
+          "type": "LifecycleTaskMap",
+          "optional": true,
+          "description": "The existing base task map (unchanged; referenced here for context, not redefined)."
+        },
+        {
+          "name": "overrides",
+          "type": "OverrideGroup[]",
+          "optional": true,
+          "description": "The deployment-mode override groups. Absent or empty means base mode only. Parsed and validated on config load: duplicate names (#146), empty names (#147), and overlays of unknown base tasks (#148) are validation errors."
+        }
+      ],
+      "relations": [
+        { "name": "declaresGroups", "entity": "OverrideGroup", "cardinality": "one-to-many" },
+        { "name": "carriesBase", "entity": "LifecycleTaskMap", "cardinality": "one-to-one" }
+      ]
+    }
+  ]
+}
