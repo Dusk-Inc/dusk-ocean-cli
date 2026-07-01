@@ -165,3 +165,22 @@ func TestReq152_UnknownGroupIsHardError(t *testing.T) {
 		t.Fatalf("expected offending group 'web', got %q", ue.Group)
 	}
 }
+
+// #153 Overrides apply to non-build lifecycle tasks
+func TestReq153_OverrideAppliesToContain(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Contain: "docker build -f Desktop.Dockerfile ."}},
+	}
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("contain", SelectGroup("desktop"), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "docker build -f Desktop.Dockerfile ." {
+		t.Fatalf("expected group contain command, got %q", resolved.Command)
+	}
+	if resolved.Source != "group" {
+		t.Fatalf("expected source=group for contain override, got %q", resolved.Source)
+	}
+}
