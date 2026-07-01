@@ -75,3 +75,14 @@ func TestReq146_DuplicateGroupIsError(t *testing.T) {
 		t.Fatalf("expected duplicate_group validation error, got %v", err)
 	}
 }
+
+// #147 Group entry with no name is a validation error
+func TestReq147_EmptyGroupNameIsError(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{{Group: "", Tasks: models.TaskOverlay{Build: "a"}}}
+	_, err := ValidateOverrides(c)
+	var ve *oceanerrors.OverridesValidationError
+	if !errors.As(err, &ve) || ve.Kind != oceanerrors.KindEmptyGroupName {
+		t.Fatalf("expected empty_group_name validation error, got %v", err)
+	}
+}
