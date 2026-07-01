@@ -135,3 +135,19 @@ func TestReq150_UnlistedTaskInheritsBase(t *testing.T) {
 		t.Fatalf("expected source=base for inherited task, got %q", resolved.Source)
 	}
 }
+
+// #151 No group selected runs the base command
+func TestReq151_NoGroupRunsBase(t *testing.T) {
+	c := desktopConfig()
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("build", SelectGroup(""), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "go build ./..." {
+		t.Fatalf("expected base build command in base mode, got %q", resolved.Command)
+	}
+	if resolved.Source != "base" {
+		t.Fatalf("expected source=base, got %q", resolved.Source)
+	}
+}
