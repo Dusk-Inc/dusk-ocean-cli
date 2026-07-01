@@ -119,3 +119,19 @@ func TestReq149_GroupSelectsGroupCommand(t *testing.T) {
 		t.Fatalf("expected source=group, got %q", resolved.Source)
 	}
 }
+
+// #150 Unlisted task under a group inherits the base command
+func TestReq150_UnlistedTaskInheritsBase(t *testing.T) {
+	c := desktopConfig()
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("check", SelectGroup("desktop"), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "go test ./..." {
+		t.Fatalf("expected inherited base check command, got %q", resolved.Command)
+	}
+	if resolved.Source != "base" {
+		t.Fatalf("expected source=base for inherited task, got %q", resolved.Source)
+	}
+}
