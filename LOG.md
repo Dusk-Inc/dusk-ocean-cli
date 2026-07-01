@@ -39,3 +39,4 @@ initial commit and recorded `remote: None`, and re-running errors as already-a-g
 - #150 unlisted task under a group inherits the base command — Then asserted end-to-end vs real deps; PASS stable x3.
 - #151 no group selected runs the base command — Then asserted end-to-end vs real deps; PASS stable x3.
 - #152 unknown --group value is a hard error — Then asserted end-to-end vs real deps; PASS stable x3.
+- #153 overrides apply to non-build lifecycle tasks — Then asserted end-to-end vs real deps; PASS stable x3.
