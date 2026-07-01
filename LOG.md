@@ -47,3 +47,4 @@ initial commit and recorded `remote: None`, and re-running errors as already-a-g
 - #158 a matching group-slot hash skips the operation as fresh — Then asserted end-to-end vs real deps; PASS stable x3.
 - #159 a missing or mismatched group-slot hash rebuilds — Then asserted end-to-end vs real deps; PASS stable x3.
 - #160 run honors --group but writes no cache slot — Then asserted end-to-end vs real deps; PASS stable x3.
+- #161 stop honors --group but writes no cache slot — Then asserted end-to-end vs real deps; PASS stable x3.
