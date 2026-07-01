@@ -103,3 +103,19 @@ func TestReq148_UnknownBaseTaskIsError(t *testing.T) {
 		t.Fatalf("expected offending task 'publish', got %q", ve.Task)
 	}
 }
+
+// #149 --group selects a group's task command
+func TestReq149_GroupSelectsGroupCommand(t *testing.T) {
+	c := desktopConfig()
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("build", SelectGroup("desktop"), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "make desktop" {
+		t.Fatalf("expected group build command, got %q", resolved.Command)
+	}
+	if resolved.Source != "group" {
+		t.Fatalf("expected source=group, got %q", resolved.Source)
+	}
+}
