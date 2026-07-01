@@ -42,3 +42,4 @@ initial commit and recorded `remote: None`, and re-running errors as already-a-g
 - #153 overrides apply to non-build lifecycle tasks — Then asserted end-to-end vs real deps; PASS stable x3.
 - #154 group commands resolve tokens like base tasks — Then asserted end-to-end vs real deps; PASS stable x3.
 - #155 operation under a group writes the per-(repo,group) hash slot — Then asserted end-to-end vs real deps; PASS stable x3.
+- #156 base mode uses a slot distinct from any group's — Then asserted end-to-end vs real deps; PASS stable x3.
