@@ -184,3 +184,26 @@ func TestReq153_OverrideAppliesToContain(t *testing.T) {
 		t.Fatalf("expected source=group for contain override, got %q", resolved.Source)
 	}
 }
+
+// #154 Group commands resolve tokens like base tasks
+func TestReq154_GroupCommandExpandsTokens(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Build: "build --env {{env:MODE}} --org {{var:org}} --name {{repo:name}}"}},
+	}
+	groups, _ := ValidateOverrides(c)
+	ctx := VariableContext{
+		Env:   map[string]string{"MODE": "prod"},
+		Var:   map[string]string{"org": "dusk"},
+		Ocean: map[string]string{},
+		Repo:  map[string]string{"name": "app"},
+	}
+	resolved, err := ResolveGroupCommand("build", SelectGroup("desktop"), c, groups, ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "build --env prod --org dusk --name app"
+	if resolved.Command != want {
+		t.Fatalf("expected expanded command %q, got %q", want, resolved.Command)
+	}
+}
