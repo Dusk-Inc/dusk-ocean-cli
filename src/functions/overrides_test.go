@@ -246,3 +246,26 @@ func TestReq156_BaseSlotDistinctFromGroup(t *testing.T) {
 		t.Fatalf("base and group slot must be distinct")
 	}
 }
+
+// #157 Changing one group's override invalidates only that group's cache
+func TestReq157_ChangeInvalidatesOnlyThatGroup(t *testing.T) {
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup(""), "build", "hash-base", true)
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop-v1", true)
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("web"), "build", "hash-web", true)
+
+	// desktop override changes -> rewrite desktop slot only
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop-v2", true)
+
+	m, _ := ReadManifest(fs, root)
+	entry := m.Repos["project:app"]
+	if entry.Groups["desktop"].BuildHash != "hash-desktop-v2" {
+		t.Fatalf("expected desktop slot rewritten, got %q", entry.Groups["desktop"].BuildHash)
+	}
+	if entry.BuildHash != "hash-base" {
+		t.Fatalf("base slot must be untouched, got %q", entry.BuildHash)
+	}
+	if entry.Groups["web"].BuildHash != "hash-web" {
+		t.Fatalf("sibling web slot must be untouched, got %q", entry.Groups["web"].BuildHash)
+	}
+}
