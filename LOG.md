@@ -33,3 +33,4 @@ initial commit and recorded `remote: None`, and re-running errors as already-a-g
 ## [test] feat-65 core-cli integration gate (build-feat-65, HEAD c7e82e5)
 - #145 valid overrides config parses and registers group — integration test asserts Then end-to-end vs real dusk-ocean binary + real ocean.config.json + real .ocean/manifest.json; PASS stable x3.
 - #146 duplicate group name is a validation error — Then asserted end-to-end vs real deps; PASS stable x3.
+- #147 group entry with no name is a validation error — Then asserted end-to-end vs real deps; PASS stable x3.
