@@ -1194,6 +1194,8 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 			return config.Tasks.Build, nil
 		}
 		return config.Build, nil
+	case "check":
+		return config.Tasks.Check, nil
 	case "test":
 		if strings.TrimSpace(config.Tasks.Test) != "" {
 			return config.Tasks.Test, nil

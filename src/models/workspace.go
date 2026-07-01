@@ -119,6 +119,7 @@ type RepoConfig struct {
 	Scopes    []string `json:"scopes,omitempty"`
 	Tasks     struct {
 		Build     string `json:"build"`
+		Check     string `json:"check"`
 		Test      string `json:"test"`
 		Add       string `json:"add"`
 		Install   string `json:"install"`
@@ -130,6 +131,7 @@ type RepoConfig struct {
 		Setup     string `json:"setup"`
 		Prebuild  string `json:"prebuild"`
 	} `json:"tasks"`
+	Overrides []OverrideGroup `json:"overrides,omitempty"`
 }
 
 type TargetKind string
