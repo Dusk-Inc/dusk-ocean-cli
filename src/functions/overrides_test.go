@@ -151,3 +151,17 @@ func TestReq151_NoGroupRunsBase(t *testing.T) {
 		t.Fatalf("expected source=base, got %q", resolved.Source)
 	}
 }
+
+// #152 Unknown --group value is a hard error
+func TestReq152_UnknownGroupIsHardError(t *testing.T) {
+	c := desktopConfig()
+	groups, _ := ValidateOverrides(c)
+	_, err := ResolveGroupCommand("build", SelectGroup("web"), c, groups, emptyCtx())
+	var ue *oceanerrors.UnknownGroupError
+	if !errors.As(err, &ue) {
+		t.Fatalf("expected UnknownGroupError, got %v", err)
+	}
+	if ue.Group != "web" {
+		t.Fatalf("expected offending group 'web', got %q", ue.Group)
+	}
+}
