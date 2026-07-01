@@ -3,9 +3,15 @@ package cmd
 import (
 	"fmt"
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
+
+func groupSelection(cmd *cobra.Command) models.GroupSelection {
+	group, _ := cmd.Flags().GetString("group")
+	return functions.SelectGroup(group)
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "dusk-ocean",
@@ -176,9 +182,19 @@ func init() {
 
 	runCmd.AddCommand(runAppCmd)
 	runCmd.AddCommand(runServiceCmd)
+	runCmd.AddCommand(runPkgCmd)
 
 	stopCmd.AddCommand(stopAppCmd)
 	stopCmd.AddCommand(stopServiceCmd)
+	stopCmd.AddCommand(stopPkgCmd)
+
+	containCmd.AddCommand(containProjectCmd)
+	containCmd.AddCommand(containServiceCmd)
+
+	publishCmd.AddCommand(publishProjectCmd)
+	publishCmd.AddCommand(publishServiceCmd)
+
+	rootCmd.PersistentFlags().String("group", "", "Deployment-mode override group whose lifecycle task commands to select")
 
 	initCmd.Flags().String("name", "", "Workspace name")
 	addCmd.Flags().String("payload", "", "Library to wire as a dependency")

@@ -42,8 +42,24 @@ var stopServiceCmd = &cobra.Command{
 	},
 }
 
+var stopPkgCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Stop a project by running its `stop` task",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		return functions.RunProjectLifecycleTask(cmd, afero.NewOsFs(), name, "stop", groupSelection(cmd))
+	},
+}
+
 func init() {
 	stopAppCmd.Flags().String("name", "", "Name of the app")
 	stopServiceCmd.Flags().String("name", "", "Name of the service")
 	stopServiceCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
+	stopPkgCmd.Flags().String("name", "", "Name of the project")
 }

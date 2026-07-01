@@ -207,6 +207,19 @@ func RecordCacheSlot(fs afero.Fs, root string, repoKey string, selection models.
 	return WriteGroupCacheSlot(fs, root, repoKey, selection, task, resolvedHash, cacheableTask(task))
 }
 
+func EnsureManifestEntryForNode(fs afero.Fs, root string, node Node) error {
+	m, err := ReadManifest(fs, root)
+	if err != nil {
+		return err
+	}
+	key := nodeKey(node)
+	if _, ok := m.Repos[key]; ok {
+		return nil
+	}
+	ensureManifestEntry(node, &m)
+	return WriteManifest(fs, root, m)
+}
+
 func ensureManifestEntry(node Node, m *Manifest) {
 	key := nodeKey(node)
 	if _, ok := m.Repos[key]; ok {

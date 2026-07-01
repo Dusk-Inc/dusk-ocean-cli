@@ -1174,6 +1174,9 @@ func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
 	}
 	config.Language = strings.TrimSpace(config.Language)
 	config.Type = strings.TrimSpace(config.Type)
+	if _, err := ValidateOverrides(config); err != nil {
+		return RepoConfig{}, err
+	}
 	return config, nil
 }
 

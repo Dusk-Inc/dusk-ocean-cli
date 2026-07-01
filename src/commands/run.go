@@ -50,10 +50,26 @@ var runServiceCmd = &cobra.Command{
 	},
 }
 
+var runPkgCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Run a project by running its `run` task",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		return functions.RunProjectLifecycleTask(cmd, afero.NewOsFs(), name, "run", groupSelection(cmd))
+	},
+}
+
 func init() {
 	runAppCmd.Flags().String("name", "", "Name of the app")
 	runAppCmd.Flags().Bool("skip-check", false, "Skip the pre-flight check (test) step")
 	runServiceCmd.Flags().String("name", "", "Name of the service")
 	runServiceCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
 	runServiceCmd.Flags().Bool("skip-check", false, "Skip the pre-flight check (test) step")
+	runPkgCmd.Flags().String("name", "", "Name of the project")
 }

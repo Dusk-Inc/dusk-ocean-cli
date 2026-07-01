@@ -24,6 +24,10 @@ var containProjectCmd = &cobra.Command{
 		if name == "" {
 			return fmt.Errorf("--name is required")
 		}
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			return functions.RunProjectLifecycleTask(cmd, afero.NewOsFs(), name, "contain", selection)
+		}
 		return functions.ContainProject(cmd, afero.NewOsFs(), name)
 	},
 }

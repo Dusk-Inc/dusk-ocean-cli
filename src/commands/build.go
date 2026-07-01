@@ -238,8 +238,16 @@ var buildPkgCmd = &cobra.Command{
 			name = selected
 		}
 
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			return functions.RunProjectLifecycleTask(cmd, fs, name, "build", selection)
+		}
+
 		node, err := functions.MakeProjectNode(config, name)
 		if err != nil {
+			return err
+		}
+		if err := functions.EnsureManifestEntryForNode(fs, root, node); err != nil {
 			return err
 		}
 		return functions.RunBuildWithDependencies(cmd, root, config, node, map[string]struct{}{})

@@ -28,6 +28,10 @@ var publishProjectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			return functions.RunProjectLifecycleTask(cmd, afero.NewOsFs(), name, "publish", selection)
+		}
 		return functions.PublishProject(cmd, afero.NewOsFs(), name, skipPreflight)
 	},
 }
