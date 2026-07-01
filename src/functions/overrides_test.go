@@ -285,3 +285,33 @@ func TestReq158_MatchingGroupHashIsFresh(t *testing.T) {
 		t.Fatalf("expected returned desktop slot, got %+v", slot)
 	}
 }
+
+// #159 A missing or mismatched group-slot hash rebuilds
+func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	// missing: no slot written yet
+	fresh, _, err := ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fresh {
+		t.Fatalf("expected fresh=false for missing desktop slot")
+	}
+	// mismatched: slot exists with a different hash
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-old", true)
+	fresh, _, err = ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-new")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fresh {
+		t.Fatalf("expected fresh=false for mismatched desktop slot")
+	}
+	// contrast: the same slot, queried with its stored hash, must rebuild no longer
+	fresh, _, err = ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-old")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fresh {
+		t.Fatalf("a written slot must be fresh for its own hash; the read must compare, not always-rebuild")
+	}
+}
