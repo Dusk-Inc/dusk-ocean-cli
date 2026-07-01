@@ -1,8 +1,10 @@
 package functions
 
 import (
+	"errors"
 	"testing"
 
+	oceanerrors "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/errors"
 	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
 	"github.com/spf13/afero"
 )
@@ -57,5 +59,19 @@ func TestReq145_ValidOverridesRegistersGroup(t *testing.T) {
 	}
 	if groups[0].Tasks.Build != "make desktop" {
 		t.Fatalf("expected overlay build command retained, got %q", groups[0].Tasks.Build)
+	}
+}
+
+// #146 Duplicate group name is a validation error
+func TestReq146_DuplicateGroupIsError(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Build: "a"}},
+		{Group: "desktop", Tasks: models.TaskOverlay{Build: "b"}},
+	}
+	_, err := ValidateOverrides(c)
+	var ve *oceanerrors.OverridesValidationError
+	if !errors.As(err, &ve) || ve.Kind != oceanerrors.KindDuplicateGroup {
+		t.Fatalf("expected duplicate_group validation error, got %v", err)
 	}
 }
