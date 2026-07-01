@@ -224,3 +224,25 @@ func TestReq155_GroupOpWritesGroupSlot(t *testing.T) {
 		t.Fatalf("expected persisted desktop build hash, got %q", got.BuildHash)
 	}
 }
+
+// #156 Base mode uses a slot distinct from any group's
+func TestReq156_BaseSlotDistinctFromGroup(t *testing.T) {
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	if _, err := WriteGroupCacheSlot(fs, root, "project:app", SelectGroup(""), "build", "hash-base", true); err != nil {
+		t.Fatalf("base write: %v", err)
+	}
+	if _, err := WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop", true); err != nil {
+		t.Fatalf("desktop write: %v", err)
+	}
+	m, _ := ReadManifest(fs, root)
+	entry := m.Repos["project:app"]
+	if entry.BuildHash != "hash-base" {
+		t.Fatalf("expected base slot hash 'hash-base', got %q", entry.BuildHash)
+	}
+	if entry.Groups["desktop"].BuildHash != "hash-desktop" {
+		t.Fatalf("expected desktop slot hash 'hash-desktop', got %q", entry.Groups["desktop"].BuildHash)
+	}
+	if entry.BuildHash == entry.Groups["desktop"].BuildHash {
+		t.Fatalf("base and group slot must be distinct")
+	}
+}
