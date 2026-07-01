@@ -315,3 +315,31 @@ func TestReq159_MissingOrMismatchedGroupHashRebuilds(t *testing.T) {
 		t.Fatalf("a written slot must be fresh for its own hash; the read must compare, not always-rebuild")
 	}
 }
+
+// #160 run honors --group but writes no cache slot
+func TestReq160_RunHonorsGroupWritesNoSlot(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Run: "run-desktop"}},
+	}
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("run", SelectGroup("desktop"), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "run-desktop" {
+		t.Fatalf("expected group run command honored, got %q", resolved.Command)
+	}
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	slot, err := RecordCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "run", "hash")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if slot != nil {
+		t.Fatalf("run must write no cache slot, got %+v", slot)
+	}
+	m, _ := ReadManifest(fs, root)
+	if len(m.Repos["project:app"].Groups) != 0 {
+		t.Fatalf("run must not create any group slot, got %+v", m.Repos["project:app"].Groups)
+	}
+}
