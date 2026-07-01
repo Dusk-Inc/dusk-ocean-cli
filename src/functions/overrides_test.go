@@ -269,3 +269,19 @@ func TestReq157_ChangeInvalidatesOnlyThatGroup(t *testing.T) {
 		t.Fatalf("sibling web slot must be untouched, got %q", entry.Groups["web"].BuildHash)
 	}
 }
+
+// #158 A matching group-slot hash skips the operation as fresh
+func TestReq158_MatchingGroupHashIsFresh(t *testing.T) {
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	WriteGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop", true)
+	fresh, slot, err := ReadGroupCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "build", "hash-desktop")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fresh {
+		t.Fatalf("expected fresh=true for matching desktop hash")
+	}
+	if slot == nil || slot.BuildHash != "hash-desktop" {
+		t.Fatalf("expected returned desktop slot, got %+v", slot)
+	}
+}
