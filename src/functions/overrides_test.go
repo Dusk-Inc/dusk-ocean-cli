@@ -343,3 +343,31 @@ func TestReq160_RunHonorsGroupWritesNoSlot(t *testing.T) {
 		t.Fatalf("run must not create any group slot, got %+v", m.Repos["project:app"].Groups)
 	}
 }
+
+// #161 stop honors --group but writes no cache slot
+func TestReq161_StopHonorsGroupWritesNoSlot(t *testing.T) {
+	c := baseConfig()
+	c.Overrides = []models.OverrideGroup{
+		{Group: "desktop", Tasks: models.TaskOverlay{Stop: "stop-desktop"}},
+	}
+	groups, _ := ValidateOverrides(c)
+	resolved, err := ResolveGroupCommand("stop", SelectGroup("desktop"), c, groups, emptyCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Command != "stop-desktop" {
+		t.Fatalf("expected group stop command honored, got %q", resolved.Command)
+	}
+	fs, root := newManifestFsWithEntry(t, "project:app")
+	slot, err := RecordCacheSlot(fs, root, "project:app", SelectGroup("desktop"), "stop", "hash")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if slot != nil {
+		t.Fatalf("stop must write no cache slot, got %+v", slot)
+	}
+	m, _ := ReadManifest(fs, root)
+	if len(m.Repos["project:app"].Groups) != 0 {
+		t.Fatalf("stop must not create any group slot, got %+v", m.Repos["project:app"].Groups)
+	}
+}
