@@ -369,6 +369,42 @@ func TestStageBuildContextForNode_Project(t *testing.T) {
 	})
 }
 
+// --- StageBuildContextForNodeAt (D6 no-publish dev staging destination) ---
+
+func TestStageBuildContextForNodeAt_ExplicitDestination(t *testing.T) {
+	t.Run("domain__stage__stages_into_the_given_jobs_stage_path", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/workspace"
+
+		config := MakeConfig(nil, []WorkspaceApp{makeServiceInApp("app-a", "svc-a")}, nil)
+		if err := writeTestWorkspaceConfig(fs, root, config); err != nil {
+			t.Fatalf("setup config: %v", err)
+		}
+		svcPath := filepath.Join(root, "repos", "apps", "app-a", "services", "svc-a")
+		if err := afero.WriteFile(fs, filepath.Join(svcPath, "main.go"), []byte("svc"), 0o644); err != nil {
+			t.Fatalf("setup svc: %v", err)
+		}
+
+		node, err := MakeServiceNode(config, "app-a", "svc-a")
+		if err != nil {
+			t.Fatalf("make node: %v", err)
+		}
+
+		dest := filepath.Join(root, "repos", "apps", "app-a", "jobs", ".stage", "svc-a")
+		got, err := StageBuildContextForNodeAt(fs, root, config, node, dest, io.Discard)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != dest {
+			t.Fatalf("expected staging path %s, got %s", dest, got)
+		}
+		staged := filepath.Join(dest, "repos", "apps", "app-a", "services", "svc-a", "main.go")
+		if _, err := fs.Stat(staged); err != nil {
+			t.Fatalf("expected the service staged at %s (compose build context): %v", staged, err)
+		}
+	})
+}
+
 // --- resolveProjectContainerFilePath ---
 
 func TestResolveProjectContainerFilePath(t *testing.T) {
