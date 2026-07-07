@@ -19,7 +19,7 @@ var stopAppCmd = &cobra.Command{
 		if appName == "" {
 			return fmt.Errorf("--name is required")
 		}
-		return functions.StopApp(cmd, afero.NewOsFs(), appName)
+		return functions.StopApp(cmd, afero.NewOsFs(), appName, groupSelection(cmd))
 	},
 }
 
@@ -38,7 +38,7 @@ var stopServiceCmd = &cobra.Command{
 		if serviceName == "" {
 			return fmt.Errorf("--name is required")
 		}
-		return functions.StopService(cmd, afero.NewOsFs(), appName, serviceName)
+		return functions.StopService(cmd, afero.NewOsFs(), appName, serviceName, groupSelection(cmd))
 	},
 }
 

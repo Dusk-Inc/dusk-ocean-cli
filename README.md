@@ -630,18 +630,20 @@ Fails if the destination name conflicts with an existing repository. When a move
 ### `run`
 Execute a user-defined `run` task for an app or service. Before running, Dusk Ocean performs hash-based pre-flight checks for build, check, and contain across all repos in the target's dependency tree. Stale tasks are executed in dependency order (build → check → contain) before the run task begins. If any pre-flight task fails, the run is aborted.
 ```bash
-dusk-ocean run app     --name <app-name> [--skip-check]
-dusk-ocean run service --name <service-name> [--app <app>] [--skip-check]
+dusk-ocean run app     --name <app-name> [--skip-check] [--group <group>]
+dusk-ocean run service --name <service-name> [--app <app>] [--skip-check] [--group <group>]
 ```
 For an app, pre-flight checks are performed for each service in the app. If no `run` task is defined, the command skips with a message. Use `--skip-check` to bypass the pre-flight check (test) step while still running build and contain.
+
+Apps and services honor `--group` just as projects do: the group's `run` override (declared under `overrides` in the repo's `ocean.config.json`) replaces the base `run` task, unlisted tasks inheriting the base. A `--group` run is treated as a distinct lifecycle mode (e.g. a `test` group that stands up an ephemeral dependency stack) and **skips the build/check/contain pre-flight** — the group command is the whole lifecycle for that mode. Base `run` (no `--group`) is unchanged.
 
 ### `stop`
 Execute a user-defined `stop` task for an app or service — the counterpart to [`run`](#run). No pre-flight checks are performed.
 ```bash
-dusk-ocean stop app     --name <app-name>
-dusk-ocean stop service --name <service-name> [--app <app>]
+dusk-ocean stop app     --name <app-name> [--group <group>]
+dusk-ocean stop service --name <service-name> [--app <app>] [--group <group>]
 ```
-Pass `--app <app>` when the service name is ambiguous across apps.
+Pass `--app <app>` when the service name is ambiguous across apps. `--group` selects the group's `stop` override (the counterpart to a `--group` run, e.g. tearing the ephemeral stack down).
 
 ### `task`
 Run a workspace-level task (a command template declared under `tasks` in `ocean.workspace.json`) against a single repo. The task's `{{repo:*}}` tokens resolve against the target repo. See [Workspace Tasks](#workspace-tasks).

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 )
 
@@ -181,6 +182,72 @@ func TestRunTaskSkip(t *testing.T) {
 		}
 		if runTask != "npm start" {
 			t.Fatalf("expected 'npm start', got: %s", runTask)
+		}
+	})
+}
+
+func TestServiceGroupResolution(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	root := "/workspace"
+	config := MakeConfig(
+		nil,
+		[]WorkspaceApp{{
+			Name:      "app-a",
+			Services:  []WorkspaceService{{Name: "svc-a", Deps: []WorkspaceDep{}}},
+			Libraries: []WorkspaceLibrary{},
+			Testing:   []WorkspaceTest{},
+		}},
+		nil,
+	)
+	if err := writeTestWorkspaceConfig(fs, root, config); err != nil {
+		t.Fatalf("setup config: %v", err)
+	}
+	svcPath := filepath.Join(root, "repos", "apps", "app-a", "services", "svc-a")
+	svcConfigJSON := `{"name":"svc-a","type":"service","tasks":{"run":"pnpm dev","stop":"echo stop","build":"","test":""},"overrides":[{"group":"test","tasks":{"run":"docker compose up -d --wait","stop":"docker compose down -v"}}]}`
+	if err := fs.MkdirAll(svcPath, 0o755); err != nil {
+		t.Fatalf("mkdir svc: %v", err)
+	}
+	if err := afero.WriteFile(fs, filepath.Join(svcPath, "ocean.config.json"), []byte(svcConfigJSON), 0o644); err != nil {
+		t.Fatalf("write svc config: %v", err)
+	}
+
+	t.Run("domain__group__base_run_uses_plain_task", func(t *testing.T) {
+		resolved, err := resolveRepoTask(fs, root, config, svcPath, tokens.RepoKindService, "app-a", "svc-a", "run", SelectGroup(""))
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if resolved.Command != "pnpm dev" {
+			t.Fatalf("expected base 'pnpm dev', got %q", resolved.Command)
+		}
+	})
+
+	t.Run("domain__group__test_group_overrides_run", func(t *testing.T) {
+		resolved, err := resolveRepoTask(fs, root, config, svcPath, tokens.RepoKindService, "app-a", "svc-a", "run", SelectGroup("test"))
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if resolved.Command != "docker compose up -d --wait" {
+			t.Fatalf("expected group run override, got %q", resolved.Command)
+		}
+		if resolved.Source != "group" {
+			t.Fatalf("expected source 'group', got %q", resolved.Source)
+		}
+	})
+
+	t.Run("domain__group__test_group_overrides_stop", func(t *testing.T) {
+		resolved, err := resolveRepoTask(fs, root, config, svcPath, tokens.RepoKindService, "app-a", "svc-a", "stop", SelectGroup("test"))
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if resolved.Command != "docker compose down -v" {
+			t.Fatalf("expected group stop override, got %q", resolved.Command)
+		}
+	})
+
+	t.Run("complement__group__unknown_group_errors", func(t *testing.T) {
+		_, err := resolveRepoTask(fs, root, config, svcPath, tokens.RepoKindService, "app-a", "svc-a", "run", SelectGroup("nope"))
+		if err == nil {
+			t.Fatalf("expected error for unknown group")
 		}
 	})
 }

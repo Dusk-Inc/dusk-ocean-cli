@@ -661,10 +661,10 @@ func runMenuRun(cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		return functions.RunService(cmd, fs, appName, serviceName, false)
+		return functions.RunService(cmd, fs, appName, serviceName, false, groupSelection(cmd))
 	}
 
-	return functions.RunApp(cmd, fs, appName, false)
+	return functions.RunApp(cmd, fs, appName, false, groupSelection(cmd))
 }
 
 func runMenuInstall(cmd *cobra.Command) error {
