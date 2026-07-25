@@ -9,9 +9,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// seedAppWithSubRepos prepares an app directory tree with the requested
-// services, libs, and tests, each one carrying an ocean.config.json so
-// the discovery walker treats it as a sub-repo.
 func seedAppWithSubRepos(t *testing.T, fs afero.Fs, appName string, services, libs, tests []string) {
 	t.Helper()
 	appRoot := filepath.Join("repos", "apps", appName)
@@ -64,8 +61,6 @@ func TestDiscoverAppSubRepos(t *testing.T) {
 			t.Fatalf("expected 4 sub-repos, got %d: %+v", len(got), got)
 		}
 
-		// Walk order is deterministic: services first (alphabetized),
-		// then libs, then tests.
 		want := []DiscoveredAppSubRepo{
 			{Kind: AppSubRepoKindService, Name: "api", Path: "repos/apps/alpha/services/api"},
 			{Kind: AppSubRepoKindService, Name: "worker", Path: "repos/apps/alpha/services/worker"},
@@ -81,7 +76,7 @@ func TestDiscoverAppSubRepos(t *testing.T) {
 
 	t.Run("boundary__missing_subdirs__not_an_error", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		// App directory exists but none of services/, libs/, testing/ do.
+
 		if err := fs.MkdirAll("repos/apps/alpha", 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
@@ -97,8 +92,7 @@ func TestDiscoverAppSubRepos(t *testing.T) {
 
 	t.Run("complement__directory_without_config__skipped", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		// A child directory without ocean.config.json must NOT be picked
-		// up — that's the path-plus-config-file rule.
+
 		if err := fs.MkdirAll("repos/apps/alpha/services/api", 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
@@ -114,7 +108,7 @@ func TestDiscoverAppSubRepos(t *testing.T) {
 
 	t.Run("complement__only_one_level_deep", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		// A nested config two levels under services/ must NOT be picked up.
+
 		nested := "repos/apps/alpha/services/group/nested"
 		if err := fs.MkdirAll(nested, 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
@@ -138,7 +132,7 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
 		if err := AddProjectToWorkspace(fs, "placeholder"); err != nil {
-			// just to ensure ReadWorkspaceConfig works after seeding
+
 			t.Fatalf("seed: %v", err)
 		}
 		if err := addAppToWorkspace(fs, "alpha"); err != nil {
@@ -170,8 +164,6 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 			t.Errorf("expected 1 test, got %d", len(cfg.Apps[appIdx].Testing))
 		}
 
-		// Sub-repos discovered this way must NOT carry a remote — they
-		// share the parent app's git history.
 		for _, svc := range cfg.Apps[appIdx].Services {
 			if svc.Remote != "" {
 				t.Errorf("service %s should have no remote, got %q", svc.Name, svc.Remote)
@@ -195,7 +187,7 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 		if err := addAppToWorkspace(fs, "alpha"); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
-		// Pre-register `api` so the discovery loop hits the skip branch.
+
 		port, err := NextServicePort(fs, "alpha")
 		if err != nil {
 			t.Fatalf("port: %v", err)
@@ -231,7 +223,7 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 		if err := addAppToWorkspace(fs, "alpha"); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
-		// App directory exists but no sub-repos under any of the three subdirs.
+
 		if err := fs.MkdirAll("repos/apps/alpha", 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
@@ -246,8 +238,6 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 	})
 }
 
-// TestRegisterRepo_AppDiscoversSubRepos exercises the auto-discovery
-// path through the public RegisterRepo entry point.
 func TestRegisterRepo_AppDiscoversSubRepos(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)

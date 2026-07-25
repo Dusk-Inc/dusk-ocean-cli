@@ -64,8 +64,7 @@ func RunUninstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	return runUninstall(cmd, fs, target, dependency, UninstallOptions{})
 }
 
-// UnwireLocalDependency removes a local dependency by name using --payload and --target flags (REQ 5.4).
-func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -75,7 +74,12 @@ func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, 
 		return err
 	}
 
-	target, err := ResolveTargetByName(config, root, targetName)
+	var target Target
+	if appName != "" {
+		target, err = ResolveTargetByNameInApp(config, root, appName, targetName)
+	} else {
+		target, err = ResolveTargetByName(config, root, targetName)
+	}
 	if err != nil {
 		return err
 	}
@@ -102,7 +106,6 @@ func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, 
 		return err
 	}
 
-	// REQ 5.5: RunUninstallForTargets (inside runUninstall) errors if uninstall task is missing.
 	return runUninstall(cmd, fs, target, dependency, UninstallOptions{})
 }
 

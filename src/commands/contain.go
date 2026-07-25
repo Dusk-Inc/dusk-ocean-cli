@@ -10,24 +10,49 @@ import (
 
 var containCmd = &cobra.Command{
 	Use:   "contain",
-	Short: "Build and publish a service container image",
+	Short: "Build and publish a service or project container image",
+}
+
+var containProjectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Containerize a project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serviceName, err := cmd.Flags().GetString("service")
+		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
-		appName, err := cmd.Flags().GetString("app")
+		if name == "" {
+			return fmt.Errorf("--name is required")
+		}
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			return functions.RunProjectLifecycleTask(cmd, afero.NewOsFs(), name, "contain", selection)
+		}
+		return functions.ContainProject(cmd, afero.NewOsFs(), name)
+	},
+}
+
+var containServiceCmd = &cobra.Command{
+	Use:   "service",
+	Short: "Containerize a service",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return err
 		}
-		if serviceName == "" {
-			return fmt.Errorf("--service is required")
+		if name == "" {
+			return fmt.Errorf("--name is required")
 		}
-		return functions.ContainService(cmd, afero.NewOsFs(), appName, serviceName)
+		appName, err := cmd.Flags().GetString("in")
+		if err != nil {
+			return err
+		}
+		return functions.ContainService(cmd, afero.NewOsFs(), appName, name)
 	},
 }
 
 func init() {
-	containCmd.Flags().String("service", "", "Name of the service to containerize")
-	containCmd.Flags().String("app", "", "App name (required if service name is ambiguous)")
+	containProjectCmd.Flags().String("name", "", "Name of the project")
+	containServiceCmd.Flags().String("name", "", "Name of the service")
+	containServiceCmd.Flags().String("in", "", "App name (required when service name is ambiguous)")
 }

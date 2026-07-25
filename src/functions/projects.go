@@ -42,7 +42,6 @@ func AddProjectToWorkspace(fs afero.Fs, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
-// RemoveProjectFromWorkspace removes a project entry from ocean.workspace.json.
 func RemoveProjectFromWorkspace(fs afero.Fs, name string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		removed := false

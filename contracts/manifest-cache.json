@@ -1,0 +1,98 @@
+{
+  "model": "dusk-ocean-cli",
+  "slice": "manifest-cache",
+  "description": "The .ocean/manifest.json storage shape extended so a repo's freshness cache is keyed per (repo, group): base mode gets its own distinct slot and each group gets its own, so changing one group's override invalidates only that group's cache. Cacheable ops (build/check/contain/publish) write their group slot; run and stop honor --group but write no slot. Feature #65, Unit: Core CLI, Interface: Lifecycle Command.",
+  "entities": [
+    {
+      "name": "CacheSlot",
+      "description": "One (repo, group) freshness slot holding the per-lifecycle-op hashes for that mode. The base slot and each group's slot are distinct, so a hash in one never satisfies a freshness check for another (#155, #156, #157). The slot is keyed by group; base mode uses a reserved distinct key. Requirements #155, #156, #157, #158, #159.",
+      "fields": [
+        {
+          "name": "group",
+          "type": "string",
+          "optional": true,
+          "description": "The group name this slot caches, or absent/reserved-base-key for base mode. The key that keeps a group's cache distinct from base and from every other group (#156)."
+        },
+        {
+          "name": "build_hash",
+          "type": "string",
+          "optional": true,
+          "description": "Hash of the resolved build command for this (repo, group). A matching hash skips the op as fresh (#158); a missing or mismatched hash rebuilds (#159)."
+        },
+        { "name": "check_hash", "type": "string", "optional": true },
+        { "name": "contain_hash", "type": "string", "optional": true },
+        { "name": "publish_hash", "type": "string", "optional": true }
+      ]
+    },
+    {
+      "name": "ManifestEntryGroups",
+      "description": "The additive extension to the existing ManifestEntry: alongside the existing top-level base hashes, a group-keyed map of CacheSlot so each deployment mode caches independently. Additive and backward-compatible — an entry with no group slots behaves as base-only, exactly as before. The base mode's hashes are its own distinct slot, never shared with any group (#156).",
+      "fields": [
+        { "name": "kind", "type": "string", "optional": false },
+        { "name": "app", "type": "string", "optional": true },
+        { "name": "name", "type": "string", "optional": false },
+        {
+          "name": "base",
+          "type": "CacheSlot",
+          "optional": false,
+          "description": "The base-mode slot (existing top-level build_hash/check_hash/contain_hash/publish_hash on ManifestEntry), modeled as the distinct base CacheSlot (#156)."
+        },
+        {
+          "name": "groups",
+          "type": "map<string, CacheSlot>",
+          "optional": true,
+          "description": "Per-group slots keyed by group name. Changing one group's override rewrites only that group's slot on the next op, leaving base and sibling groups untouched (#157)."
+        }
+      ],
+      "relations": [
+        { "name": "baseSlot", "entity": "CacheSlot", "cardinality": "one-to-one" },
+        { "name": "groupSlots", "entity": "CacheSlot", "cardinality": "one-to-many" }
+      ]
+    },
+    {
+      "name": "OverrideManifest",
+      "description": "The .ocean/manifest.json document: repo-key -> ManifestEntryGroups. Extends the existing Manifest.repos map. Requirements #155, #156, #157.",
+      "fields": [
+        {
+          "name": "repos",
+          "type": "map<string, ManifestEntryGroups>",
+          "optional": false,
+          "description": "Existing repo-keyed map; each entry now carries a base slot plus per-group slots."
+        }
+      ],
+      "relations": [
+        { "name": "holds", "entity": "ManifestEntryGroups", "cardinality": "one-to-many" }
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "name": "ReadGroupCacheSlot",
+      "description": "Read the CacheSlot for a (repo, GroupSelection) and compare its stored op hash against the hash of the resolved command to decide freshness: a match skips the op as fresh, a missing or mismatched hash triggers a rebuild. The base slot and each group slot are read by their own distinct key. Requirements #156, #158, #159.",
+      "in": [
+        { "name": "repoKey", "type": "string", "optional": false },
+        { "name": "selection", "entity": "GroupSelection", "optional": false },
+        { "name": "task", "type": "string", "optional": false },
+        { "name": "resolvedHash", "type": "string", "optional": false }
+      ],
+      "out": [
+        { "name": "fresh", "type": "boolean", "optional": false, "description": "True when the slot hash matches (skip), false when missing/mismatched (rebuild)." },
+        { "name": "slot", "entity": "CacheSlot", "optional": true }
+      ]
+    },
+    {
+      "name": "WriteGroupCacheSlot",
+      "description": "After a cacheable op (build/check/contain/publish) completes under a GroupSelection, write the resolved command hash into that (repo, group) slot only, leaving base and sibling-group slots untouched. run and stop honor --group for resolution but write no slot. Requirements #155, #156, #157, #160, #161.",
+      "in": [
+        { "name": "repoKey", "type": "string", "optional": false },
+        { "name": "selection", "entity": "GroupSelection", "optional": false },
+        { "name": "task", "type": "string", "optional": false },
+        { "name": "resolvedHash", "type": "string", "optional": false },
+        { "name": "cacheable", "type": "boolean", "optional": false, "description": "False for run/stop, which resolve under --group but persist no slot (#160, #161)." }
+      ],
+      "out": [
+        { "name": "slot", "entity": "CacheSlot", "optional": true, "description": "The written slot, or absent when the op is non-cacheable (run/stop)." }
+      ]
+    }
+  ]
+}

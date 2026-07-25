@@ -3,15 +3,17 @@ package models
 import "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 
 type WorkspaceConfig struct {
-	Workspace string              `json:"workspace"`
-	Version   string              `json:"version,omitempty"`
-	Variables map[string]string   `json:"variables"`
-	Tasks     map[string]string   `json:"tasks"`
-	Ports     WorkspacePorts      `json:"ports"`
-	Apps      []WorkspaceApp      `json:"apps"`
-	Libraries []WorkspaceLibrary  `json:"libraries"`
-	Projects  []WorkspaceProject  `json:"projects"`
-	Templates []WorkspaceTemplate `json:"templates"`
+	Workspace      string              `json:"workspace"`
+	Version        string              `json:"version,omitempty"`
+	Variables      map[string]string   `json:"variables"`
+	Tasks          map[string]string   `json:"tasks"`
+	Ports          WorkspacePorts      `json:"ports"`
+	Apps           []WorkspaceApp      `json:"apps"`
+	Libraries      []WorkspaceLibrary  `json:"libraries"`
+	Projects       []WorkspaceProject  `json:"projects"`
+	Templates      []WorkspaceTemplate `json:"templates"`
+	Infrastructure []WorkspaceInfra    `json:"infrastructure"`
+	Docs           []WorkspaceDocs     `json:"docs"`
 }
 
 type WorkspacePorts struct {
@@ -80,17 +82,24 @@ type WorkspaceTest struct {
 	Deps      []WorkspaceDep    `json:"deps"`
 }
 
-// WorkspaceTemplate represents a scaffold template registered in
-// ocean.workspace.json. Templates are scaffolding sources for new repos and
-// are intentionally limited to the kinds: service, library, project. Apps
-// are not template-able — Dusk Ocean scaffolds the app folder structure
-// directly in code.
 type WorkspaceTemplate struct {
 	Name      string            `json:"name"`
-	Kind      string            `json:"kind"` // service|library|project
+	Kind      string            `json:"kind"`
 	Remote    string            `json:"remote,omitempty"`
 	Variables map[string]string `json:"variables,omitempty"`
 	Deps      []WorkspaceDep    `json:"deps"`
+}
+
+type WorkspaceInfra struct {
+	Name      string            `json:"name"`
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+}
+
+type WorkspaceDocs struct {
+	Name      string            `json:"name"`
+	Remote    string            `json:"remote,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
 }
 
 type WorkspaceDep struct {
@@ -110,15 +119,19 @@ type RepoConfig struct {
 	Scopes    []string `json:"scopes,omitempty"`
 	Tasks     struct {
 		Build     string `json:"build"`
+		Check     string `json:"check"`
 		Test      string `json:"test"`
 		Add       string `json:"add"`
 		Install   string `json:"install"`
 		Uninstall string `json:"uninstall"`
 		Contain   string `json:"contain"`
+		Publish   string `json:"publish"`
 		Run       string `json:"run"`
+		Stop      string `json:"stop"`
 		Setup     string `json:"setup"`
 		Prebuild  string `json:"prebuild"`
 	} `json:"tasks"`
+	Overrides []OverrideGroup `json:"overrides,omitempty"`
 }
 
 type TargetKind string
@@ -130,6 +143,7 @@ const (
 	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
 	TargetProject   TargetKind = tokens.TargetProjectKind
 	TargetTest      TargetKind = tokens.TargetTestKind
+	TargetTemplate  TargetKind = tokens.TargetTemplateKind
 )
 
 type Target struct {
@@ -142,4 +156,3 @@ type Target struct {
 type InitOptions struct {
 	Name string
 }
-

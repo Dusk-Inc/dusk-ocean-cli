@@ -8,9 +8,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// TestAddTemplateToWorkspace covers REQ 19.1/19.2: registering a template
-// drops a WorkspaceTemplate entry into ocean.workspace.json with the
-// requested kind. App kind is rejected up-front.
 func TestAddTemplateToWorkspace(t *testing.T) {
 	t.Run("domain__service_kind__appends_entry", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
@@ -56,12 +53,15 @@ func TestAddTemplateToWorkspace(t *testing.T) {
 	})
 }
 
-// TestValidateTemplateKind covers REQ 19.3/19.4/19.5: only the three
-// allowed kinds are accepted, app is explicitly rejected, and missing
-// values yield a clear error.
 func TestValidateTemplateKind(t *testing.T) {
-	t.Run("domain__service_library_project__accepted", func(t *testing.T) {
-		for _, kind := range []string{tokens.TemplateKindService, tokens.TemplateKindLibrary, tokens.TemplateKindProject} {
+	t.Run("domain__service_library_project_infra_docs__accepted", func(t *testing.T) {
+		for _, kind := range []string{
+			tokens.TemplateKindService,
+			tokens.TemplateKindLibrary,
+			tokens.TemplateKindProject,
+			tokens.TemplateKindInfra,
+			tokens.TemplateKindDocs,
+		} {
 			if err := ValidateTemplateKind(kind); err != nil {
 				t.Errorf("expected %s to be accepted, got %v", kind, err)
 			}
@@ -88,8 +88,6 @@ func TestValidateTemplateKind(t *testing.T) {
 	})
 }
 
-// TestValidateTemplateKindFlag covers REQ 19.5: --template-kind only
-// applies when --kind is template, and is required when it is.
 func TestValidateTemplateKindFlag(t *testing.T) {
 	if err := ValidateTemplateKindFlag(tokens.RepoKindProject, ""); err != nil {
 		t.Errorf("non-template kind without template-kind should pass, got %v", err)
@@ -105,9 +103,6 @@ func TestValidateTemplateKindFlag(t *testing.T) {
 	}
 }
 
-// TestRegisterRepo_Template covers REQ 19.1/19.2: registering a template
-// writes a starter ocean.config.json whose `type` field carries the
-// template kind, and adds a WorkspaceTemplate entry to workspace config.
 func TestRegisterRepo_Template(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
@@ -130,7 +125,6 @@ func TestRegisterRepo_Template(t *testing.T) {
 		t.Errorf("expected RemoteNone sentinel, got %q", config.Templates[0].Remote)
 	}
 
-	// Starter ocean.config.json should declare the template's downstream type.
 	repoConfig, err := ReadRepoConfig(fs, "repos/templates/ts-svc")
 	if err != nil {
 		t.Fatalf("ReadRepoConfig: %v", err)
@@ -140,7 +134,6 @@ func TestRegisterRepo_Template(t *testing.T) {
 	}
 }
 
-// TestRegisterRepo_TemplateAppKindRejected covers REQ 19.3.
 func TestRegisterRepo_TemplateAppKindRejected(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
@@ -154,9 +147,6 @@ func TestRegisterRepo_TemplateAppKindRejected(t *testing.T) {
 	}
 }
 
-// TestFindTemplatesByKind covers REQ 19.6: workspace-registered templates
-// are filterable by their kind, and "app" returns nothing even if a stale
-// entry happens to exist.
 func TestFindTemplatesByKind(t *testing.T) {
 	config := WorkspaceConfig{
 		Templates: []WorkspaceTemplate{
@@ -182,9 +172,6 @@ func TestFindTemplatesByKind(t *testing.T) {
 	}
 }
 
-// TestValidateTemplateDepsForTarget_RejectsMissingDep covers REQ 19.7:
-// pre-validation must reject before any files are copied when a template
-// dep references a library that doesn't exist.
 func TestValidateTemplateDepsForTarget_RejectsMissingDep(t *testing.T) {
 	config := WorkspaceConfig{
 		Templates: []WorkspaceTemplate{
@@ -211,9 +198,6 @@ func TestValidateTemplateDepsForTarget_RejectsMissingDep(t *testing.T) {
 	}
 }
 
-// TestValidateTemplateDepsForTarget_AcceptsValidDep covers the happy path
-// for REQ 19.7: a template dep that resolves to a real global library is
-// accepted, even though the target itself is not yet in workspace config.
 func TestValidateTemplateDepsForTarget_AcceptsValidDep(t *testing.T) {
 	config := WorkspaceConfig{
 		Libraries: []WorkspaceLibrary{
@@ -242,9 +226,6 @@ func TestValidateTemplateDepsForTarget_AcceptsValidDep(t *testing.T) {
 	}
 }
 
-// TestValidateTemplateDepsForTarget_FilesystemOnlyTemplateNoOp covers a
-// safety property of REQ 19.7: a template that is NOT registered in
-// workspace config has no declared deps, so pre-validation is a no-op.
 func TestValidateTemplateDepsForTarget_FilesystemOnlyTemplateNoOp(t *testing.T) {
 	config := WorkspaceConfig{}
 	target := Target{Kind: TargetService, App: "alpha", Name: "api"}
@@ -253,8 +234,6 @@ func TestValidateTemplateDepsForTarget_FilesystemOnlyTemplateNoOp(t *testing.T) 
 	}
 }
 
-// TestCollectWorkspaceNodes_ExcludesTemplates covers REQ 19.9: templates
-// must never appear in the dependency graph that build/check/refresh use.
 func TestCollectWorkspaceNodes_ExcludesTemplates(t *testing.T) {
 	config := WorkspaceConfig{
 		Libraries: []WorkspaceLibrary{

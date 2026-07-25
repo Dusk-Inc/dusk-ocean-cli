@@ -21,6 +21,7 @@ const (
 	targetGlobalLib targetKind = TargetGlobalLib
 	targetProject   targetKind = TargetProject
 	targetTest      targetKind = TargetTest
+	targetTemplate  targetKind = TargetTemplate
 
 	dependencyGlobalLib dependencyKind = "global-lib"
 	dependencyAppLib    dependencyKind = "app-lib"
@@ -54,6 +55,9 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 	},
 	targetTest: {
 		dependencyAppLib:    true,
+		dependencyGlobalLib: true,
+	},
+	targetTemplate: {
 		dependencyGlobalLib: true,
 	},
 }
@@ -165,8 +169,7 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
-// WireLocalDependency wires a local dependency by name using --payload and --target flags (REQ 5.1).
-func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string) error {
+func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -176,17 +179,37 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	target, err := ResolveTargetByName(config, root, targetName)
+	var target Target
+	if appName != "" {
+		target, err = ResolveTargetByNameInApp(config, root, appName, targetName)
+	} else {
+		target, err = ResolveTargetByName(config, root, targetName)
+	}
 	if err != nil {
 		return err
 	}
 
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName string, target Target) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
+}
+
+func wireDependencyForTarget(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, payloadName string, target Target) error {
 	dependency, err := resolveDependency(root, target, payloadName, config)
 	if err != nil {
 		return err
 	}
 
-	// REQ 7.4 / REQ 5.3: cross-app app-lib dependency requires shared scopes.
 	if dependency.kind == dependencyAppLib && target.App != dependency.app {
 		payloadLookup := Target{Kind: TargetAppLib, App: dependency.app, Name: dependency.name}
 		payloadScopes := FindTargetScopes(config, payloadLookup)
@@ -195,7 +218,7 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 			return fmt.Errorf("scope violation: %s has no declared scopes; cannot be used across app boundaries", payloadName)
 		}
 		if !HasCommonScope(payloadScopes, targetScopes) {
-			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, targetName)
+			return fmt.Errorf("scope violation: %s and %s share no common scope", payloadName, target.Name)
 		}
 	}
 
@@ -203,7 +226,6 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 		return err
 	}
 
-	// REQ 5.2: payload and target cannot be the same repo.
 	targetKey := installTargetKey(target)
 	depKey := installDependencyKey(dependency)
 	if targetKey != "" && targetKey == depKey {
@@ -307,7 +329,7 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 		return fmt.Errorf("unsupported install target")
 	}
 	if !allowedDeps[dependency.kind] {
-		// REQ 15.4: projects cannot be used as dependencies.
+
 		if dependency.kind == dependencyProject {
 			return fmt.Errorf("projects cannot be used as dependencies")
 		}
@@ -322,6 +344,8 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 			return fmt.Errorf("invalid dependency for service")
 		case targetTest:
 			return fmt.Errorf("invalid dependency for test")
+		case targetTemplate:
+			return fmt.Errorf("invalid dependency for template")
 		default:
 			return fmt.Errorf("unsupported install target")
 		}
@@ -476,6 +500,16 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 			return WorkspaceConfig{}, err
 		}
 		config.Projects[projectIndex].Deps = append(depsList, makeInstallDep(dependency))
+	case targetTemplate:
+		templateIndex := FindTemplateIndex(config, target.Name)
+		if templateIndex == -1 {
+			return WorkspaceConfig{}, fmt.Errorf("template not registered in workspace: %s", target.Name)
+		}
+		depsList := config.Templates[templateIndex].Deps
+		if containsDep(depsList, dependency.name, depSourceForInstall(dependency)) {
+			return WorkspaceConfig{}, fmt.Errorf("dependency already registered: %s", dependency.name)
+		}
+		config.Templates[templateIndex].Deps = append(depsList, makeInstallDep(dependency))
 	default:
 		return WorkspaceConfig{}, fmt.Errorf("unsupported install target")
 	}
@@ -484,7 +518,7 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 }
 
 func ensureNoCycles(config WorkspaceConfig, target installTarget, dependency installDependency) error {
-	if target.Kind == targetService || target.Kind == targetTest {
+	if target.Kind == targetService || target.Kind == targetTest || target.Kind == targetTemplate {
 		return nil
 	}
 	graph, err := BuildDependencyGraph(config)
@@ -520,6 +554,8 @@ func installTargetKey(target installTarget) string {
 		return GlobalLibKey(target.Name)
 	case targetProject:
 		return ProjectKey(target.Name)
+	case targetTemplate:
+		return fmt.Sprintf("template:%s", target.Name)
 	default:
 		return ""
 	}

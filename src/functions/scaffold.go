@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 )
 
@@ -17,7 +18,21 @@ func CopyDir(fs afero.Fs, src string, dst string) error {
 	return CopyDirWithReplacements(fs, src, dst, nil)
 }
 
+// CopyTemplate copies a scaffold template from src to dst, applying the
+// workspace's .oceanignore rules so directories like .git, node_modules, and
+// build artifacts don't propagate from a template into a newly scaffolded
+// entity. Use this for any `add` command that seeds from repos/templates/.
+func CopyTemplate(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+	return CopyDirWithReplacements(fs, src, dst, replacements)
+}
+
 func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {
+	workspaceRoot, _ := GetRoot()
+	var ignorePatterns []string
+	if workspaceRoot != "" {
+		ignorePatterns, _ = ReadOceanIgnorePatterns(fs, workspaceRoot)
+	}
+
 	return afero.Walk(fs, src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -31,9 +46,20 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 			return fs.MkdirAll(dst, 0o755)
 		}
 
+		if ShouldIgnore(filepath.ToSlash(relPath), info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		targetPath := filepath.Join(dst, replacePlaceholders(relPath, replacements))
 		if info.IsDir() {
 			return fs.MkdirAll(targetPath, 0o755)
+		}
+
+		if !info.Mode().IsRegular() {
+			return nil
 		}
 
 		if err := fs.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
@@ -66,9 +92,6 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 	})
 }
 
-// appSubdirs is the fixed list of subdirectories scaffolded under every new
-// app. Apps are intentionally not template-able — Dusk Ocean creates this
-// folder structure directly so the layout stays stable across the workspace.
 var appSubdirs = []string{"services", "libs", "jobs", "docs", "testing"}
 
 func AddApp(fs afero.Fs, name string) error {
@@ -179,7 +202,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 		return err
 	}
 
-	if err := CopyDirWithReplacements(fs, templatePath, servicePath, replacements); err != nil {
+	if err := CopyTemplate(fs, templatePath, servicePath, replacements); err != nil {
 		return err
 	}
 	return registerService(fs, appName, serviceName, dockerfile, containerFile)
@@ -203,6 +226,90 @@ func replacePlaceholders(value string, replacements map[string]string) string {
 		}
 		return replacement
 	})
+}
+
+func AddInfra(fs afero.Fs, name string, template string, replacements map[string]string) error {
+	return addNonCodeRepo(fs, tokens.RepoKindInfra, name, template, replacements, AddInfraToWorkspace)
+}
+
+func AddDocs(fs afero.Fs, name string, template string, replacements map[string]string) error {
+	return addNonCodeRepo(fs, tokens.RepoKindDocs, name, template, replacements, AddDocsToWorkspace)
+}
+
+func RemoveInfra(fs afero.Fs, name string) error {
+	return removeNonCodeRepo(fs, tokens.RepoKindInfra, name, RemoveInfraFromWorkspace)
+}
+
+func RemoveDocs(fs afero.Fs, name string) error {
+	return removeNonCodeRepo(fs, tokens.RepoKindDocs, name, RemoveDocsFromWorkspace)
+}
+
+func addNonCodeRepo(fs afero.Fs, kind string, name string, template string, replacements map[string]string, register func(afero.Fs, string) error) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("--name is required")
+	}
+	relPath, err := ResolveRepoPath(kind, name, "")
+	if err != nil {
+		return err
+	}
+	if _, err := fs.Stat(relPath); err == nil {
+		return fmt.Errorf("%s already exists: %s", kind, name)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if strings.TrimSpace(template) == "" {
+		if err := fs.MkdirAll(relPath, 0o755); err != nil {
+			return err
+		}
+		if err := WriteStarterRepoConfig(fs, relPath, name, kind); err != nil {
+			return err
+		}
+		return register(fs, name)
+	}
+
+	templatePath := filepath.Join("repos", tokens.RepoDirTemplates, template)
+	if _, err := fs.Stat(templatePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing template: %s", template)
+		}
+		return err
+	}
+	if err := CopyDirWithReplacements(fs, templatePath, relPath, replacements); err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(relPath, "ocean.config.json")
+	if _, err := fs.Stat(configPath); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := WriteStarterRepoConfig(fs, relPath, name, kind); err != nil {
+			return err
+		}
+	}
+	return register(fs, name)
+}
+
+func removeNonCodeRepo(fs afero.Fs, kind string, name string, unregister func(afero.Fs, string) error) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("--name is required")
+	}
+	relPath, err := ResolveRepoPath(kind, name, "")
+	if err != nil {
+		return err
+	}
+	if info, err := fs.Stat(relPath); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s exists and is not a directory", relPath)
+		}
+		if err := fs.RemoveAll(relPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return unregister(fs, name)
 }
 
 func RemoveApp(fs afero.Fs, name string) error {

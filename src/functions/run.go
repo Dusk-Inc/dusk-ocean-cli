@@ -2,6 +2,7 @@ package functions
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -10,27 +11,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// PreflightService performs build, check, and contain pre-flight checks for a
-// single service and its dependency tree. Each operation uses hash-based skip
-// logic to avoid redundant work. Returns an error if any pre-flight fails (REQ 14.5).
-func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string) error {
+func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, skipCheck bool) error {
 	serviceNode, err := MakeServiceNode(config, appName, serviceName)
 	if err != nil {
 		return err
 	}
 
-	// REQ 14.2: build pre-flight in dependency order.
 	built := map[string]struct{}{}
 	if err := RunBuildWithDependencies(cmd, root, config, serviceNode, built); err != nil {
 		return fmt.Errorf("pre-flight build failed for %s/%s: %w", appName, serviceName, err)
 	}
 
-	// REQ 14.3: check pre-flight in dependency order.
-	if err := RunCheckWithDependencies(cmd, root, config, serviceNode, built, nil); err != nil {
+	if skipCheck {
+		fmt.Fprintf(cmd.OutOrStdout(), "pre-flight check skipped for %s/%s (--skip-check)\n", appName, serviceName)
+	} else if err := RunCheckWithDependencies(cmd, root, config, serviceNode, built, nil); err != nil {
 		return fmt.Errorf("pre-flight check failed for %s/%s: %w", appName, serviceName, err)
 	}
 
-	// REQ 14.4: contain pre-flight (only if a contain task is defined).
 	servicePath := filepath.Join(root, "repos", "apps", appName, "services", serviceName)
 	containTask, err := ReadRepoCommand(fs, servicePath, "contain")
 	if err != nil {
@@ -45,9 +42,7 @@ func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config Works
 	return nil
 }
 
-// RunService resolves a service, performs pre-flight checks, and executes
-// its run task (REQ 14.1).
-func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
+func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string, skipCheck bool) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -58,13 +53,11 @@ func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName str
 		return err
 	}
 
-	// Resolve app and service (reuses the contain target resolver for optional --app).
 	resolvedApp, resolvedSvc, err := ResolveContainTarget(config, appName, serviceName)
 	if err != nil {
 		return err
 	}
 
-	// REQ 14.6: skip if no run task.
 	servicePath := filepath.Join(root, "repos", "apps", resolvedApp, "services", resolvedSvc)
 	runTask, err := ReadRepoCommand(fs, servicePath, "run")
 	if err != nil {
@@ -75,23 +68,25 @@ func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName str
 		return nil
 	}
 
-	// Pre-flight checks (build → check → contain).
-	if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc); err != nil {
+	if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc, skipCheck); err != nil {
 		return err
 	}
 
-	// Execute run task.
+	envFile, err := LoadEnvFile(fs, root, cmd.OutOrStdout())
+	if err != nil {
+		return err
+	}
+
 	execCmd := exec.Command("bash", "-lc", runTask)
 	execCmd.Dir = servicePath
+	execCmd.Env = mergeEnvForExec(envFile)
 	execCmd.Stdout = cmd.OutOrStdout()
 	execCmd.Stderr = cmd.ErrOrStderr()
 	execCmd.Stdin = cmd.InOrStdin()
 	return execCmd.Run()
 }
 
-// RunApp resolves an app, performs pre-flight checks for all its services,
-// and executes the app's run task (REQ 14.1).
-func RunApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
+func RunApp(cmd *cobra.Command, fs afero.Fs, appName string, skipCheck bool) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -107,7 +102,6 @@ func RunApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
 		return fmt.Errorf("app not found: %s", appName)
 	}
 
-	// REQ 14.6: skip if no run task.
 	appPath := filepath.Join(root, "repos", "apps", appName)
 	runTask, err := ReadRepoCommand(fs, appPath, "run")
 	if err != nil {
@@ -118,18 +112,40 @@ func RunApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
 		return nil
 	}
 
-	// Pre-flight checks for each service in the app (REQ 14.1/14.2/14.3/14.4).
 	for _, svc := range config.Apps[appIdx].Services {
-		if err := PreflightService(cmd, fs, root, config, appName, svc.Name); err != nil {
+		if err := PreflightService(cmd, fs, root, config, appName, svc.Name, skipCheck); err != nil {
 			return err
 		}
 	}
 
-	// Execute app run task.
+	envFile, err := LoadEnvFile(fs, root, cmd.OutOrStdout())
+	if err != nil {
+		return err
+	}
+
 	execCmd := exec.Command("bash", "-lc", runTask)
 	execCmd.Dir = appPath
+	execCmd.Env = mergeEnvForExec(envFile)
 	execCmd.Stdout = cmd.OutOrStdout()
 	execCmd.Stderr = cmd.ErrOrStderr()
 	execCmd.Stdin = cmd.InOrStdin()
 	return execCmd.Run()
+}
+
+func mergeEnvForExec(envFile map[string]string) []string {
+	base := os.Environ()
+	seen := make(map[string]struct{}, len(base))
+	for _, kv := range base {
+		if eq := strings.IndexByte(kv, '='); eq > 0 {
+			seen[kv[:eq]] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(base)+len(envFile))
+	out = append(out, base...)
+	for k, v := range envFile {
+		if _, exists := seen[k]; !exists {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
 }

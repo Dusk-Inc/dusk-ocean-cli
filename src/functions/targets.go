@@ -2,7 +2,6 @@ package functions
 
 import (
 	"fmt"
-
 )
 
 func FormatTargetLabel(target Target) string {
@@ -17,6 +16,8 @@ func FormatTargetLabel(target Target) string {
 		return fmt.Sprintf("project %s", target.Name)
 	case TargetTest:
 		return fmt.Sprintf("test %s/%s", target.App, target.Name)
+	case TargetTemplate:
+		return fmt.Sprintf("template %s", target.Name)
 	default:
 		return target.Name
 	}

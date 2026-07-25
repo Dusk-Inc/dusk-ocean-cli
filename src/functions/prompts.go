@@ -135,6 +135,10 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 	if len(testApps) > 0 {
 		options = append(options, "test")
 	}
+	templateNames := TemplateNames(config)
+	if len(templateNames) > 0 {
+		options = append(options, "template")
+	}
 	if len(options) == 0 {
 		return Target{}, fmt.Errorf("no targets available")
 	}
@@ -226,12 +230,21 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 			Name: name,
 			Path: filepath.Join(root, "repos", "libs", name),
 		}, nil
+	case "template":
+		name, err := SelectFromList("Select template", templateNames)
+		if err != nil {
+			return Target{}, err
+		}
+		return Target{
+			Kind: TargetTemplate,
+			Name: name,
+			Path: filepath.Join(root, "repos", "templates", name),
+		}, nil
 	default:
 		return Target{}, fmt.Errorf("unsupported target type")
 	}
 }
 
-// SelectFromList displays a prompt selection for a list of items.
 func SelectFromList(label string, items []string) (string, error) {
 	if len(items) == 0 {
 		return "", fmt.Errorf("no options available")

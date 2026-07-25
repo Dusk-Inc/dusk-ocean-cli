@@ -8,10 +8,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// --- helpers ---
-
-// setupManifestWorkspace creates a MemMapFs with a workspace config containing
-// one global lib and one app with one service, seeded with source files.
 func setupManifestWorkspace(t *testing.T) (afero.Fs, string, WorkspaceConfig) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -43,8 +39,6 @@ func setupManifestWorkspace(t *testing.T) (afero.Fs, string, WorkspaceConfig) {
 	}
 	return fs, root, config
 }
-
-// --- ReadManifest ---
 
 func TestReadManifest(t *testing.T) {
 	t.Run("domain__read_manifest__returns_empty_when_file_absent", func(t *testing.T) {
@@ -97,8 +91,6 @@ func TestReadManifest(t *testing.T) {
 	})
 }
 
-// --- HashAllRepos ---
-
 func TestHashAllRepos(t *testing.T) {
 	t.Run("domain__hash_all_repos__creates_entries_for_all_registered_nodes", func(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
@@ -111,7 +103,7 @@ func TestHashAllRepos(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read manifest: %v", err)
 		}
-		// Expect entries for lib-a (global-lib) and svc-a (service in app-a).
+
 		if _, ok := m.Repos["lib:global:lib-a"]; !ok {
 			t.Fatalf("expected entry for lib:global:lib-a")
 		}
@@ -147,16 +139,14 @@ func TestHashAllRepos(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
 		cmd := makeTestCmd(&bytes.Buffer{})
 
-		// First pass — creates entries.
 		if err := HashAllRepos(cmd, fs, root, config); err != nil {
 			t.Fatalf("first hash: %v", err)
 		}
-		// Simulate a successful build for the lib.
+
 		if err := SetManifestBuildHash(fs, root, "lib:global:lib-a", "hash-after-build"); err != nil {
 			t.Fatalf("set build_hash: %v", err)
 		}
 
-		// Second pass — entries already exist, must not overwrite.
 		if err := HashAllRepos(cmd, fs, root, config); err != nil {
 			t.Fatalf("second hash: %v", err)
 		}
@@ -170,8 +160,6 @@ func TestHashAllRepos(t *testing.T) {
 		}
 	})
 }
-
-// --- HashSingleRepo ---
 
 func TestHashSingleRepo(t *testing.T) {
 	t.Run("domain__hash_single_repo__creates_entry_for_target", func(t *testing.T) {
@@ -202,7 +190,6 @@ func TestHashSingleRepo(t *testing.T) {
 		fs, root, config := setupManifestWorkspace(t)
 		cmd := makeTestCmd(&bytes.Buffer{})
 
-		// Create entry and set a build hash.
 		if err := HashSingleRepo(cmd, fs, root, config, "lib-a"); err != nil {
 			t.Fatalf("first hash: %v", err)
 		}
@@ -210,7 +197,6 @@ func TestHashSingleRepo(t *testing.T) {
 			t.Fatalf("set build_hash: %v", err)
 		}
 
-		// Hash again — must not reset the build hash.
 		if err := HashSingleRepo(cmd, fs, root, config, "lib-a"); err != nil {
 			t.Fatalf("second hash: %v", err)
 		}
@@ -230,8 +216,6 @@ func TestHashSingleRepo(t *testing.T) {
 		}
 	})
 }
-
-// --- SetManifestBuildHash ---
 
 func TestSetManifestBuildHash(t *testing.T) {
 	t.Run("domain__set_manifest_build_hash__stores_hash", func(t *testing.T) {
@@ -268,8 +252,6 @@ func TestSetManifestBuildHash(t *testing.T) {
 	})
 }
 
-// --- SetManifestCheckHash ---
-
 func TestSetManifestCheckHash(t *testing.T) {
 	t.Run("domain__set_manifest_check_hash__stores_hash", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
@@ -305,8 +287,6 @@ func TestSetManifestCheckHash(t *testing.T) {
 	})
 }
 
-// --- SetManifestContainHash ---
-
 func TestSetManifestContainHash(t *testing.T) {
 	t.Run("domain__set_manifest_contain_hash__stores_hash", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
@@ -337,6 +317,43 @@ func TestSetManifestContainHash(t *testing.T) {
 			t.Fatalf("setup: %v", err)
 		}
 		if err := SetManifestContainHash(fs, root, "service:app-a:ghost", "some-hash"); err != nil {
+			t.Fatalf("expected no-op, got error: %v", err)
+		}
+	})
+}
+
+// --- SetManifestPublishHash ---
+
+func TestSetManifestPublishHash(t *testing.T) {
+	t.Run("domain__set_manifest_publish_hash__stores_hash", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		m := Manifest{
+			Repos: map[string]ManifestEntry{
+				"project:proj-a": {Kind: "project", Name: "proj-a"},
+			},
+		}
+		if err := WriteManifest(fs, root, m); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		if err := SetManifestPublishHash(fs, root, "project:proj-a", "publish-hash-abc"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got, _ := ReadManifest(fs, root)
+		if got.Repos["project:proj-a"].PublishHash != "publish-hash-abc" {
+			t.Fatalf("expected publish_hash=publish-hash-abc, got %s", got.Repos["project:proj-a"].PublishHash)
+		}
+	})
+
+	t.Run("complement__set_manifest_publish_hash__no_op_when_entry_absent", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		if err := WriteManifest(fs, root, Manifest{Repos: map[string]ManifestEntry{}}); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := SetManifestPublishHash(fs, root, "project:ghost", "some-hash"); err != nil {
 			t.Fatalf("expected no-op, got error: %v", err)
 		}
 	})

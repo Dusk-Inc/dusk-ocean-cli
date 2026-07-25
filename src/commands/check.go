@@ -1,9 +1,8 @@
 package cmd
 
-import
-(
-	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
+import (
 	"fmt"
+	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
@@ -258,8 +257,16 @@ var checkPkgCmd = &cobra.Command{
 			name = selected
 		}
 
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			return functions.RunProjectLifecycleTask(cmd, fs, name, "check", selection)
+		}
+
 		node, err := functions.MakeProjectNode(config, name)
 		if err != nil {
+			return err
+		}
+		if err := functions.EnsureManifestEntryForNode(fs, root, node); err != nil {
 			return err
 		}
 		return functions.RunCheckWithDependencies(cmd, root, config, node, map[string]struct{}{}, passThrough)

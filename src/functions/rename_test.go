@@ -255,9 +255,7 @@ func TestRenameInWorkspaceConfig(t *testing.T) {
 	})
 
 	t.Run("boundary__rename__app_lib_dep_with_same_name_in_other_app_not_affected", func(t *testing.T) {
-		// Both app-a and app-b have a lib named "lib-a".
-		// svc-b in app-b depends on app-b/lib-a (From == "app-b").
-		// Renaming app-a/lib-a -> lib-x must NOT affect app-b's dep.
+
 		libAInAppA := WorkspaceLibrary{Name: "lib-a", Deps: []WorkspaceDep{}}
 		libAInAppB := WorkspaceLibrary{Name: "lib-a", Deps: []WorkspaceDep{}}
 		svcB := WorkspaceService{
@@ -287,8 +285,7 @@ func TestRenameInWorkspaceConfig(t *testing.T) {
 	})
 
 	t.Run("boundary__rename__cross_app_dep_with_matching_from_is_updated", func(t *testing.T) {
-		// svc-b in app-b depends on lib-a from app-a (cross-app via scope).
-		// Renaming app-a/lib-a -> lib-x should update svc-b's dep.
+
 		libA := WorkspaceLibrary{Name: "lib-a", Scopes: []string{"shared"}, Deps: []WorkspaceDep{}}
 		svcB := WorkspaceService{
 			Name:   "svc-b",
@@ -455,7 +452,7 @@ func TestRenameRepoValidation(t *testing.T) {
 			nil,
 			nil,
 		)
-		// lib-b exists — renaming lib-a to lib-b is a conflict.
+
 		_, err := ResolveTargetByName(config, "/root", "lib-b")
 		if err != nil {
 			t.Fatalf("expected lib-b to be found (conflict target): %v", err)
@@ -468,7 +465,7 @@ func TestRenameRepoValidation(t *testing.T) {
 			nil,
 			nil,
 		)
-		// "lib-x" does not exist — no conflict.
+
 		_, err := ResolveTargetByName(config, "/root", "lib-x")
 		if err == nil {
 			t.Fatalf("expected error (not found) for 'lib-x', meaning no conflict")

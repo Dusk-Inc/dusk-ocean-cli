@@ -1,7 +1,6 @@
 package cmd
 
-import
-(
+import (
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"

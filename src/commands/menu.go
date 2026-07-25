@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	functions "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/functions"
 	tokens "github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,7 +98,14 @@ var menuCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		typePrompt := promptui.Select{
 			Label: "Create type",
-			Items: []string{tokens.MenuTypeApp, tokens.MenuTypeService, tokens.MenuTypeLibrary, tokens.MenuTypeProject},
+			Items: []string{
+				tokens.MenuTypeApp,
+				tokens.MenuTypeService,
+				tokens.MenuTypeLibrary,
+				tokens.MenuTypeProject,
+				tokens.MenuTypeInfra,
+				tokens.MenuTypeDocs,
+			},
 		}
 		_, createType, err := typePrompt.Run()
 		if err != nil {
@@ -109,13 +116,17 @@ var menuCreateCmd = &cobra.Command{
 
 		switch createType {
 		case tokens.MenuTypeApp:
-			return runMenuCreateApp(fs)
+			return runMenuCreateApp(fs, cmd)
 		case tokens.MenuTypeService:
 			return addServiceCmd.RunE(cmd, args)
 		case tokens.MenuTypeLibrary:
 			return addLibCmd.RunE(cmd, args)
 		case tokens.MenuTypeProject:
 			return addPkgCmd.RunE(cmd, args)
+		case tokens.MenuTypeInfra:
+			return addInfraCmd.RunE(cmd, args)
+		case tokens.MenuTypeDocs:
+			return addDocsCmd.RunE(cmd, args)
 		}
 		return nil
 	},
@@ -133,6 +144,8 @@ var menuRemoveCmd = &cobra.Command{
 				tokens.MenuTypeLibrary,
 				tokens.MenuTypeProject,
 				tokens.MenuTypeTest,
+				tokens.MenuTypeInfra,
+				tokens.MenuTypeDocs,
 			},
 		}
 		_, removeType, err := typePrompt.Run()
@@ -153,13 +166,16 @@ var menuRemoveCmd = &cobra.Command{
 			return runMenuRemoveProject(cmd, fs)
 		case tokens.MenuTypeTest:
 			return runMenuRemoveTest(cmd, fs)
+		case tokens.MenuTypeInfra:
+			return removeInfraCmd.RunE(cmd, args)
+		case tokens.MenuTypeDocs:
+			return removeDocsCmd.RunE(cmd, args)
 		}
 		return nil
 	},
 }
 
-// runMenuCreateApp scaffolds a new app (REQ 3.2).
-func runMenuCreateApp(fs afero.Fs) error {
+func runMenuCreateApp(fs afero.Fs, cmd *cobra.Command) error {
 	namePrompt := promptui.Prompt{
 		Label: "App name",
 		Validate: func(input string) error {
@@ -178,14 +194,17 @@ func runMenuCreateApp(fs afero.Fs) error {
 			return nil
 		},
 	}
-	name, err := namePrompt.Run()
+	rawName, err := namePrompt.Run()
 	if err != nil {
 		return err
 	}
-	return functions.AddApp(fs, strings.TrimSpace(name))
+	name := strings.TrimSpace(rawName)
+	if err := functions.AddApp(fs, name); err != nil {
+		return err
+	}
+	return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindApp, name, "")
 }
 
-// runMenuRemoveApp removes an app (REQ 3.5).
 func runMenuRemoveApp(cmd *cobra.Command, fs afero.Fs) error {
 	name, err := functions.PromptForApp()
 	if err != nil {
@@ -203,7 +222,6 @@ func runMenuRemoveApp(cmd *cobra.Command, fs afero.Fs) error {
 	return functions.RemoveApp(fs, name)
 }
 
-// runMenuRemoveService removes a service from an app (REQ 3.5).
 func runMenuRemoveService(cmd *cobra.Command, fs afero.Fs) error {
 	appName, err := functions.PromptForApp()
 	if err != nil {
@@ -240,7 +258,6 @@ func runMenuRemoveService(cmd *cobra.Command, fs afero.Fs) error {
 	return functions.RemoveServiceFromWorkspace(fs, appName, name)
 }
 
-// runMenuRemoveLibrary removes a global or app-adjacent library, handling dependents (REQ 3.5, 3.6).
 func runMenuRemoveLibrary(cmd *cobra.Command, fs afero.Fs) error {
 	locationPrompt := promptui.Select{
 		Label: "Remove library from",
@@ -343,7 +360,6 @@ func runMenuRemoveLibrary(cmd *cobra.Command, fs afero.Fs) error {
 	})
 }
 
-// runMenuRemoveProject removes a project (REQ 3.5).
 func runMenuRemoveProject(cmd *cobra.Command, fs afero.Fs) error {
 	name, err := functions.PromptForProject()
 	if err != nil {
@@ -375,7 +391,6 @@ func runMenuRemoveProject(cmd *cobra.Command, fs afero.Fs) error {
 	return functions.RemoveProjectFromWorkspace(fs, name)
 }
 
-// runMenuRemoveTest removes a testing project from an app (REQ 3.5).
 func runMenuRemoveTest(cmd *cobra.Command, fs afero.Fs) error {
 	appName, err := functions.PromptForApp()
 	if err != nil {
@@ -412,7 +427,6 @@ func runMenuRemoveTest(cmd *cobra.Command, fs afero.Fs) error {
 	return functions.RemoveTestFromWorkspace(fs, appName, name)
 }
 
-// confirmRemoval shows a confirmation prompt and returns true if the user confirms with 'y' (REQ 3.7).
 func confirmRemoval(label string) (bool, error) {
 	prompt := promptui.Prompt{
 		Label:     label,
@@ -428,7 +442,6 @@ func confirmRemoval(label string) (bool, error) {
 	return strings.ToLower(answer) == tokens.ConfirmYes, nil
 }
 
-// runMenuRename prompts for a repository type, target, and new name, then executes the rename (REQ 8.4).
 func runMenuRename(cmd *cobra.Command) error {
 	typePrompt := promptui.Select{
 		Label: "Rename type",
@@ -520,7 +533,6 @@ func runMenuRename(cmd *cobra.Command) error {
 	return functions.RenameRepo(cmd, afero.NewOsFs(), repoName, strings.TrimSpace(newName))
 }
 
-// runMenuBuild shows a target selector and builds it with dependencies (REQ 3.1).
 func runMenuBuild(cmd *cobra.Command) error {
 	fs := afero.NewOsFs()
 	config, err := functions.ReadWorkspaceConfig(fs)
@@ -573,7 +585,6 @@ func runMenuBuild(cmd *cobra.Command) error {
 	return fmt.Errorf("unsupported target type")
 }
 
-// runMenuCheck shows a target selector and runs tests with dependencies (REQ 3.1).
 func runMenuCheck(cmd *cobra.Command) error {
 	fs := afero.NewOsFs()
 	config, err := functions.ReadWorkspaceConfig(fs)
@@ -628,7 +639,6 @@ func runMenuCheck(cmd *cobra.Command) error {
 	return fmt.Errorf("unsupported target type")
 }
 
-// runMenuRun shows a run-type selector and executes the run task with pre-flight checks (REQ 14).
 func runMenuRun(cmd *cobra.Command) error {
 	fs := afero.NewOsFs()
 
@@ -651,23 +661,20 @@ func runMenuRun(cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		return functions.RunService(cmd, fs, appName, serviceName)
+		return functions.RunService(cmd, fs, appName, serviceName, false)
 	}
 
-	return functions.RunApp(cmd, fs, appName)
+	return functions.RunApp(cmd, fs, appName, false)
 }
 
-// runMenuInstall delegates to the existing interactive install prompt (REQ 3.1).
 func runMenuInstall(cmd *cobra.Command) error {
 	return functions.RunInstallPrompt(cmd, afero.NewOsFs())
 }
 
-// runMenuUninstall delegates to the existing interactive uninstall prompt (REQ 3.1).
 func runMenuUninstall(cmd *cobra.Command) error {
 	return functions.RunUninstallPrompt(cmd, afero.NewOsFs())
 }
 
-// runMenuContain prompts for an app and service and builds + pushes the container image (REQ 3.1).
 func runMenuContain(cmd *cobra.Command) error {
 	appName, err := functions.PromptForApp()
 	if err != nil {
@@ -682,7 +689,6 @@ func runMenuContain(cmd *cobra.Command) error {
 	return functions.ContainService(cmd, afero.NewOsFs(), appName, serviceName)
 }
 
-// runMenuRefresh prompts for hash-clearing preference and runs a full workspace refresh (REQ 3.1).
 func runMenuRefresh(cmd *cobra.Command) error {
 	clearPrompt := promptui.Select{
 		Label: "Clear build/check hashes before refresh",
@@ -715,10 +721,6 @@ func runMenuRefresh(cmd *cobra.Command) error {
 	return functions.CleanupStaleHashes(fs, cmd, root)
 }
 
-// promptForRepoKind prompts the user to choose one of the five adopt/register
-// kinds and (when needed) the parent app or template kind. Returns the
-// kind, the parent app name (which is "" for kinds that do not take an
-// --app), and the template kind (which is "" for non-template kinds).
 func promptForRepoKind() (kind string, app string, templateKind string, err error) {
 	kindPrompt := promptui.Select{
 		Label: "Repo kind",
@@ -728,6 +730,8 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 			tokens.RepoKindApp,
 			tokens.RepoKindService,
 			tokens.RepoKindTemplate,
+			tokens.RepoKindInfra,
+			tokens.RepoKindDocs,
 		},
 	}
 	_, kind, err = kindPrompt.Run()
@@ -756,14 +760,15 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 			}
 		}
 	case tokens.RepoKindTemplate:
-		// Apps are not template-able. Only the three allowed kinds appear
-		// in this menu.
+
 		tkPrompt := promptui.Select{
 			Label: "Template kind (what this template scaffolds)",
 			Items: []string{
 				tokens.TemplateKindService,
 				tokens.TemplateKindLibrary,
 				tokens.TemplateKindProject,
+				tokens.TemplateKindInfra,
+				tokens.TemplateKindDocs,
 			},
 		}
 		_, templateKind, err = tkPrompt.Run()
@@ -774,7 +779,6 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 	return kind, app, templateKind, nil
 }
 
-// runMenuAdopt prompts for the inputs to dusk-ocean adopt and runs it.
 func runMenuAdopt(cmd *cobra.Command) error {
 	urlPrompt := promptui.Prompt{
 		Label: "Remote URL",
@@ -807,7 +811,6 @@ func runMenuAdopt(cmd *cobra.Command) error {
 	return functions.AdoptRepo(afero.NewOsFs(), cmd.OutOrStdout(), cmd.ErrOrStderr(), strings.TrimSpace(remoteURL), kind, strings.TrimSpace(name), app, templateKind)
 }
 
-// runMenuRegister prompts for the inputs to dusk-ocean register and runs it.
 func runMenuRegister(cmd *cobra.Command) error {
 	kind, app, templateKind, err := promptForRepoKind()
 	if err != nil {
@@ -840,7 +843,6 @@ func runMenuRegister(cmd *cobra.Command) error {
 	return functions.RegisterRepo(afero.NewOsFs(), cmd.OutOrStdout(), kind, strings.TrimSpace(name), app, strings.TrimSpace(remote), templateKind)
 }
 
-// runMenuTask prompts for the inputs to dusk-ocean task and runs it.
 func runMenuTask(cmd *cobra.Command) error {
 	namePrompt := promptui.Prompt{
 		Label: "Workspace task name",
