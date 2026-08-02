@@ -7,9 +7,57 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
+
+// repoVariableContext builds the token-substitution context for any repo kind
+// (mirrors projectVariableContext, generalized to service/app group resolution).
+func repoVariableContext(fs afero.Fs, root string, config WorkspaceConfig, kind, appName, repoName string) (VariableContext, error) {
+	envValues, err := LoadEnvFile(fs, root, discardWriter{})
+	if err != nil {
+		return VariableContext{}, err
+	}
+	env := map[string]string{}
+	for _, kv := range os.Environ() {
+		if eq := strings.IndexByte(kv, '='); eq > 0 {
+			env[kv[:eq]] = kv[eq+1:]
+		}
+	}
+	for k, v := range envValues {
+		env[k] = v
+	}
+	repoVars, err := BuildRepoVariables(config, kind, appName, repoName)
+	if err != nil {
+		return VariableContext{}, err
+	}
+	return VariableContext{
+		Env:   env,
+		Var:   LoadWorkspaceVariables(config),
+		Ocean: map[string]string{},
+		Repo:  repoVars,
+	}, nil
+}
+
+// resolveRepoTask reads a repo's config and resolves a lifecycle task through the
+// group-override machinery, so services and apps honor --group exactly as projects do.
+func resolveRepoTask(fs afero.Fs, root string, config WorkspaceConfig, repoPath, kind, appName, repoName, task string, selection models.GroupSelection) (models.ResolvedCommand, error) {
+	repoConfig, err := ReadRepoConfig(fs, repoPath)
+	if err != nil {
+		return models.ResolvedCommand{}, err
+	}
+	groups, err := ValidateOverrides(repoConfig)
+	if err != nil {
+		return models.ResolvedCommand{}, err
+	}
+	ctx, err := repoVariableContext(fs, root, config, kind, appName, repoName)
+	if err != nil {
+		return models.ResolvedCommand{}, err
+	}
+	return ResolveGroupCommand(task, selection, repoConfig, groups, ctx)
+}
 
 func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, appName string, serviceName string, skipCheck bool) error {
 	serviceNode, err := MakeServiceNode(config, appName, serviceName)
@@ -42,7 +90,7 @@ func PreflightService(cmd *cobra.Command, fs afero.Fs, root string, config Works
 	return nil
 }
 
-func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string, skipCheck bool) error {
+func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string, skipCheck bool, selection models.GroupSelection) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -59,17 +107,22 @@ func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName str
 	}
 
 	servicePath := filepath.Join(root, "repos", "apps", resolvedApp, "services", resolvedSvc)
-	runTask, err := ReadRepoCommand(fs, servicePath, "run")
+	resolved, err := resolveRepoTask(fs, root, config, servicePath, tokens.RepoKindService, resolvedApp, resolvedSvc, "run", selection)
 	if err != nil {
 		return err
 	}
+	runTask := resolved.Command
 	if strings.TrimSpace(runTask) == "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "run skipped for service %s/%s: no run task\n", resolvedApp, resolvedSvc)
 		return nil
 	}
 
-	if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc, skipCheck); err != nil {
-		return err
+	// A --group run is a distinct lifecycle mode (e.g. `test` stands up ephemeral deps);
+	// it runs the group command directly, skipping the service's build/check/contain preflight.
+	if selection.IsBase {
+		if err := PreflightService(cmd, fs, root, config, resolvedApp, resolvedSvc, skipCheck); err != nil {
+			return err
+		}
 	}
 
 	envFile, err := LoadEnvFile(fs, root, cmd.OutOrStdout())
@@ -86,7 +139,7 @@ func RunService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName str
 	return execCmd.Run()
 }
 
-func RunApp(cmd *cobra.Command, fs afero.Fs, appName string, skipCheck bool) error {
+func RunApp(cmd *cobra.Command, fs afero.Fs, appName string, skipCheck bool, selection models.GroupSelection) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -103,18 +156,23 @@ func RunApp(cmd *cobra.Command, fs afero.Fs, appName string, skipCheck bool) err
 	}
 
 	appPath := filepath.Join(root, "repos", "apps", appName)
-	runTask, err := ReadRepoCommand(fs, appPath, "run")
+	resolved, err := resolveRepoTask(fs, root, config, appPath, tokens.RepoKindApp, appName, appName, "run", selection)
 	if err != nil {
 		return err
 	}
+	runTask := resolved.Command
 	if strings.TrimSpace(runTask) == "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "run skipped for app %s: no run task\n", appName)
 		return nil
 	}
 
-	for _, svc := range config.Apps[appIdx].Services {
-		if err := PreflightService(cmd, fs, root, config, appName, svc.Name, skipCheck); err != nil {
-			return err
+	// A --group run is a distinct lifecycle mode; it runs the group command directly,
+	// skipping the per-service build/check/contain preflight.
+	if selection.IsBase {
+		for _, svc := range config.Apps[appIdx].Services {
+			if err := PreflightService(cmd, fs, root, config, appName, svc.Name, skipCheck); err != nil {
+				return err
+			}
 		}
 	}
 

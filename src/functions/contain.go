@@ -86,8 +86,14 @@ func ReadOceanIncludePaths(fs afero.Fs, root string) ([]string, bool) {
 // workspace root. Returns the staging root path. This generic form backs both
 // StageServiceBuildContext and ContainProject.
 func StageBuildContextForNode(fs afero.Fs, root string, config WorkspaceConfig, node Node, out io.Writer) (string, error) {
-	stagingPath := filepath.Join(root, ".ocean", "stage")
+	return StageBuildContextForNodeAt(fs, root, config, node, filepath.Join(root, ".ocean", "stage"), out)
+}
 
+// StageBuildContextForNodeAt is StageBuildContextForNode with an explicit staging
+// destination, so the no-publish dev contain path (D6) can stage a service into its
+// app's jobs/ folder as a persistent compose build context instead of the transient
+// .ocean/stage.
+func StageBuildContextForNodeAt(fs afero.Fs, root string, config WorkspaceConfig, node Node, stagingPath string, out io.Writer) (string, error) {
 	if err := fs.RemoveAll(stagingPath); err != nil {
 		return "", fmt.Errorf("failed to clear staging directory: %w", err)
 	}
@@ -339,6 +345,48 @@ func ContainService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName
 	}
 	key := ServiceKey(resolvedApp, resolvedSvc)
 	return SetManifestContainHash(fs, root, key, newHash)
+}
+
+// ContainServiceDev stages a service and its transitive workspace deps into the
+// app's jobs/.stage/<service>/ folder as a self-contained compose build context and
+// stops — it runs no `docker build`/`docker push` and never removes the staged tree.
+// This is the no-publish dev contain mode (D6): the ephemeral-deps stack's
+// docker-compose.<service>.yml builds and runs the service itself from this context,
+// on dusk_dev_net, so a Nuclei runner can attack it as a real in-stack external.
+func ContainServiceDev(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
+	root, err := EnsureWorkspaceRoot(fs)
+	if err != nil {
+		return err
+	}
+
+	config, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+
+	resolvedApp, resolvedSvc, err := ResolveContainTarget(config, appName, serviceName)
+	if err != nil {
+		return err
+	}
+
+	serviceNode, err := MakeServiceNode(config, resolvedApp, resolvedSvc)
+	if err != nil {
+		return err
+	}
+
+	stagingPath := filepath.Join(root, "repos", "apps", resolvedApp, "jobs", ".stage", resolvedSvc)
+	if _, err := StageBuildContextForNodeAt(fs, root, config, serviceNode, stagingPath, cmd.OutOrStdout()); err != nil {
+		return err
+	}
+
+	rel, relErr := filepath.Rel(filepath.Join(root, "repos", "apps", resolvedApp, "jobs"), stagingPath)
+	if relErr != nil {
+		rel = stagingPath
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"staged %s/%s build context at %s (no-publish); compose build.context: ./%s\n",
+		resolvedApp, resolvedSvc, stagingPath, filepath.ToSlash(rel))
+	return nil
 }
 
 // resolveProjectContainerFilePath returns the absolute path to the project

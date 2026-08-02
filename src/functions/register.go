@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/afero"
 )
 
+// RegisterRepo records an existing on-disk repo in workspace config, discovering an app's nested sub-repos as well, and reports where it landed.
 func RegisterRepo(fs afero.Fs, out io.Writer, kind string, name string, app string, remote string, templateKind string) error {
 	if err := ValidateRepoKindFlags(kind, app); err != nil {
 		return err
@@ -74,10 +75,18 @@ func RegisterRepo(fs afero.Fs, out io.Writer, kind string, name string, app stri
 	return nil
 }
 
+// IsRegisteredInWorkspace reports whether workspace config already carries an entry for the given repo kind, name, and optional parent app.
 func IsRegisteredInWorkspace(config WorkspaceConfig, kind string, name string, app string) bool {
 	switch kind {
 	case tokens.RepoKindProject:
-		return FindProjectIndex(config, name) != -1
+		if app == "" {
+			return FindProjectIndex(config, name) != -1
+		}
+		appIdx := FindAppIndex(config, app)
+		if appIdx == -1 {
+			return false
+		}
+		return FindAppProjectIndex(config.Apps[appIdx], name) != -1
 	case tokens.RepoKindLibrary:
 		if app == "" {
 			return FindGlobalLibraryIndex(config, name) != -1
@@ -105,11 +114,18 @@ func IsRegisteredInWorkspace(config WorkspaceConfig, kind string, name string, a
 	return false
 }
 
+// registerEntryInWorkspace appends the workspace-config entry for one repo kind and records its remote.
 func registerEntryInWorkspace(fs afero.Fs, kind string, name string, app string, remote string, templateKind string) error {
 	switch kind {
 	case tokens.RepoKindProject:
-		if err := AddProjectToWorkspace(fs, name); err != nil {
-			return err
+		if app == "" {
+			if err := AddProjectToWorkspace(fs, name); err != nil {
+				return err
+			}
+		} else {
+			if err := AddAppProjectToWorkspace(fs, app, name); err != nil {
+				return err
+			}
 		}
 	case tokens.RepoKindLibrary:
 		if app == "" {
@@ -156,14 +172,27 @@ func registerEntryInWorkspace(fs afero.Fs, kind string, name string, app string,
 	})
 }
 
+// setRemoteOnRepo writes a remote onto the registered entry for one repo kind, no-op when the entry is absent.
 func setRemoteOnRepo(config *WorkspaceConfig, kind string, name string, app string, remote string) {
 	switch kind {
 	case tokens.RepoKindProject:
-		idx := FindProjectIndex(*config, name)
-		if idx == -1 {
+		if app == "" {
+			idx := FindProjectIndex(*config, name)
+			if idx == -1 {
+				return
+			}
+			config.Projects[idx].Remote = remote
 			return
 		}
-		config.Projects[idx].Remote = remote
+		appIdx := FindAppIndex(*config, app)
+		if appIdx == -1 {
+			return
+		}
+		projectIdx := FindAppProjectIndex(config.Apps[appIdx], name)
+		if projectIdx == -1 {
+			return
+		}
+		config.Apps[appIdx].Projects[projectIdx].Remote = remote
 	case tokens.RepoKindLibrary:
 		if app == "" {
 			idx := FindGlobalLibraryIndex(*config, name)

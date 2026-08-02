@@ -37,6 +37,7 @@ type WorkspaceApp struct {
 	Variables map[string]string  `json:"variables,omitempty"`
 	Services  []WorkspaceService `json:"services"`
 	Libraries []WorkspaceLibrary `json:"libraries"`
+	Projects  []WorkspaceProject `json:"projects"`
 	Testing   []WorkspaceTest    `json:"testing"`
 }
 
@@ -137,13 +138,14 @@ type RepoConfig struct {
 type TargetKind string
 
 const (
-	TargetApp       TargetKind = tokens.TargetAppKind
-	TargetService   TargetKind = tokens.TargetServiceKind
-	TargetAppLib    TargetKind = tokens.TargetAppLibKind
-	TargetGlobalLib TargetKind = tokens.TargetGlobalLibKind
-	TargetProject   TargetKind = tokens.TargetProjectKind
-	TargetTest      TargetKind = tokens.TargetTestKind
-	TargetTemplate  TargetKind = tokens.TargetTemplateKind
+	TargetApp        TargetKind = tokens.TargetAppKind
+	TargetService    TargetKind = tokens.TargetServiceKind
+	TargetAppLib     TargetKind = tokens.TargetAppLibKind
+	TargetGlobalLib  TargetKind = tokens.TargetGlobalLibKind
+	TargetProject    TargetKind = tokens.TargetProjectKind
+	TargetAppProject TargetKind = tokens.TargetAppProjectKind
+	TargetTest       TargetKind = tokens.TargetTestKind
+	TargetTemplate   TargetKind = tokens.TargetTemplateKind
 )
 
 type Target struct {

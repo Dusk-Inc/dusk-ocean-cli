@@ -17,18 +17,145 @@ import (
 
 var addAppCmd = &cobra.Command{
 	Use:   "app",
-	Short: "Add an app to repos/apps",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := cmd.Flags().GetString("name")
+	Short: "Add an app to repos/apps from an app template",
+}
+
+/*
+runAddApp scaffolds an app from a required app template, then registers and sets
+up every nested unit the template shipped. Flags are read from addAppCmd rather
+than the passed command so the menu's create path, which delegates with its own
+command, still sees them.
+*/
+func runAddApp(cmd *cobra.Command, args []string) error {
+	fs := afero.NewOsFs()
+
+	name, err := addAppCmd.Flags().GetString("name")
+	if err != nil {
+		return err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		namePrompt := promptui.Prompt{
+			Label: "App name",
+			Validate: func(input string) error {
+				return validateEntityName("app", input)
+			},
+		}
+		entered, err := namePrompt.Run()
 		if err != nil {
 			return err
 		}
-		fs := afero.NewOsFs()
-		if err := functions.AddApp(fs, name); err != nil {
+		name = strings.TrimSpace(entered)
+	} else if err := validateEntityName("app", name); err != nil {
+		return err
+	}
+
+	templateItems, err := functions.ListTemplatesByType(tokens.TemplateKindApp)
+	if err != nil {
+		return err
+	}
+	if len(templateItems) == 0 {
+		return fmt.Errorf("no app templates found")
+	}
+
+	templateFlag, err := addAppCmd.Flags().GetString("template")
+	if err != nil {
+		return err
+	}
+	templateName, resolved, err := resolveTemplateChoice(templateItems, templateFlag)
+	if err != nil {
+		return err
+	}
+	if !resolved {
+		templatePrompt := promptui.Select{
+			Label: "Select template",
+			Items: templateItems,
+		}
+		_, templateName, err = templatePrompt.Run()
+		if err != nil {
 			return err
 		}
-		return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindApp, name, "")
-	},
+	}
+
+	templatePath := filepath.Join("repos", "templates", templateName)
+	placeholders, err := collectPlaceholders(fs, templatePath)
+	if err != nil {
+		return err
+	}
+	replacements := map[string]string{"app_name": name}
+	missing := make([]string, 0, len(placeholders))
+	for _, placeholder := range placeholders {
+		if _, ok := replacements[placeholder]; ok {
+			continue
+		}
+		missing = append(missing, placeholder)
+	}
+	prompted, err := promptPlaceholderValues(missing)
+	if err != nil {
+		return err
+	}
+	for key, value := range prompted {
+		replacements[key] = value
+	}
+
+	root, err := functions.GetRoot()
+	if err != nil {
+		return err
+	}
+	workspaceConfig, err := functions.ReadWorkspaceConfig(fs)
+	if err != nil {
+		return err
+	}
+	if err := functions.ValidateAppTemplateDeps(workspaceConfig, templateName); err != nil {
+		return err
+	}
+
+	if err := functions.AddApp(fs, name, templateName, replacements); err != nil {
+		return err
+	}
+	if err := functions.RegisterDiscoveredAppSubRepos(fs, cmd.OutOrStdout(), name); err != nil {
+		return err
+	}
+	if err := functions.RunAppSetupTasks(fs, root, name, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+	return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindApp, name, "")
+}
+
+// validateEntityName rejects an empty name, embedded whitespace, and any character outside letters, digits, dashes, and underscores.
+func validateEntityName(kind string, input string) error {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return fmt.Errorf("%s name is required", kind)
+	}
+	if strings.ContainsAny(value, " \t\n") {
+		return fmt.Errorf("%s name cannot include spaces", kind)
+	}
+	for _, ch := range value {
+		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+			return fmt.Errorf("%s name must only use letters, numbers, dashes, and underscores", kind)
+		}
+	}
+	return nil
+}
+
+/*
+resolveTemplateChoice validates a --template flag against the available set,
+returning the chosen name and whether the flag supplied one. An empty flag
+leaves the choice to the caller's prompt; an unknown value is an error naming
+what is available.
+*/
+func resolveTemplateChoice(available []string, flag string) (string, bool, error) {
+	value := strings.TrimSpace(flag)
+	if value == "" {
+		return "", false, nil
+	}
+	for _, name := range available {
+		if name == value {
+			return value, true, nil
+		}
+	}
+	return "", false, fmt.Errorf("unknown template: %s (available: %s)", value, strings.Join(available, ", "))
 }
 
 var addServiceCmd = &cobra.Command{
@@ -326,10 +453,40 @@ var addLibCmd = &cobra.Command{
 
 var addPkgCmd = &cobra.Command{
 	Use:   "project",
-	Short: "Add a project to repos/projects",
+	Short: "Add a project to repos/projects or to an app",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// REQ 19.6.1: project scaffolds may seed from service, library, or
-		// project templates — apps remain non-template-able.
+		locationPrompt := promptui.Select{
+			Label: "Add project to",
+			Items: []string{"global", "app"},
+		}
+		_, location, err := locationPrompt.Run()
+		if err != nil {
+			return err
+		}
+
+		appName := ""
+		if location == "app" {
+			apps, err := functions.GetApps()
+			if err != nil {
+				return err
+			}
+			if len(apps) == 0 {
+				return fmt.Errorf("no apps found")
+			}
+			appItems := make([]string, 0, len(apps))
+			for _, app := range apps {
+				appItems = append(appItems, app.Name)
+			}
+			appPrompt := promptui.Select{
+				Label: "Select app",
+				Items: appItems,
+			}
+			_, appName, err = appPrompt.Run()
+			if err != nil {
+				return err
+			}
+		}
+
 		templateItems, err := functions.ListTemplatesByType(
 			tokens.TemplateKindService,
 			tokens.TemplateKindLibrary,
@@ -345,19 +502,7 @@ var addPkgCmd = &cobra.Command{
 		namePrompt := promptui.Prompt{
 			Label: "Project name",
 			Validate: func(input string) error {
-				value := strings.TrimSpace(input)
-				if value == "" {
-					return fmt.Errorf("project name is required")
-				}
-				if strings.ContainsAny(value, " \t\n") {
-					return fmt.Errorf("project name cannot include spaces")
-				}
-				for _, ch := range value {
-					if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && ch != '-' && ch != '_' {
-						return fmt.Errorf("project name must only use letters, dashes, and underscores")
-					}
-				}
-				return nil
+				return validateEntityName("project", input)
 			},
 		}
 		projectName, err := namePrompt.Run()
@@ -368,6 +513,9 @@ var addPkgCmd = &cobra.Command{
 
 		fs := afero.NewOsFs()
 		destPath := filepath.Join("repos", "projects", projectName)
+		if location == "app" {
+			destPath = filepath.Join("repos", "apps", appName, "projects", projectName)
+		}
 		if _, err := fs.Stat(destPath); err == nil {
 			return fmt.Errorf("project already exists: %s", projectName)
 		} else if !os.IsNotExist(err) {
@@ -391,6 +539,15 @@ var addPkgCmd = &cobra.Command{
 			return err
 		}
 
+		placeholders, err := collectPlaceholders(fs, templatePath)
+		if err != nil {
+			return err
+		}
+		replacements, err := promptPlaceholderValues(placeholders)
+		if err != nil {
+			return err
+		}
+
 		root, err := functions.GetRoot()
 		if err != nil {
 			return err
@@ -404,18 +561,40 @@ var addPkgCmd = &cobra.Command{
 			Name: projectName,
 			Path: filepath.Join(root, "repos", "projects", projectName),
 		}
+		if location == "app" {
+			hypothetical = functions.Target{
+				Kind: functions.TargetAppProject,
+				App:  appName,
+				Name: projectName,
+				Path: filepath.Join(root, "repos", "apps", appName, "projects", projectName),
+			}
+		}
 		if err := functions.ValidateTemplateDepsForTarget(root, workspaceConfig, templateName, hypothetical); err != nil {
 			return err
 		}
 
-		if err := functions.CopyTemplate(fs, templatePath, destPath, nil); err != nil {
+		if err := functions.CopyTemplate(fs, templatePath, destPath, replacements); err != nil {
 			return err
 		}
-		if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
+		if err := functions.RunSetupTask(fs, destPath, root, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
+
+		if location == "app" {
+			if err := functions.AddAppProjectToWorkspace(fs, appName, projectName); err != nil {
+				return err
+			}
+		} else {
+			if err := functions.AddProjectToWorkspace(fs, projectName); err != nil {
+				return err
+			}
+		}
+
 		if err := functions.PropagateTemplateDeps(cmd, fs, templateName, hypothetical); err != nil {
 			return err
+		}
+		if location == "app" {
+			return nil
 		}
 		return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.RepoKindProject, projectName, "")
 	},
@@ -570,6 +749,7 @@ var addDocsCmd = &cobra.Command{
 	},
 }
 
+// runAddNonCodeRepo prompts for a name and optional template, then scaffolds an infra or docs repo and wires its git remote.
 func runAddNonCodeRepo(cmd *cobra.Command, kind string) error {
 	fs := afero.NewOsFs()
 
@@ -649,12 +829,16 @@ func runAddNonCodeRepo(cmd *cobra.Command, kind string) error {
 	return functions.WireNewRepoVcs(fs, cmd.OutOrStdout(), cmd.ErrOrStderr(), kind, name, "")
 }
 
+// init registers the add subcommands' flags and handlers.
 func init() {
+	addAppCmd.RunE = runAddApp
 	addAppCmd.Flags().String("name", "", "Name of the app")
+	addAppCmd.Flags().String("template", "", "App template to scaffold from")
 }
 
 var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
 
+// collectPlaceholders walks a template tree and returns every distinct placeholder token its paths and file contents reference, honouring the workspace ignore rules.
 func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 	placeholders := map[string]struct{}{}
 	workspaceRoot, _ := functions.GetRoot()
@@ -706,6 +890,7 @@ func collectPlaceholders(fs afero.Fs, root string) ([]string, error) {
 
 const reservedPlaceholderPrefix = tokens.VarNsOcean + ":"
 
+// addPlaceholders collects the placeholder tokens in one string, skipping the reserved ocean-namespaced ones that survive to runtime.
 func addPlaceholders(value string, placeholders map[string]struct{}) {
 	matches := placeholderPattern.FindAllStringSubmatch(value, -1)
 	for _, match := range matches {
@@ -724,6 +909,7 @@ func addPlaceholders(value string, placeholders map[string]struct{}) {
 	}
 }
 
+// promptForContainerFile asks how a new service's container file should be assigned: an existing file, a custom path, or none.
 func promptForContainerFile(root string) (string, error) {
 	containerOptionExisting := "existing"
 	containerOptionCustom := "custom"
@@ -789,6 +975,7 @@ func promptForContainerFile(root string) (string, error) {
 	return "", nil
 }
 
+// promptPlaceholderValues asks the user for a value for each placeholder a template declares.
 func promptPlaceholderValues(placeholders []string) (map[string]string, error) {
 	values := map[string]string{}
 	for _, placeholder := range placeholders {

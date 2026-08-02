@@ -14,18 +14,22 @@ import (
 	"github.com/spf13/afero"
 )
 
+// CopyDir copies a directory tree verbatim, applying no placeholder substitution.
 func CopyDir(fs afero.Fs, src string, dst string) error {
 	return CopyDirWithReplacements(fs, src, dst, nil)
 }
 
-// CopyTemplate copies a scaffold template from src to dst, applying the
-// workspace's .oceanignore rules so directories like .git, node_modules, and
-// build artifacts don't propagate from a template into a newly scaffolded
-// entity. Use this for any `add` command that seeds from repos/templates/.
+/*
+CopyTemplate copies a scaffold template from src to dst, applying the
+workspace's .oceanignore rules so directories like .git, node_modules, and
+build artifacts don't propagate from a template into a newly scaffolded
+entity. Use this for any `add` command that seeds from repos/templates/.
+*/
 func CopyTemplate(fs afero.Fs, src string, dst string, replacements map[string]string) error {
 	return CopyDirWithReplacements(fs, src, dst, replacements)
 }
 
+// CopyDirWithReplacements copies a directory tree, honouring the workspace ignore rules and substituting placeholders in both path segments and file contents.
 func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements map[string]string) error {
 	workspaceRoot, _ := GetRoot()
 	var ignorePatterns []string
@@ -92,57 +96,115 @@ func CopyDirWithReplacements(fs afero.Fs, src string, dst string, replacements m
 	})
 }
 
-var appSubdirs = []string{"services", "libs", "jobs", "docs", "testing"}
+var appSubdirs = []string{
+	tokens.AppSubDirServices,
+	tokens.AppSubDirLibs,
+	tokens.AppSubDirProjects,
+	tokens.AppSubDirJobsDocker,
+	tokens.AppSubDirJobsMigration,
+	tokens.AppSubDirJobsScripts,
+	tokens.AppSubDirTesting,
+}
 
-func AddApp(fs afero.Fs, name string) error {
+/*
+AddApp scaffolds repos/apps/<name> from a composite app template, backfills any
+canonical subdirectory the template omitted, and registers the app in workspace
+config. A template is required: unlike a service or a non-code repo, an app has
+no boilerplate form.
+*/
+func AddApp(fs afero.Fs, name string, template string, replacements map[string]string) error {
 	if name == "" {
 		return fmt.Errorf("--name is required")
 	}
+	if strings.TrimSpace(template) == "" {
+		return fmt.Errorf("--template is required: apps scaffold from an app template")
+	}
 
-	appPath := filepath.Join("repos", "apps", name)
+	appPath := filepath.Join("repos", tokens.RepoDirApps, name)
 	if _, err := fs.Stat(appPath); err == nil {
 		return fmt.Errorf("app already exists: %s", name)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
 
-	if err := fs.MkdirAll(appPath, 0o755); err != nil {
+	templatePath := filepath.Join("repos", tokens.RepoDirTemplates, template)
+	if _, err := fs.Stat(templatePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing template: %s", template)
+		}
 		return err
-	}
-	for _, sub := range appSubdirs {
-		subPath := filepath.Join(appPath, sub)
-		if err := fs.MkdirAll(subPath, 0o755); err != nil {
-			return err
-		}
-		if err := afero.WriteFile(fs, filepath.Join(subPath, ".gitkeep"), nil, 0o644); err != nil {
-			return err
-		}
 	}
 
-	appConfig := struct {
-		Name     string `json:"name"`
-		Language string `json:"language"`
-		Type     string `json:"type"`
-		Tasks    struct {
-			Run string `json:"run"`
-		} `json:"tasks"`
-	}{
-		Name:     name,
-		Language: "",
-		Type:     "app",
-	}
-	payload, err := json.MarshalIndent(appConfig, "", "    ")
-	if err != nil {
+	if err := CopyTemplate(fs, templatePath, appPath, replacements); err != nil {
 		return err
 	}
-	payload = append(payload, '\n')
-	if err := afero.WriteFile(fs, filepath.Join(appPath, "ocean.config.json"), payload, 0o644); err != nil {
+
+	if err := backfillAppSubdirs(fs, appPath); err != nil {
 		return err
+	}
+
+	configPath := filepath.Join(appPath, "ocean.config.json")
+	if _, err := fs.Stat(configPath); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := WriteStarterRepoConfig(fs, appPath, name, tokens.RepoKindApp); err != nil {
+			return err
+		}
 	}
 
 	return addAppToWorkspace(fs, name)
 }
 
+/*
+backfillAppSubdirs creates each canonical app subdirectory the template did not
+ship, marking only the ones left empty with a .gitkeep so a populated directory
+is never polluted.
+*/
+func backfillAppSubdirs(fs afero.Fs, appPath string) error {
+	for _, sub := range appSubdirs {
+		subPath := filepath.Join(appPath, filepath.FromSlash(sub))
+		if err := fs.MkdirAll(subPath, 0o755); err != nil {
+			return err
+		}
+		entries, err := afero.ReadDir(fs, subPath)
+		if err != nil {
+			return err
+		}
+		if len(entries) > 0 {
+			continue
+		}
+		if err := afero.WriteFile(fs, filepath.Join(subPath, ".gitkeep"), nil, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+/*
+RunAppSetupTasks runs the setup task for an app and for every nested unit its
+template shipped, in discovery order, so a composite scaffold finishes with each
+unit's toolchain initialized. It aborts on the first failure rather than leaving
+a half-initialized tree behind.
+*/
+func RunAppSetupTasks(fs afero.Fs, root string, appName string, stdout io.Writer, stderr io.Writer) error {
+	appPath := filepath.Join("repos", tokens.RepoDirApps, appName)
+	if err := RunSetupTask(fs, appPath, root, stdout, stderr); err != nil {
+		return err
+	}
+	discovered, err := DiscoverAppSubRepos(fs, appName)
+	if err != nil {
+		return err
+	}
+	for _, sub := range discovered {
+		if err := RunSetupTask(fs, sub.Path, root, stdout, stderr); err != nil {
+			return fmt.Errorf("setup failed for %s %s/%s: %w", sub.Kind, appName, sub.Name, err)
+		}
+	}
+	return nil
+}
+
+// AddService scaffolds a service under an app, seeding from a template when one is given and registering it with the next free port.
 func AddService(fs afero.Fs, appName string, serviceName string, template string, dockerfile string, containerFile string, replacements map[string]string) error {
 	appPath := filepath.Join("repos", "apps", appName)
 	if _, err := fs.Stat(appPath); err != nil {
@@ -210,6 +272,7 @@ func AddService(fs afero.Fs, appName string, serviceName string, template string
 
 var placeholderPattern = regexp.MustCompile(`{{\s*([^{}]+?)\s*}}`)
 
+// replacePlaceholders substitutes every known placeholder token in a string, leaving unknown ones untouched.
 func replacePlaceholders(value string, replacements map[string]string) string {
 	if len(replacements) == 0 {
 		return value
@@ -228,22 +291,27 @@ func replacePlaceholders(value string, replacements map[string]string) string {
 	})
 }
 
+// AddInfra scaffolds an infrastructure repo, seeding from a template when one is given.
 func AddInfra(fs afero.Fs, name string, template string, replacements map[string]string) error {
 	return addNonCodeRepo(fs, tokens.RepoKindInfra, name, template, replacements, AddInfraToWorkspace)
 }
 
+// AddDocs scaffolds a docs repo, seeding from a template when one is given.
 func AddDocs(fs afero.Fs, name string, template string, replacements map[string]string) error {
 	return addNonCodeRepo(fs, tokens.RepoKindDocs, name, template, replacements, AddDocsToWorkspace)
 }
 
+// RemoveInfra deletes an infrastructure repo and unregisters it.
 func RemoveInfra(fs afero.Fs, name string) error {
 	return removeNonCodeRepo(fs, tokens.RepoKindInfra, name, RemoveInfraFromWorkspace)
 }
 
+// RemoveDocs deletes a docs repo and unregisters it.
 func RemoveDocs(fs afero.Fs, name string) error {
 	return removeNonCodeRepo(fs, tokens.RepoKindDocs, name, RemoveDocsFromWorkspace)
 }
 
+// addNonCodeRepo scaffolds an infra or docs repo, writing a starter config when the template shipped none, then registers it.
 func addNonCodeRepo(fs afero.Fs, kind string, name string, template string, replacements map[string]string, register func(afero.Fs, string) error) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("--name is required")
@@ -291,6 +359,7 @@ func addNonCodeRepo(fs afero.Fs, kind string, name string, template string, repl
 	return register(fs, name)
 }
 
+// removeNonCodeRepo deletes an infra or docs repo directory and unregisters it.
 func removeNonCodeRepo(fs afero.Fs, kind string, name string, unregister func(afero.Fs, string) error) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("--name is required")
@@ -312,6 +381,7 @@ func removeNonCodeRepo(fs afero.Fs, kind string, name string, unregister func(af
 	return unregister(fs, name)
 }
 
+// RemoveApp deletes an app directory and unregisters it along with everything nested inside.
 func RemoveApp(fs afero.Fs, name string) error {
 	if name == "" {
 		return fmt.Errorf("--name is required")
@@ -331,6 +401,7 @@ func RemoveApp(fs afero.Fs, name string) error {
 	return removeAppFromWorkspace(fs, name)
 }
 
+// registerService records a new service in workspace config with the next free port and the default image name.
 func registerService(fs afero.Fs, appName string, serviceName string, dockerfile string, containerFile string) error {
 	port, err := NextServicePort(fs, appName)
 	if err != nil {
@@ -340,6 +411,7 @@ func registerService(fs afero.Fs, appName string, serviceName string, dockerfile
 	return AddServiceToWorkspace(fs, appName, serviceName, port, image, dockerfile, containerFile)
 }
 
+// addAppToWorkspace records a new app in workspace config with empty unit lists, no-op when it is already present.
 func addAppToWorkspace(fs afero.Fs, name string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -357,6 +429,7 @@ func addAppToWorkspace(fs afero.Fs, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
+// RunSetupTask runs a repo's setup task if it declares one, no-op when the repo has no config or no such task.
 func RunSetupTask(fs afero.Fs, repoPath string, root string, stdout io.Writer, stderr io.Writer) error {
 	config, err := ReadRepoConfig(fs, repoPath)
 	if err != nil {
@@ -373,6 +446,7 @@ func RunSetupTask(fs afero.Fs, repoPath string, root string, stdout io.Writer, s
 	return cmd.Run()
 }
 
+// removeAppFromWorkspace drops an app's entry from workspace config.
 func removeAppFromWorkspace(fs afero.Fs, name string) error {
 	if _, err := fs.Stat("ocean.workspace.json"); err != nil {
 		if os.IsNotExist(err) {

@@ -17,6 +17,7 @@ func TestResolveRepoPath(t *testing.T) {
 		err  bool
 	}{
 		{"project", tokens.RepoKindProject, "tooling", "", "repos/projects/tooling", false},
+		{"app-scoped project", tokens.RepoKindProject, "cli", "app-a", "repos/apps/app-a/projects/cli", false},
 		{"global library", tokens.RepoKindLibrary, "lib-a", "", "repos/libs/lib-a", false},
 		{"app-scoped library", tokens.RepoKindLibrary, "lib-a", "app-a", "repos/apps/app-a/libs/lib-a", false},
 		{"app", tokens.RepoKindApp, "app-a", "", "repos/apps/app-a", false},
@@ -53,12 +54,12 @@ func TestValidateRepoKindFlags(t *testing.T) {
 		app  string
 		err  string
 	}{
-		{"project no app ok", tokens.RepoKindProject, "", ""},
-		{"project with app errors", tokens.RepoKindProject, "app-a", "must not be set"},
 		{"app no app ok", tokens.RepoKindApp, "", ""},
 		{"app with app errors", tokens.RepoKindApp, "app-a", "must not be set"},
 		{"library no app ok", tokens.RepoKindLibrary, "", ""},
 		{"library with app ok", tokens.RepoKindLibrary, "app-a", ""},
+		{"project no app ok", tokens.RepoKindProject, "", ""},
+		{"project with app ok", tokens.RepoKindProject, "app-a", ""},
 		{"service with app ok", tokens.RepoKindService, "app-a", ""},
 		{"service no app errors", tokens.RepoKindService, "", "is required"},
 		{"infra no app ok", tokens.RepoKindInfra, "", ""},

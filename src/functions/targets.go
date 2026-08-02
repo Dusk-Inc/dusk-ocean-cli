@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// FormatTargetLabel renders a target as the human-readable label commands print.
 func FormatTargetLabel(target Target) string {
 	switch target.Kind {
 	case TargetService:
@@ -14,6 +15,8 @@ func FormatTargetLabel(target Target) string {
 		return fmt.Sprintf("global library %s", target.Name)
 	case TargetProject:
 		return fmt.Sprintf("project %s", target.Name)
+	case TargetAppProject:
+		return fmt.Sprintf("app project %s/%s", target.App, target.Name)
 	case TargetTest:
 		return fmt.Sprintf("test %s/%s", target.App, target.Name)
 	case TargetTemplate:

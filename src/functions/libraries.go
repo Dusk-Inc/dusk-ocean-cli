@@ -7,11 +7,13 @@ import (
 	"github.com/spf13/afero"
 )
 
+// FindGlobalLib reports the detected language of a global library repo.
 func FindGlobalLib(fs afero.Fs, root string, name string) (bool, string, error) {
 	libPath := filepath.Join(root, "repos", "libs", name)
 	return FindRepoLanguage(fs, libPath)
 }
 
+// MakeAppLibNode builds the dependency-graph node for a registered app-scoped library.
 func MakeAppLibNode(config WorkspaceConfig, appName string, name string) (Node, error) {
 	lib, ok := FindAppLibraryByName(config, appName, name)
 	if !ok {
@@ -25,6 +27,7 @@ func MakeAppLibNode(config WorkspaceConfig, appName string, name string) (Node, 
 	}, nil
 }
 
+// MakeGlobalLibNode builds the dependency-graph node for a registered global library.
 func MakeGlobalLibNode(config WorkspaceConfig, name string) (Node, error) {
 	lib, ok, err := FindGlobalLibraryByName(config, name)
 	if err != nil {
@@ -40,6 +43,7 @@ func MakeGlobalLibNode(config WorkspaceConfig, name string) (Node, error) {
 	}, nil
 }
 
+// AddAppLibraryToWorkspace registers a library under an app, creating the app entry when absent.
 func AddAppLibraryToWorkspace(fs afero.Fs, appName string, name string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -70,6 +74,7 @@ func AddAppLibraryToWorkspace(fs afero.Fs, appName string, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
+// AddGlobalLibraryToWorkspace registers a global library, no-op when it is already present.
 func AddGlobalLibraryToWorkspace(fs afero.Fs, name string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -85,6 +90,7 @@ func AddGlobalLibraryToWorkspace(fs afero.Fs, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
+// RemoveAppLibraryFromWorkspace unregisters a library from its app, no-op when absent.
 func RemoveAppLibraryFromWorkspace(fs afero.Fs, appName string, name string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		appIndex := FindAppIndex(config, appName)
@@ -101,6 +107,7 @@ func RemoveAppLibraryFromWorkspace(fs afero.Fs, appName string, name string) err
 	})
 }
 
+// RemoveGlobalLibraryFromWorkspace unregisters a global library, no-op when absent.
 func RemoveGlobalLibraryFromWorkspace(fs afero.Fs, name string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		removed := false
@@ -120,6 +127,7 @@ func RemoveGlobalLibraryFromWorkspace(fs afero.Fs, name string) error {
 	})
 }
 
+// CollectLibraryDependents returns every registered target that declares a dependency on the named library from the given source.
 func CollectLibraryDependents(config WorkspaceConfig, root string, name string, source string) []Target {
 	var targets []Target
 	for _, app := range config.Apps {
@@ -140,6 +148,16 @@ func CollectLibraryDependents(config WorkspaceConfig, root string, name string, 
 					App:  app.Name,
 					Name: lib.Name,
 					Path: filepath.Join(root, "repos", "apps", app.Name, "libs", lib.Name),
+				})
+			}
+		}
+		for _, project := range app.Projects {
+			if hasLibraryDep(project.Deps, name, source) {
+				targets = append(targets, Target{
+					Kind: TargetAppProject,
+					App:  app.Name,
+					Name: project.Name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "projects", project.Name),
 				})
 			}
 		}
@@ -175,6 +193,7 @@ func CollectLibraryDependents(config WorkspaceConfig, root string, name string, 
 	return targets
 }
 
+// RemoveLibraryDeps strips the named library from every target's dependency list.
 func RemoveLibraryDeps(config WorkspaceConfig, name string, source string) WorkspaceConfig {
 	for appIndex := range config.Apps {
 		for serviceIndex := range config.Apps[appIndex].Services {
@@ -184,6 +203,10 @@ func RemoveLibraryDeps(config WorkspaceConfig, name string, source string) Works
 		for libIndex := range config.Apps[appIndex].Libraries {
 			depsList := config.Apps[appIndex].Libraries[libIndex].Deps
 			config.Apps[appIndex].Libraries[libIndex].Deps = filterLibraryDeps(depsList, name, source)
+		}
+		for projectIndex := range config.Apps[appIndex].Projects {
+			depsList := config.Apps[appIndex].Projects[projectIndex].Deps
+			config.Apps[appIndex].Projects[projectIndex].Deps = filterLibraryDeps(depsList, name, source)
 		}
 		for testIndex := range config.Apps[appIndex].Testing {
 			depsList := config.Apps[appIndex].Testing[testIndex].Deps
@@ -201,6 +224,7 @@ func RemoveLibraryDeps(config WorkspaceConfig, name string, source string) Works
 	return config
 }
 
+// RemoveAppLibraryFromConfig drops an app-scoped library's entry from a config value, returning the result.
 func RemoveAppLibraryFromConfig(config WorkspaceConfig, appName string, name string) WorkspaceConfig {
 	appIndex := FindAppIndex(config, appName)
 	if appIndex == -1 {
@@ -215,6 +239,7 @@ func RemoveAppLibraryFromConfig(config WorkspaceConfig, appName string, name str
 	return config
 }
 
+// RemoveGlobalLibraryFromConfig drops a global library's entry from a config value, returning the result.
 func RemoveGlobalLibraryFromConfig(config WorkspaceConfig, name string) WorkspaceConfig {
 	updated := make([]WorkspaceLibrary, 0, len(config.Libraries))
 	for _, lib := range config.Libraries {
@@ -227,6 +252,7 @@ func RemoveGlobalLibraryFromConfig(config WorkspaceConfig, name string) Workspac
 	return config
 }
 
+// hasLibraryDep reports whether a dependency list carries the named library from the given source.
 func hasLibraryDep(depsList []WorkspaceDep, name string, source string) bool {
 	for _, dep := range depsList {
 		if dep.Lib == name && dep.From == source {
@@ -236,6 +262,7 @@ func hasLibraryDep(depsList []WorkspaceDep, name string, source string) bool {
 	return false
 }
 
+// filterLibraryDeps returns the dependency list with the named library from the given source removed.
 func filterLibraryDeps(depsList []WorkspaceDep, name string, source string) []WorkspaceDep {
 	if len(depsList) == 0 {
 		return depsList

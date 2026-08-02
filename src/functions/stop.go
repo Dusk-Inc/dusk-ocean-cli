@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/models"
+	"github.com/dusk-inc/dusk-ocean/repos/projects/dusk-ocean/src/tokens"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func StopService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string) error {
+func StopService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName string, selection models.GroupSelection) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -27,7 +29,8 @@ func StopService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName st
 	}
 
 	servicePath := filepath.Join(root, "repos", "apps", resolvedApp, "services", resolvedSvc)
-	stopTask, err := ReadRepoCommand(fs, servicePath, "stop")
+	resolved, err := resolveRepoTask(fs, root, config, servicePath, tokens.RepoKindService, resolvedApp, resolvedSvc, "stop", selection)
+	stopTask := resolved.Command
 	if err != nil {
 		return err
 	}
@@ -50,7 +53,7 @@ func StopService(cmd *cobra.Command, fs afero.Fs, appName string, serviceName st
 	return execCmd.Run()
 }
 
-func StopApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
+func StopApp(cmd *cobra.Command, fs afero.Fs, appName string, selection models.GroupSelection) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
 		return err
@@ -66,7 +69,8 @@ func StopApp(cmd *cobra.Command, fs afero.Fs, appName string) error {
 	}
 
 	appPath := filepath.Join(root, "repos", "apps", appName)
-	stopTask, err := ReadRepoCommand(fs, appPath, "stop")
+	resolved, err := resolveRepoTask(fs, root, config, appPath, tokens.RepoKindApp, appName, appName, "stop", selection)
+	stopTask := resolved.Command
 	if err != nil {
 		return err
 	}

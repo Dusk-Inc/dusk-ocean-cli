@@ -22,6 +22,7 @@ type ManifestEntry struct {
 	Groups      map[string]models.CacheSlot `json:"groups,omitempty"`
 }
 
+// baseSlot returns the entry's cache slot for a run with no group override.
 func (e ManifestEntry) baseSlot() models.CacheSlot {
 	return models.CacheSlot{
 		BuildHash:   e.BuildHash,
@@ -31,6 +32,7 @@ func (e ManifestEntry) baseSlot() models.CacheSlot {
 	}
 }
 
+// applyBaseSlot returns the entry with its no-group cache slot replaced.
 func (e ManifestEntry) applyBaseSlot(slot models.CacheSlot) ManifestEntry {
 	e.BuildHash = slot.BuildHash
 	e.CheckHash = slot.CheckHash
@@ -39,6 +41,7 @@ func (e ManifestEntry) applyBaseSlot(slot models.CacheSlot) ManifestEntry {
 	return e
 }
 
+// slotFor returns the entry's cache slot for one group selection, and whether it exists.
 func (e ManifestEntry) slotFor(selection models.GroupSelection) (models.CacheSlot, bool) {
 	if selection.IsBase {
 		return e.baseSlot(), true
@@ -51,10 +54,12 @@ type Manifest struct {
 	Repos map[string]ManifestEntry `json:"repos"`
 }
 
+// ManifestPath returns the path to the workspace's hash manifest.
 func ManifestPath(root string) string {
 	return filepath.Join(root, ".ocean", "manifest.json")
 }
 
+// ReadManifest loads the hash manifest, returning an empty one when it is absent.
 func ReadManifest(fs afero.Fs, root string) (Manifest, error) {
 	path := ManifestPath(root)
 	data, err := afero.ReadFile(fs, path)
@@ -74,6 +79,7 @@ func ReadManifest(fs afero.Fs, root string) (Manifest, error) {
 	return m, nil
 }
 
+// WriteManifest persists the hash manifest to the workspace.
 func WriteManifest(fs afero.Fs, root string, m Manifest) error {
 	path := ManifestPath(root)
 	if err := fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -90,6 +96,7 @@ func WriteManifest(fs afero.Fs, root string, m Manifest) error {
 	return fs.Rename(tmpPath, path)
 }
 
+// HashAllRepos recomputes and records the tree hash of every registered repo.
 func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -106,6 +113,7 @@ func HashAllRepos(cmd *cobra.Command, fs afero.Fs, root string, config Workspace
 	return nil
 }
 
+// HashSingleRepo recomputes and records the tree hash of one named repo.
 func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, targetName string) error {
 	target, err := ResolveTargetByName(config, root, targetName)
 	if err != nil {
@@ -128,6 +136,7 @@ func HashSingleRepo(cmd *cobra.Command, fs afero.Fs, root string, config Workspa
 	return nil
 }
 
+// SetManifestBuildHash records a repo's build hash in the manifest.
 func SetManifestBuildHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.BuildHash = hash
@@ -135,6 +144,7 @@ func SetManifestBuildHash(fs afero.Fs, root string, key string, hash string) err
 	})
 }
 
+// SetManifestCheckHash records a repo's check hash in the manifest.
 func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.CheckHash = hash
@@ -142,6 +152,7 @@ func SetManifestCheckHash(fs afero.Fs, root string, key string, hash string) err
 	})
 }
 
+// SetManifestContainHash records a repo's contain hash in the manifest.
 func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.ContainHash = hash
@@ -149,6 +160,7 @@ func SetManifestContainHash(fs afero.Fs, root string, key string, hash string) e
 	})
 }
 
+// SetManifestPublishHash records a repo's publish hash in the manifest.
 func SetManifestPublishHash(fs afero.Fs, root string, key string, hash string) error {
 	return updateManifestEntry(fs, root, key, func(e ManifestEntry) ManifestEntry {
 		e.PublishHash = hash
@@ -156,6 +168,7 @@ func SetManifestPublishHash(fs afero.Fs, root string, key string, hash string) e
 	})
 }
 
+// ReadGroupCacheSlot returns the cache slot recorded for one repo, group, and task, and whether it is still fresh for the given hash.
 func ReadGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string) (bool, *models.CacheSlot, error) {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -175,6 +188,7 @@ func ReadGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection mode
 	return fresh, &slotCopy, nil
 }
 
+// WriteGroupCacheSlot records the cache slot for one repo, group, and task, marking whether the result may be reused.
 func WriteGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string, cacheable bool) (*models.CacheSlot, error) {
 	if !cacheable {
 		return nil, nil
@@ -203,10 +217,12 @@ func WriteGroupCacheSlot(fs afero.Fs, root string, repoKey string, selection mod
 	return written, nil
 }
 
+// RecordCacheSlot records a cacheable slot for one repo, group, and task.
 func RecordCacheSlot(fs afero.Fs, root string, repoKey string, selection models.GroupSelection, task string, resolvedHash string) (*models.CacheSlot, error) {
 	return WriteGroupCacheSlot(fs, root, repoKey, selection, task, resolvedHash, cacheableTask(task))
 }
 
+// EnsureManifestEntryForNode creates the manifest entry backing a dependency node when it is absent.
 func EnsureManifestEntryForNode(fs afero.Fs, root string, node Node) error {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -220,6 +236,7 @@ func EnsureManifestEntryForNode(fs afero.Fs, root string, node Node) error {
 	return WriteManifest(fs, root, m)
 }
 
+// ensureManifestEntry adds an empty entry for a node to a manifest value when it is absent.
 func ensureManifestEntry(node Node, m *Manifest) {
 	key := nodeKey(node)
 	if _, ok := m.Repos[key]; ok {
@@ -232,6 +249,7 @@ func ensureManifestEntry(node Node, m *Manifest) {
 	}
 }
 
+// updateManifestEntry applies a transformation to one manifest entry and persists the result.
 func updateManifestEntry(fs afero.Fs, root string, key string, fn func(ManifestEntry) ManifestEntry) error {
 	m, err := ReadManifest(fs, root)
 	if err != nil {
@@ -245,6 +263,7 @@ func updateManifestEntry(fs afero.Fs, root string, key string, fn func(ManifestE
 	return WriteManifest(fs, root, m)
 }
 
+// targetToNode converts a resolved target into the dependency-graph node backing it.
 func targetToNode(config WorkspaceConfig, target Target) (Node, error) {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -255,6 +274,8 @@ func targetToNode(config WorkspaceConfig, target Target) (Node, error) {
 		return MakeServiceNode(config, target.App, target.Name)
 	case TargetProject:
 		return MakeProjectNode(config, target.Name)
+	case TargetAppProject:
+		return MakeAppProjectNode(config, target.App, target.Name)
 	case TargetTest:
 		return MakeTestNode(config, target.App, target.Name)
 	default:

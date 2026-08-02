@@ -47,6 +47,13 @@ var containServiceCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		selection := groupSelection(cmd)
+		if !selection.IsBase {
+			// A non-base group (e.g. --group dev) is the no-publish dev contain
+			// mode: stage the service into jobs/ as a compose build context,
+			// never build/push. The stack builds it.
+			return functions.ContainServiceDev(cmd, afero.NewOsFs(), appName, name)
+		}
 		return functions.ContainService(cmd, afero.NewOsFs(), appName, name)
 	},
 }

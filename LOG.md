@@ -1,5 +1,28 @@
 # dusk-ocean-cli LOG
 
+## Extended `--group` overrides to `run`/`stop` for services and apps
+Feature #65 shipped deployment-mode task overrides but only the project lifecycle path
+(`run`/`stop`/`check project`) honored `--group`; `run`/`stop` for services and apps read the
+base task directly and ignored the flag. This completes the gap so a service can declare a
+`test` override group whose `run`/`stop` stand an ephemeral dependency stack up/down.
+
+- **src/functions/run.go** — added `repoVariableContext(...)` (generalizes
+  `projectVariableContext` to any repo kind) and `resolveRepoTask(...)` (reads the repo config,
+  `ValidateOverrides`, builds the variable context, and calls `ResolveGroupCommand`).
+  `RunService`/`RunApp` now take a `models.GroupSelection` and resolve `run` through it. A
+  non-base `--group` run **skips the build/check/contain pre-flight** — the group command is the
+  whole lifecycle for that mode (a `test` group must not `pnpm test`/`docker build && push` the
+  service before standing up its deps); base `run` preflights exactly as before.
+- **src/functions/stop.go** — `StopService`/`StopApp` take a `models.GroupSelection` and resolve
+  `stop` through `resolveRepoTask`.
+- **src/commands/{run,stop}.go**, **src/commands/menu.go** — pass `groupSelection(cmd)` into the
+  four functions (menu paths pass base).
+- **src/functions/run_test.go** — `TestServiceGroupResolution`: base uses the plain task, a
+  `test` group overrides `run` and `stop`, and an unknown group errors.
+
+Verified: `go build ./...`, `go test ./...`, `go vet ./...`, and `gofmt -l` on the touched files
+all clean.
+
 ## Completed the git-init + optional-remote VCS workflow
 The VCS-bootstrap workflow was half-finished: `WireNewRepoVcsAt` (src/functions/vcs.go) ran
 `create_remote` then `checkout_new` and never ran the `init` task, so it operated on a non-git

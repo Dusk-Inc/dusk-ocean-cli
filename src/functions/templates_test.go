@@ -30,12 +30,21 @@ func TestAddTemplateToWorkspace(t *testing.T) {
 		}
 	})
 
-	t.Run("complement__app_kind__rejected", func(t *testing.T) {
+	t.Run("domain__app_kind__appends_entry", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
 
-		if err := AddTemplateToWorkspace(fs, "tpl", tokens.RepoKindApp); err == nil {
-			t.Fatalf("expected app template kind to be rejected")
+		if err := AddTemplateToWorkspace(fs, "base-app", tokens.TemplateKindApp); err != nil {
+			t.Fatalf("AddTemplateToWorkspace: %v", err)
+		}
+
+		config := readWorkspaceConfig(t, fs)
+		if len(config.Templates) != 1 {
+			t.Fatalf("expected 1 template, got %d", len(config.Templates))
+		}
+		entry := config.Templates[0]
+		if entry.Name != "base-app" || entry.Kind != tokens.TemplateKindApp {
+			t.Fatalf("unexpected entry: %+v", entry)
 		}
 	})
 
@@ -54,24 +63,18 @@ func TestAddTemplateToWorkspace(t *testing.T) {
 }
 
 func TestValidateTemplateKind(t *testing.T) {
-	t.Run("domain__service_library_project_infra_docs__accepted", func(t *testing.T) {
+	t.Run("domain__service_library_project_app_infra_docs__accepted", func(t *testing.T) {
 		for _, kind := range []string{
 			tokens.TemplateKindService,
 			tokens.TemplateKindLibrary,
 			tokens.TemplateKindProject,
+			tokens.TemplateKindApp,
 			tokens.TemplateKindInfra,
 			tokens.TemplateKindDocs,
 		} {
 			if err := ValidateTemplateKind(kind); err != nil {
 				t.Errorf("expected %s to be accepted, got %v", kind, err)
 			}
-		}
-	})
-
-	t.Run("complement__app__explicitly_rejected", func(t *testing.T) {
-		err := ValidateTemplateKind(tokens.RepoKindApp)
-		if err == nil {
-			t.Fatalf("expected error")
 		}
 	})
 
@@ -134,16 +137,23 @@ func TestRegisterRepo_Template(t *testing.T) {
 	}
 }
 
-func TestRegisterRepo_TemplateAppKindRejected(t *testing.T) {
+func TestRegisterRepo_TemplateAppKind(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)
-	if err := fs.MkdirAll("repos/templates/bad", 0o755); err != nil {
+	if err := fs.MkdirAll("repos/templates/base-app", 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTemplate, "bad", "", "", tokens.RepoKindApp)
-	if err == nil {
-		t.Fatalf("expected --template-kind app to be rejected")
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTemplate, "base-app", "", "", tokens.TemplateKindApp); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+
+	config := readWorkspaceConfig(t, fs)
+	if len(config.Templates) != 1 || config.Templates[0].Name != "base-app" {
+		t.Fatalf("expected template registered: %+v", config.Templates)
+	}
+	if config.Templates[0].Kind != tokens.TemplateKindApp {
+		t.Errorf("expected kind=app, got %q", config.Templates[0].Kind)
 	}
 }
 
@@ -153,6 +163,7 @@ func TestFindTemplatesByKind(t *testing.T) {
 			{Name: "ts-svc", Kind: tokens.TemplateKindService},
 			{Name: "py-svc", Kind: tokens.TemplateKindService},
 			{Name: "go-lib", Kind: tokens.TemplateKindLibrary},
+			{Name: "base-app", Kind: tokens.TemplateKindApp},
 		},
 	}
 
@@ -166,10 +177,44 @@ func TestFindTemplatesByKind(t *testing.T) {
 		t.Fatalf("expected 1 library template, got %v", libs)
 	}
 
-	apps := FindTemplatesByKind(config, tokens.RepoKindApp)
-	if len(apps) != 0 {
-		t.Fatalf("expected zero app templates (apps not template-able), got %v", apps)
+	apps := FindTemplatesByKind(config, tokens.TemplateKindApp)
+	if len(apps) != 1 || apps[0] != "base-app" {
+		t.Fatalf("expected the app template to be returned, got %v", apps)
 	}
+}
+
+func TestValidateAppTemplateDeps(t *testing.T) {
+	t.Run("domain__no_deps__accepted", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{Name: "base-app", Kind: tokens.TemplateKindApp, Deps: []WorkspaceDep{}},
+			},
+		}
+		if err := ValidateAppTemplateDeps(config, "base-app"); err != nil {
+			t.Fatalf("expected no-dep app template to pass, got %v", err)
+		}
+	})
+
+	t.Run("boundary__unregistered_template__no_op", func(t *testing.T) {
+		if err := ValidateAppTemplateDeps(WorkspaceConfig{}, "unregistered"); err != nil {
+			t.Fatalf("expected no-op, got %v", err)
+		}
+	})
+
+	t.Run("complement__declared_deps__rejected", func(t *testing.T) {
+		config := WorkspaceConfig{
+			Templates: []WorkspaceTemplate{
+				{
+					Name: "base-app",
+					Kind: tokens.TemplateKindApp,
+					Deps: []WorkspaceDep{{Lib: "shared", From: "global"}},
+				},
+			},
+		}
+		if err := ValidateAppTemplateDeps(config, "base-app"); err == nil {
+			t.Fatalf("expected an app template with deps to be rejected")
+		}
+	})
 }
 
 func TestValidateTemplateDepsForTarget_RejectsMissingDep(t *testing.T) {

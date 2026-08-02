@@ -44,7 +44,51 @@ func seedAppWithSubRepos(t *testing.T, fs afero.Fs, appName string, services, li
 	}
 }
 
+// seedAppProjects writes app-scoped project sub-repos under an already-seeded app.
+func seedAppProjects(t *testing.T, fs afero.Fs, appName string, projects []string) {
+	t.Helper()
+	for _, project := range projects {
+		dir := filepath.Join("repos", "apps", appName, "projects", project)
+		if err := fs.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir project: %v", err)
+		}
+		if err := afero.WriteFile(fs, filepath.Join(dir, "ocean.config.json"), []byte(`{"name":"`+project+`","type":"project"}`), 0o644); err != nil {
+			t.Fatalf("write project config: %v", err)
+		}
+	}
+}
+
 func TestDiscoverAppSubRepos(t *testing.T) {
+	t.Run("domain__finds_app_scoped_projects_between_libs_and_tests", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedAppWithSubRepos(t, fs, "alpha",
+			[]string{"api"},
+			[]string{"shared"},
+			[]string{"e2e"},
+		)
+		seedAppProjects(t, fs, "alpha", []string{"cli"})
+
+		got, err := DiscoverAppSubRepos(fs, "alpha")
+		if err != nil {
+			t.Fatalf("DiscoverAppSubRepos: %v", err)
+		}
+
+		want := []DiscoveredAppSubRepo{
+			{Kind: AppSubRepoKindService, Name: "api", Path: "repos/apps/alpha/services/api"},
+			{Kind: AppSubRepoKindLibrary, Name: "shared", Path: "repos/apps/alpha/libs/shared"},
+			{Kind: AppSubRepoKindProject, Name: "cli", Path: "repos/apps/alpha/projects/cli"},
+			{Kind: AppSubRepoKindTest, Name: "e2e", Path: "repos/apps/alpha/testing/e2e"},
+		}
+		if len(got) != len(want) {
+			t.Fatalf("expected %d sub-repos, got %d: %+v", len(want), len(got), got)
+		}
+		for i, w := range want {
+			if got[i] != w {
+				t.Errorf("entry %d: want %+v, got %+v", i, w, got[i])
+			}
+		}
+	})
+
 	t.Run("domain__finds_services_libs_and_tests", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		seedAppWithSubRepos(t, fs, "alpha",
@@ -178,6 +222,65 @@ func TestRegisterDiscoveredAppSubRepos(t *testing.T) {
 			if test.Remote != "" {
 				t.Errorf("test %s should have no remote, got %q", test.Name, test.Remote)
 			}
+		}
+	})
+
+	t.Run("domain__registers_app_scoped_projects", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
+		if err := addAppToWorkspace(fs, "alpha"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		seedAppWithSubRepos(t, fs, "alpha", []string{"api"}, []string{"shared"}, nil)
+		seedAppProjects(t, fs, "alpha", []string{"cli", "model"})
+
+		var out bytes.Buffer
+		if err := RegisterDiscoveredAppSubRepos(fs, &out, "alpha"); err != nil {
+			t.Fatalf("RegisterDiscoveredAppSubRepos: %v", err)
+		}
+
+		cfg := readWorkspaceConfig(t, fs)
+		appIdx := FindAppIndex(cfg, "alpha")
+		if appIdx == -1 {
+			t.Fatalf("alpha not in workspace")
+		}
+		if len(cfg.Apps[appIdx].Projects) != 2 {
+			t.Fatalf("expected 2 app projects, got %d: %+v", len(cfg.Apps[appIdx].Projects), cfg.Apps[appIdx].Projects)
+		}
+		if FindAppProjectIndex(cfg.Apps[appIdx], "cli") == -1 {
+			t.Errorf("expected cli to be registered")
+		}
+		if !strings.Contains(out.String(), "discovered project alpha/cli: registered") {
+			t.Errorf("expected the project registration to be reported, got %q", out.String())
+		}
+	})
+
+	t.Run("boundary__rerun_is_idempotent", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		writeWorkspaceConfig(t, fs, WorkspaceConfig{})
+		if err := addAppToWorkspace(fs, "alpha"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		seedAppWithSubRepos(t, fs, "alpha", []string{"api"}, []string{"shared"}, []string{"e2e"})
+		seedAppProjects(t, fs, "alpha", []string{"cli"})
+
+		var first bytes.Buffer
+		if err := RegisterDiscoveredAppSubRepos(fs, &first, "alpha"); err != nil {
+			t.Fatalf("first run: %v", err)
+		}
+		var second bytes.Buffer
+		if err := RegisterDiscoveredAppSubRepos(fs, &second, "alpha"); err != nil {
+			t.Fatalf("second run: %v", err)
+		}
+
+		cfg := readWorkspaceConfig(t, fs)
+		appIdx := FindAppIndex(cfg, "alpha")
+		app := cfg.Apps[appIdx]
+		if len(app.Services) != 1 || len(app.Libraries) != 1 || len(app.Projects) != 1 || len(app.Testing) != 1 {
+			t.Fatalf("re-run duplicated entries: %+v", app)
+		}
+		if !strings.Contains(second.String(), "discovered project alpha/cli: already registered, skipping") {
+			t.Errorf("expected the second run to skip, got %q", second.String())
 		}
 	})
 

@@ -23,7 +23,7 @@ var runAppCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return functions.RunApp(cmd, afero.NewOsFs(), appName, skipCheck)
+		return functions.RunApp(cmd, afero.NewOsFs(), appName, skipCheck, groupSelection(cmd))
 	},
 }
 
@@ -46,7 +46,7 @@ var runServiceCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return functions.RunService(cmd, afero.NewOsFs(), appName, serviceName, skipCheck)
+		return functions.RunService(cmd, afero.NewOsFs(), appName, serviceName, skipCheck, groupSelection(cmd))
 	},
 }
 

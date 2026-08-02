@@ -2,59 +2,60 @@ package functions
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
 )
 
+// seedAppTemplate writes a minimal composite app template carrying one nested service.
+func seedAppTemplate(t *testing.T, fs afero.Fs, name string) {
+	t.Helper()
+	templatePath := filepath.Join("repos", "templates", name)
+	servicePath := filepath.Join(templatePath, "services", "api")
+	if err := fs.MkdirAll(servicePath, 0o755); err != nil {
+		t.Fatalf("seed template: %v", err)
+	}
+	if err := afero.WriteFile(fs, filepath.Join(templatePath, "ocean.config.json"),
+		[]byte(`{"name":"{{app_name}}","language":"","type":"app","tasks":{}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("seed template config: %v", err)
+	}
+	if err := afero.WriteFile(fs, filepath.Join(servicePath, "ocean.config.json"),
+		[]byte(`{"name":"{{app_name}}-api","language":"typescript","type":"service","tasks":{}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("seed service config: %v", err)
+	}
+}
+
+// seedEmptyWorkspace writes a workspace config with no registered units.
+func seedEmptyWorkspace(t *testing.T, fs afero.Fs) {
+	t.Helper()
+	if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
+		Apps:      []WorkspaceApp{},
+		Libraries: []WorkspaceLibrary{},
+		Projects:  []WorkspaceProject{},
+	}); err != nil {
+		t.Fatalf("write workspace config: %v", err)
+	}
+}
+
 func TestAddApp(t *testing.T) {
-	t.Run("domain__valid_name__creates_subfolders_directly", func(t *testing.T) {
+	t.Run("domain__template__copies_tree_and_registers", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		seedAppTemplate(t, fs, "base-app")
+
+		if err := AddApp(fs, "alpha", "base-app", map[string]string{"app_name": "alpha"}); err != nil {
+			t.Fatalf("AddApp: %v", err)
+		}
+
 		appPath := filepath.Join("repos", "apps", "alpha")
-
-		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
-			Apps:      []WorkspaceApp{},
-			Libraries: []WorkspaceLibrary{},
-			Projects:  []WorkspaceProject{},
-		}); err != nil {
-			t.Fatalf("write workspace config: %v", err)
+		nested := filepath.Join(appPath, "services", "api", "ocean.config.json")
+		payload, err := afero.ReadFile(fs, nested)
+		if err != nil {
+			t.Fatalf("expected the template's nested service to land: %v", err)
 		}
-
-		if err := AddApp(fs, "alpha"); err != nil {
-			t.Fatalf("AddApp: %v", err)
-		}
-
-		for _, sub := range []string{"services", "libs", "jobs", "docs", "testing"} {
-			subPath := filepath.Join(appPath, sub)
-			info, err := fs.Stat(subPath)
-			if err != nil {
-				t.Fatalf("expected subfolder %s: %v", sub, err)
-			}
-			if !info.IsDir() {
-				t.Fatalf("expected %s to be a directory", sub)
-			}
-			if _, err := fs.Stat(filepath.Join(subPath, ".gitkeep")); err != nil {
-				t.Fatalf("expected .gitkeep in %s: %v", sub, err)
-			}
-		}
-
-		if _, err := fs.Stat(filepath.Join(appPath, "ocean.config.json")); err != nil {
-			t.Fatalf("expected ocean.config.json: %v", err)
-		}
-	})
-
-	t.Run("domain__valid_name__registers_workspace_app", func(t *testing.T) {
-		fs := afero.NewMemMapFs()
-		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
-			Apps:      []WorkspaceApp{},
-			Libraries: []WorkspaceLibrary{},
-			Projects:  []WorkspaceProject{},
-		}); err != nil {
-			t.Fatalf("write workspace config: %v", err)
-		}
-
-		if err := AddApp(fs, "alpha"); err != nil {
-			t.Fatalf("AddApp: %v", err)
+		if !strings.Contains(string(payload), `"alpha-api"`) {
+			t.Fatalf("expected app_name substituted in nested config, got %s", payload)
 		}
 
 		config, err := ReadWorkspaceConfig(fs)
@@ -62,45 +63,112 @@ func TestAddApp(t *testing.T) {
 			t.Fatalf("read workspace config: %v", err)
 		}
 		if len(config.Apps) != 1 || config.Apps[0].Name != "alpha" {
-			t.Fatalf("expected workspace app entry added")
+			t.Fatalf("expected workspace app entry added, got %+v", config.Apps)
 		}
-		if len(config.Apps[0].Services) != 0 || len(config.Apps[0].Libraries) != 0 {
-			t.Fatalf("expected empty services and libraries")
+	})
+
+	t.Run("domain__template__backfills_canonical_subdirs", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		seedAppTemplate(t, fs, "base-app")
+
+		if err := AddApp(fs, "alpha", "base-app", map[string]string{"app_name": "alpha"}); err != nil {
+			t.Fatalf("AddApp: %v", err)
+		}
+
+		appPath := filepath.Join("repos", "apps", "alpha")
+		for _, sub := range []string{
+			"services", "libs", "projects",
+			filepath.Join("jobs", "docker"),
+			filepath.Join("jobs", "migrations"),
+			filepath.Join("jobs", "scripts"),
+			"testing",
+		} {
+			info, err := fs.Stat(filepath.Join(appPath, sub))
+			if err != nil {
+				t.Fatalf("expected subfolder %s: %v", sub, err)
+			}
+			if !info.IsDir() {
+				t.Fatalf("expected %s to be a directory", sub)
+			}
+		}
+
+		if _, err := fs.Stat(filepath.Join(appPath, "docs")); err == nil {
+			t.Fatalf("docs/ is no longer part of the canonical app layout")
+		}
+	})
+
+	t.Run("boundary__populated_subdir__no_gitkeep", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		seedAppTemplate(t, fs, "base-app")
+
+		if err := AddApp(fs, "alpha", "base-app", map[string]string{"app_name": "alpha"}); err != nil {
+			t.Fatalf("AddApp: %v", err)
+		}
+
+		appPath := filepath.Join("repos", "apps", "alpha")
+		if _, err := fs.Stat(filepath.Join(appPath, "services", ".gitkeep")); err == nil {
+			t.Fatalf("services/ came from the template and must not be marked with .gitkeep")
+		}
+		if _, err := fs.Stat(filepath.Join(appPath, "libs", ".gitkeep")); err != nil {
+			t.Fatalf("expected .gitkeep in the empty libs/: %v", err)
+		}
+	})
+
+	t.Run("boundary__template_without_config__writes_starter", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		if err := fs.MkdirAll(filepath.Join("repos", "templates", "bare", "services"), 0o755); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		if err := AddApp(fs, "alpha", "bare", nil); err != nil {
+			t.Fatalf("AddApp: %v", err)
+		}
+
+		payload, err := afero.ReadFile(fs, filepath.Join("repos", "apps", "alpha", "ocean.config.json"))
+		if err != nil {
+			t.Fatalf("expected a starter config to be written: %v", err)
+		}
+		if !strings.Contains(string(payload), `"type": "app"`) {
+			t.Fatalf("expected starter type=app, got %s", payload)
 		}
 	})
 
 	t.Run("boundary__empty_name__returns_error", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		if err := AddApp(fs, ""); err == nil {
+		if err := AddApp(fs, "", "base-app", nil); err == nil {
 			t.Fatalf("expected error")
+		}
+	})
+
+	t.Run("complement__empty_template__returns_error", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		if err := AddApp(fs, "alpha", "", nil); err == nil {
+			t.Fatalf("expected a template to be required")
+		}
+	})
+
+	t.Run("complement__missing_template__returns_error", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		seedEmptyWorkspace(t, fs)
+		if err := AddApp(fs, "alpha", "ghost", nil); err == nil {
+			t.Fatalf("expected a missing template to be rejected")
 		}
 	})
 
 	t.Run("complement__existing_app__returns_error", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
-		appPath := filepath.Join("repos", "apps", "alpha")
-
-		if err := fs.MkdirAll(appPath, 0o755); err != nil {
+		seedEmptyWorkspace(t, fs)
+		seedAppTemplate(t, fs, "base-app")
+		if err := fs.MkdirAll(filepath.Join("repos", "apps", "alpha"), 0o755); err != nil {
 			t.Fatalf("mkdir app: %v", err)
 		}
 
-		if err := AddApp(fs, "alpha"); err == nil {
+		if err := AddApp(fs, "alpha", "base-app", nil); err == nil {
 			t.Fatalf("expected error")
-		}
-	})
-
-	t.Run("complement__no_app_template_tree_required", func(t *testing.T) {
-
-		fs := afero.NewMemMapFs()
-		if err := WriteWorkspaceConfig(fs, WorkspaceConfig{
-			Apps:      []WorkspaceApp{},
-			Libraries: []WorkspaceLibrary{},
-			Projects:  []WorkspaceProject{},
-		}); err != nil {
-			t.Fatalf("write workspace config: %v", err)
-		}
-		if err := AddApp(fs, "alpha"); err != nil {
-			t.Fatalf("AddApp must not require a template tree: %v", err)
 		}
 	})
 }
