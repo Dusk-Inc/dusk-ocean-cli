@@ -14,11 +14,12 @@ import (
 type NodeKind string
 
 const (
-	NodeService   NodeKind = "service"
-	NodeAppLib    NodeKind = "app-lib"
-	NodeAppTest   NodeKind = "app-test"
-	NodeGlobalLib NodeKind = "global-lib"
-	NodeProject   NodeKind = "project"
+	NodeService    NodeKind = "service"
+	NodeAppLib     NodeKind = "app-lib"
+	NodeAppTest    NodeKind = "app-test"
+	NodeGlobalLib  NodeKind = "global-lib"
+	NodeProject    NodeKind = "project"
+	NodeAppProject NodeKind = "app-project"
 )
 
 type Node struct {
@@ -33,6 +34,7 @@ type UninstallOptions struct {
 	RunCommand      func(*exec.Cmd) error
 }
 
+// RunBuildWithDependencies builds every dependency of a target in graph order, then the target, skipping anything already built this run.
 func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceConfig, target Node, built map[string]struct{}) error {
 	deps, err := CollectDependencyOrder(config, target)
 	if err != nil {
@@ -69,6 +71,7 @@ func RunBuildWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 	return nil
 }
 
+// RunCheckWithDependencies checks every dependency of a target in graph order, then the target, passing extra arguments through to each check task.
 func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceConfig, target Node, built map[string]struct{}, passThrough []string) error {
 	deps, err := CollectDependencyOrder(config, target)
 	if err != nil {
@@ -105,6 +108,7 @@ func RunCheckWithDependencies(cmd *cobra.Command, root string, config WorkspaceC
 	return nil
 }
 
+// RunUninstallForTargets runs one dependency's uninstall task in each target that declares it.
 func RunUninstallForTargets(cmd *cobra.Command, fs afero.Fs, dependencyPath string, dependencyName string, targets []Target, options UninstallOptions) error {
 	if len(targets) == 0 {
 		return nil
@@ -138,6 +142,7 @@ func RunUninstallForTargets(cmd *cobra.Command, fs afero.Fs, dependencyPath stri
 	return nil
 }
 
+// CollectDependencyOrder returns a target's transitive dependencies in build order, excluding the target itself.
 func CollectDependencyOrder(config WorkspaceConfig, target Node) ([]Node, error) {
 	visited := map[string]struct{}{}
 	stack := map[string]struct{}{}
@@ -177,6 +182,7 @@ func CollectDependencyOrder(config WorkspaceConfig, target Node) ([]Node, error)
 	return order[:len(order)-1], nil
 }
 
+// CollectWorkspaceNodes returns a dependency-graph node for every buildable unit the workspace registers.
 func CollectWorkspaceNodes(config WorkspaceConfig) []Node {
 	nodes := make([]Node, 0)
 	for _, app := range config.Apps {
@@ -194,6 +200,14 @@ func CollectWorkspaceNodes(config WorkspaceConfig) []Node {
 				App:  app.Name,
 				Name: lib.Name,
 				Deps: lib.Deps,
+			})
+		}
+		for _, project := range app.Projects {
+			nodes = append(nodes, Node{
+				Kind: NodeAppProject,
+				App:  app.Name,
+				Name: project.Name,
+				Deps: project.Deps,
 			})
 		}
 		for _, test := range app.Testing {
@@ -222,6 +236,7 @@ func CollectWorkspaceNodes(config WorkspaceConfig) []Node {
 	return nodes
 }
 
+// BuildWorkspaceGraph returns the workspace's dependency edges keyed by node, rejecting a duplicate or unsupported node.
 func BuildWorkspaceGraph(config WorkspaceConfig) (map[string][]string, map[string]Node, error) {
 	nodes := CollectWorkspaceNodes(config)
 	graph := map[string][]string{}
@@ -255,6 +270,7 @@ func BuildWorkspaceGraph(config WorkspaceConfig) (map[string][]string, map[strin
 	return graph, index, nil
 }
 
+// SortDependencyGraph returns the graph's nodes in dependency order, erroring on a cycle.
 func SortDependencyGraph(graph map[string][]string) ([]string, error) {
 	visited := map[string]struct{}{}
 	stack := map[string]struct{}{}
@@ -296,6 +312,7 @@ func SortDependencyGraph(graph map[string][]string) ([]string, error) {
 	return order, nil
 }
 
+// BuildDependencyGraph returns the workspace's dependency edges keyed by node.
 func BuildDependencyGraph(config WorkspaceConfig) (map[string][]string, error) {
 	graph := map[string][]string{}
 	globalLibs := map[string]string{}
@@ -372,6 +389,7 @@ func BuildDependencyGraph(config WorkspaceConfig) (map[string][]string, error) {
 	return graph, nil
 }
 
+// HasPath reports whether the graph connects start to target.
 func HasPath(graph map[string][]string, start string, target string) bool {
 	if start == target {
 		return true
@@ -397,22 +415,32 @@ func HasPath(graph map[string][]string, start string, target string) bool {
 	return false
 }
 
+// GlobalLibKey returns the dependency-graph key for a global library.
 func GlobalLibKey(name string) string {
 	return fmt.Sprintf("lib:global:%s", name)
 }
 
+// AppLibKey returns the dependency-graph key for a library scoped to an app.
 func AppLibKey(appName string, name string) string {
 	return fmt.Sprintf("lib:app:%s:%s", appName, name)
 }
 
+// ProjectKey returns the dependency-graph key for a global project.
 func ProjectKey(name string) string {
 	return fmt.Sprintf("project:%s", name)
 }
 
+// AppProjectKey returns the dependency-graph key for a project scoped to an app.
+func AppProjectKey(appName string, name string) string {
+	return fmt.Sprintf("project:app:%s:%s", appName, name)
+}
+
+// ServiceKey returns the dependency-graph key for a service.
 func ServiceKey(appName string, name string) string {
 	return fmt.Sprintf("service:%s:%s", appName, name)
 }
 
+// nodeKey returns the graph key identifying one node, or empty for an unsupported kind.
 func nodeKey(node Node) string {
 	switch node.Kind {
 	case NodeService:
@@ -425,11 +453,14 @@ func nodeKey(node Node) string {
 		return GlobalLibKey(node.Name)
 	case NodeProject:
 		return ProjectKey(node.Name)
+	case NodeAppProject:
+		return AppProjectKey(node.App, node.Name)
 	default:
 		return ""
 	}
 }
 
+// resolveDependencyNode resolves one declared dependency to the node backing it, rejecting an unknown, ambiguous, or illegally-sourced name.
 func resolveDependencyNode(config WorkspaceConfig, target Node, dep WorkspaceDep) (Node, error) {
 	depName := strings.TrimSpace(dep.Lib)
 	if depName == "" {
@@ -504,6 +535,7 @@ func resolveDependencyNode(config WorkspaceConfig, target Node, dep WorkspaceDep
 	return candidates[0], nil
 }
 
+// NodeBuildInfo returns the label, repo path, and build hash path for one dependency node.
 func NodeBuildInfo(root string, node Node) (string, string, string, error) {
 	switch node.Kind {
 	case NodeService:
@@ -529,13 +561,19 @@ func NodeBuildInfo(root string, node Node) (string, string, string, error) {
 	case NodeProject:
 		path := filepath.Join(root, "repos", "projects", node.Name)
 		label := fmt.Sprintf("project %s", node.Name)
-		hashPath := MakeHashPath(root, "projects", node.Name)
+		hashPath := MakeHashPath(root, "projects", "global", node.Name)
+		return label, path, hashPath, nil
+	case NodeAppProject:
+		path := filepath.Join(root, "repos", "apps", node.App, "projects", node.Name)
+		label := fmt.Sprintf("project %s/%s", node.App, node.Name)
+		hashPath := MakeHashPath(root, "projects", node.App, node.Name)
 		return label, path, hashPath, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported dependency node")
 	}
 }
 
+// NodeCheckInfo returns the label, repo path, and check hash path for one dependency node.
 func NodeCheckInfo(root string, node Node) (string, string, string, error) {
 	switch node.Kind {
 	case NodeService:
@@ -561,13 +599,19 @@ func NodeCheckInfo(root string, node Node) (string, string, string, error) {
 	case NodeProject:
 		path := filepath.Join(root, "repos", "projects", node.Name)
 		label := fmt.Sprintf("project %s", node.Name)
-		hashPath := MakeCheckHashPath(root, "projects", node.Name)
+		hashPath := MakeCheckHashPath(root, "projects", "global", node.Name)
+		return label, path, hashPath, nil
+	case NodeAppProject:
+		path := filepath.Join(root, "repos", "apps", node.App, "projects", node.Name)
+		label := fmt.Sprintf("project %s/%s", node.App, node.Name)
+		hashPath := MakeCheckHashPath(root, "projects", node.App, node.Name)
 		return label, path, hashPath, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported dependency node")
 	}
 }
 
+// resolveGlobalDeps resolves a dependency list against the global libraries, rejecting any other source.
 func resolveGlobalDeps(deps []WorkspaceDep, globals map[string]string) ([]string, error) {
 	resolved := make([]string, 0, len(deps))
 	for _, dep := range deps {
@@ -583,6 +627,7 @@ func resolveGlobalDeps(deps []WorkspaceDep, globals map[string]string) ([]string
 	return resolved, nil
 }
 
+// resolveAppDeps resolves a dependency list against an app's libraries, the global libraries, and the projects.
 func resolveAppDeps(appName string, deps []WorkspaceDep, appLibs map[string]map[string]string, globals map[string]string, projects map[string]string) ([]string, error) {
 	resolved := make([]string, 0, len(deps))
 	appEntries := appLibs[appName]
@@ -615,6 +660,7 @@ func resolveAppDeps(appName string, deps []WorkspaceDep, appLibs map[string]map[
 	return resolved, nil
 }
 
+// findGlobalLibraryByName looks up a global library, erroring when the name is ambiguous.
 func findGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibrary, bool, error) {
 	var match *WorkspaceLibrary
 	for i, lib := range config.Libraries {
@@ -632,6 +678,7 @@ func findGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibr
 	return *match, true, nil
 }
 
+// findProjectByName looks up a global project, erroring when the name is ambiguous.
 func findProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, bool, error) {
 	var match *WorkspaceProject
 	for i, project := range config.Projects {
@@ -649,6 +696,7 @@ func findProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, b
 	return *match, true, nil
 }
 
+// findAppLibraryByName looks up a library registered under one app.
 func findAppLibraryByName(config WorkspaceConfig, appName string, name string) (WorkspaceLibrary, bool) {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -663,6 +711,7 @@ func findAppLibraryByName(config WorkspaceConfig, appName string, name string) (
 	return WorkspaceLibrary{}, false
 }
 
+// makeNode builds a dependency-graph node from its kind, owning app, name, and dependencies.
 func makeNode(kind NodeKind, app string, name string, deps ...WorkspaceDep) Node {
 	return Node{
 		Kind: kind,

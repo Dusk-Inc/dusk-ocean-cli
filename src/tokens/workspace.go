@@ -3,13 +3,14 @@ package tokens
 const (
 	DefaultImageTag = "dev"
 
-	TargetAppKind       = "app"
-	TargetServiceKind   = "service"
-	TargetAppLibKind    = "app-lib"
-	TargetGlobalLibKind = "global-lib"
-	TargetProjectKind   = "project"
-	TargetTestKind      = "test"
-	TargetTemplateKind  = "template"
+	TargetAppKind        = "app"
+	TargetServiceKind    = "service"
+	TargetAppLibKind     = "app-lib"
+	TargetGlobalLibKind  = "global-lib"
+	TargetProjectKind    = "project"
+	TargetAppProjectKind = "app-project"
+	TargetTestKind       = "test"
+	TargetTemplateKind   = "template"
 
 	DependencySourceGlobal  = "global"
 	DependencySourceProject = "project"
@@ -25,6 +26,7 @@ const (
 	TemplateKindService = "service"
 	TemplateKindLibrary = "library"
 	TemplateKindProject = "project"
+	TemplateKindApp     = "app"
 	TemplateKindInfra   = "infra"
 	TemplateKindDocs    = "docs"
 
@@ -61,6 +63,16 @@ const (
 	RepoDirSandbox   = "sandbox"
 	RepoDirInfra     = "infra"
 	RepoDirDocs      = "docs"
+	RepoDirJobs      = "jobs"
+	RepoDirTesting   = "testing"
+
+	AppSubDirServices      = "services"
+	AppSubDirLibs          = "libs"
+	AppSubDirProjects      = "projects"
+	AppSubDirTesting       = "testing"
+	AppSubDirJobsDocker    = "jobs/docker"
+	AppSubDirJobsMigration = "jobs/migrations"
+	AppSubDirJobsScripts   = "jobs/scripts"
 )
 
 var DefaultWorkspaceTaskNames = []string{

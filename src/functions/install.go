@@ -16,12 +16,13 @@ type targetKind = TargetKind
 type dependencyKind string
 
 const (
-	targetService   targetKind = TargetService
-	targetAppLib    targetKind = TargetAppLib
-	targetGlobalLib targetKind = TargetGlobalLib
-	targetProject   targetKind = TargetProject
-	targetTest      targetKind = TargetTest
-	targetTemplate  targetKind = TargetTemplate
+	targetService    targetKind = TargetService
+	targetAppLib     targetKind = TargetAppLib
+	targetGlobalLib  targetKind = TargetGlobalLib
+	targetProject    targetKind = TargetProject
+	targetAppProject targetKind = TargetAppProject
+	targetTest       targetKind = TargetTest
+	targetTemplate   targetKind = TargetTemplate
 
 	dependencyGlobalLib dependencyKind = "global-lib"
 	dependencyAppLib    dependencyKind = "app-lib"
@@ -45,6 +46,10 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 	targetProject: {
 		dependencyGlobalLib: true,
 	},
+	targetAppProject: {
+		dependencyAppLib:    true,
+		dependencyGlobalLib: true,
+	},
 	targetAppLib: {
 		dependencyAppLib:    true,
 		dependencyGlobalLib: true,
@@ -62,6 +67,7 @@ var allowedInstallDependencies = map[targetKind]map[dependencyKind]bool{
 	},
 }
 
+// RunInstallPrompt walks the user through picking a dependency and a target, then wires them together.
 func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -120,6 +126,7 @@ func RunInstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
+// RunInstallFromCwd wires a named dependency into whichever registered repo the current directory sits in.
 func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) error {
 	root, err := GetRoot()
 	if err != nil {
@@ -169,6 +176,7 @@ func RunInstallFromCwd(cmd *cobra.Command, fs afero.Fs, dependencyName string) e
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
+// WireLocalDependency wires a named library into a named target, resolving the target from workspace config.
 func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -192,6 +200,7 @@ func WireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, ta
 	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
 }
 
+// WireLocalDependencyForTarget wires a named library into an already-resolved target.
 func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName string, target Target) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -204,6 +213,7 @@ func WireLocalDependencyForTarget(cmd *cobra.Command, fs afero.Fs, payloadName s
 	return wireDependencyForTarget(cmd, fs, root, config, payloadName, target)
 }
 
+// wireDependencyForTarget validates a dependency against the target's allowed sources, runs the library's add task, and records the edge.
 func wireDependencyForTarget(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, payloadName string, target Target) error {
 	dependency, err := resolveDependency(root, target, payloadName, config)
 	if err != nil {
@@ -256,6 +266,7 @@ func wireDependencyForTarget(cmd *cobra.Command, fs afero.Fs, root string, confi
 	return WriteWorkspaceConfig(fs, updatedConfig)
 }
 
+// resolveDependency resolves a dependency name to the repo backing it, rejecting an unknown, ambiguous, or non-installable name.
 func resolveDependency(root string, target installTarget, name string, config WorkspaceConfig) (installDependency, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -264,7 +275,7 @@ func resolveDependency(root string, target installTarget, name string, config Wo
 
 	var matches []installDependency
 
-	if target.Kind == targetAppLib || target.Kind == targetService || target.Kind == targetTest {
+	if target.Kind == targetAppLib || target.Kind == targetService || target.Kind == targetTest || target.Kind == targetAppProject {
 		if target.App != "" {
 			appLibPath := filepath.Join(root, "repos", "apps", target.App, "libs", name)
 			if DirExists(afero.NewOsFs(), appLibPath) {
@@ -309,7 +320,7 @@ func resolveDependency(root string, target installTarget, name string, config Wo
 	}
 
 	if len(matches) == 0 {
-		if target.Kind == targetService || target.Kind == targetAppLib || target.Kind == targetTest {
+		if target.Kind == targetService || target.Kind == targetAppLib || target.Kind == targetTest || target.Kind == targetAppProject {
 			servicePath := filepath.Join(root, "repos", "apps", target.App, "services", name)
 			if DirExists(afero.NewOsFs(), servicePath) {
 				return installDependency{}, fmt.Errorf("services cannot be dependencies")
@@ -323,6 +334,7 @@ func resolveDependency(root string, target installTarget, name string, config Wo
 	return matches[0], nil
 }
 
+// validateInstallFlow rejects a dependency the target's kind may not consume, and an app-scoped library from a different app.
 func validateInstallFlow(target installTarget, dependency installDependency) error {
 	allowedDeps, ok := allowedInstallDependencies[target.Kind]
 	if !ok {
@@ -338,6 +350,8 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 			return fmt.Errorf("invalid dependency for global library")
 		case targetProject:
 			return fmt.Errorf("invalid dependency for project")
+		case targetAppProject:
+			return fmt.Errorf("invalid dependency for app project")
 		case targetAppLib:
 			return fmt.Errorf("invalid dependency for app library")
 		case targetService:
@@ -356,6 +370,7 @@ func validateInstallFlow(target installTarget, dependency installDependency) err
 	return nil
 }
 
+// promptForDependency asks the user which library to install.
 func promptForDependency(config WorkspaceConfig, root string) (installDependency, error) {
 	options := []string{}
 	if len(config.Libraries) > 0 {
@@ -408,6 +423,7 @@ func promptForDependency(config WorkspaceConfig, root string) (installDependency
 	}, nil
 }
 
+// formatDependencyLabel renders a resolved dependency as the label the install prompt shows.
 func formatDependencyLabel(dep installDependency) string {
 	switch dep.kind {
 	case dependencyAppLib:
@@ -421,6 +437,7 @@ func formatDependencyLabel(dep installDependency) string {
 	}
 }
 
+// registerDependency records one dependency edge on the target's workspace entry, rejecting a duplicate, a self-reference, or a cycle.
 func registerDependency(config WorkspaceConfig, target installTarget, dependency installDependency) (WorkspaceConfig, error) {
 	targetKey := installTargetKey(target)
 	depKey := installDependencyKey(dependency)
@@ -500,6 +517,23 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 			return WorkspaceConfig{}, err
 		}
 		config.Projects[projectIndex].Deps = append(depsList, makeInstallDep(dependency))
+	case targetAppProject:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return WorkspaceConfig{}, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		projectIndex := FindAppProjectIndex(config.Apps[appIndex], target.Name)
+		if projectIndex == -1 {
+			return WorkspaceConfig{}, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		depsList := config.Apps[appIndex].Projects[projectIndex].Deps
+		if containsDep(depsList, dependency.name, depSourceForInstall(dependency)) {
+			return WorkspaceConfig{}, fmt.Errorf("dependency already registered: %s", dependency.name)
+		}
+		if err := ensureNoCycles(config, target, dependency); err != nil {
+			return WorkspaceConfig{}, err
+		}
+		config.Apps[appIndex].Projects[projectIndex].Deps = append(depsList, makeInstallDep(dependency))
 	case targetTemplate:
 		templateIndex := FindTemplateIndex(config, target.Name)
 		if templateIndex == -1 {
@@ -517,6 +551,7 @@ func registerDependency(config WorkspaceConfig, target installTarget, dependency
 	return config, nil
 }
 
+// ensureNoCycles rejects a dependency edge that would close a cycle in the workspace graph.
 func ensureNoCycles(config WorkspaceConfig, target installTarget, dependency installDependency) error {
 	if target.Kind == targetService || target.Kind == targetTest || target.Kind == targetTemplate {
 		return nil
@@ -542,6 +577,7 @@ func ensureNoCycles(config WorkspaceConfig, target installTarget, dependency ins
 	return nil
 }
 
+// installTargetKey returns the graph key identifying an install target, or empty for an unsupported kind.
 func installTargetKey(target installTarget) string {
 	switch target.Kind {
 	case targetService:
@@ -554,6 +590,8 @@ func installTargetKey(target installTarget) string {
 		return GlobalLibKey(target.Name)
 	case targetProject:
 		return ProjectKey(target.Name)
+	case targetAppProject:
+		return AppProjectKey(target.App, target.Name)
 	case targetTemplate:
 		return fmt.Sprintf("template:%s", target.Name)
 	default:
@@ -561,6 +599,7 @@ func installTargetKey(target installTarget) string {
 	}
 }
 
+// installDependencyKey returns the graph key identifying an install dependency, or empty for an unsupported kind.
 func installDependencyKey(dep installDependency) string {
 	switch dep.kind {
 	case dependencyAppLib:
@@ -574,6 +613,7 @@ func installDependencyKey(dep installDependency) string {
 	}
 }
 
+// containsDep reports whether a dependency list already carries the named library from the given source.
 func containsDep(values []WorkspaceDep, lib string, from string) bool {
 	for _, value := range values {
 		if value.Lib == lib && value.From == from {
@@ -583,6 +623,7 @@ func containsDep(values []WorkspaceDep, lib string, from string) bool {
 	return false
 }
 
+// makeInstallDep renders a resolved dependency as the workspace-config entry recording it.
 func makeInstallDep(dep installDependency) WorkspaceDep {
 	return WorkspaceDep{
 		Lib:  dep.name,
@@ -590,6 +631,7 @@ func makeInstallDep(dep installDependency) WorkspaceDep {
 	}
 }
 
+// depSourceForInstall returns the source field a resolved dependency is recorded under.
 func depSourceForInstall(dep installDependency) string {
 	switch dep.kind {
 	case dependencyAppLib:

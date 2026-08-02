@@ -401,8 +401,8 @@ func TestRenameHashFiles(t *testing.T) {
 	t.Run("domain__rename_hash_files__moves_hashes_for_project", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		root := "/root"
-		oldBuild := MakeHashPath(root, "projects", "proj-a")
-		newBuild := MakeHashPath(root, "projects", "proj-x")
+		oldBuild := MakeHashPath(root, "projects", "global", "proj-a")
+		newBuild := MakeHashPath(root, "projects", "global", "proj-x")
 
 		if err := WriteHashFile(fs, oldBuild, "xyz"); err != nil {
 			t.Fatalf("setup: %v", err)
@@ -414,6 +414,25 @@ func TestRenameHashFiles(t *testing.T) {
 		}
 		if _, ok, _ := ReadHashFile(fs, newBuild); !ok {
 			t.Fatalf("expected new project hash to exist")
+		}
+	})
+
+	t.Run("domain__rename_hash_files__moves_hashes_for_app_project", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		root := "/root"
+		oldBuild := MakeHashPath(root, "projects", "app-a", "cli-a")
+		newBuild := MakeHashPath(root, "projects", "app-a", "cli-b")
+
+		if err := WriteHashFile(fs, oldBuild, "xyz"); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+
+		target := Target{Kind: TargetAppProject, App: "app-a", Name: "cli-a"}
+		if err := RenameHashFiles(fs, root, target, "cli-a", "cli-b"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok, _ := ReadHashFile(fs, newBuild); !ok {
+			t.Fatalf("expected new app project hash to exist")
 		}
 	})
 

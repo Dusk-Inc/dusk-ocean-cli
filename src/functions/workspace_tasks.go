@@ -17,6 +17,7 @@ var runShell = func(workdir string, command string, stdout io.Writer, stderr io.
 	return cmd.Run()
 }
 
+// RunWorkspaceTask runs one named workspace task against a repo, resolving the workspace root first.
 func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -25,6 +26,7 @@ func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName 
 	return RunWorkspaceTaskAt(fs, root, stdout, stderr, taskName, target, app)
 }
 
+// RunWorkspaceTaskAt runs one named workspace task against a repo under an explicit workspace root, resolving the task's repo tokens before executing it.
 func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	if taskName == "" {
 		return fmt.Errorf("--name is required")
@@ -73,6 +75,7 @@ func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Wr
 	return runShell(root, expanded, stdout, stderr)
 }
 
+// ResolveRepoKindByName infers a repo's kind from its name, scoped to an app when one is given, and errors when the name is unknown or ambiguous.
 func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (string, error) {
 	if app != "" {
 		appIdx := FindAppIndex(config, app)
@@ -111,6 +114,9 @@ func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (str
 	}
 	if FindDocsIndex(config, name) != -1 {
 		matches = append(matches, tokens.RepoKindDocs)
+	}
+	if FindTemplateIndex(config, name) != -1 {
+		matches = append(matches, tokens.RepoKindTemplate)
 	}
 	switch len(matches) {
 	case 0:

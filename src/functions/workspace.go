@@ -39,17 +39,19 @@ type (
 )
 
 const (
-	TargetApp       = models.TargetApp
-	TargetService   = models.TargetService
-	TargetAppLib    = models.TargetAppLib
-	TargetGlobalLib = models.TargetGlobalLib
-	TargetProject   = models.TargetProject
-	TargetTest      = models.TargetTest
-	TargetTemplate  = models.TargetTemplate
+	TargetApp        = models.TargetApp
+	TargetService    = models.TargetService
+	TargetAppLib     = models.TargetAppLib
+	TargetGlobalLib  = models.TargetGlobalLib
+	TargetProject    = models.TargetProject
+	TargetAppProject = models.TargetAppProject
+	TargetTest       = models.TargetTest
+	TargetTemplate   = models.TargetTemplate
 )
 
 const defaultImageTag = "dev"
 
+// EnsureWorkspaceRoot returns the workspace root, erroring when the current directory sits outside a workspace.
 func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -79,6 +81,7 @@ func EnsureWorkspaceRoot(fs afero.Fs) (string, error) {
 	return absRoot, nil
 }
 
+// MakeConfig builds a workspace config from the given libraries, apps, and projects.
 func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []WorkspaceProject) WorkspaceConfig {
 	return WorkspaceConfig{
 		Workspace: "test",
@@ -88,6 +91,7 @@ func MakeConfig(libs []WorkspaceLibrary, apps []WorkspaceApp, projects []Workspa
 	}
 }
 
+// MakeLibrary builds a library entry with the named global dependencies.
 func MakeLibrary(name string, deps ...string) WorkspaceLibrary {
 	return WorkspaceLibrary{
 		Name: name,
@@ -95,6 +99,7 @@ func MakeLibrary(name string, deps ...string) WorkspaceLibrary {
 	}
 }
 
+// MakeProject builds a project entry with the named global dependencies.
 func MakeProject(name string, deps ...string) WorkspaceProject {
 	return WorkspaceProject{
 		Name: name,
@@ -102,6 +107,7 @@ func MakeProject(name string, deps ...string) WorkspaceProject {
 	}
 }
 
+// MakeApp builds an app entry holding the given libraries and no other units.
 func MakeApp(name string, libraries []WorkspaceLibrary) WorkspaceApp {
 	return WorkspaceApp{
 		Name:      name,
@@ -111,6 +117,7 @@ func MakeApp(name string, libraries []WorkspaceLibrary) WorkspaceApp {
 	}
 }
 
+// MakeTemplate builds a template entry for the kind it scaffolds with the named global dependencies.
 func MakeTemplate(name string, kind string, deps ...string) WorkspaceTemplate {
 	return WorkspaceTemplate{
 		Name: name,
@@ -119,6 +126,7 @@ func MakeTemplate(name string, kind string, deps ...string) WorkspaceTemplate {
 	}
 }
 
+// InitWorkspace creates the workspace config, the repos tree, and the ignore file, reporting everything it adds.
 func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	if opts.Name == "" {
 		return fmt.Errorf("--name is required")
@@ -158,6 +166,7 @@ func InitWorkspace(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	return ensureGitIgnore(fs)
 }
 
+// ensureWorkspaceFile writes the workspace config when it is absent, leaving an existing one untouched.
 func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	path := "ocean.workspace.json"
 	if _, err := fs.Stat(path); err == nil {
@@ -200,6 +209,7 @@ func ensureWorkspaceFile(fs afero.Fs, out io.Writer, opts InitOptions) error {
 	return afero.WriteFile(fs, path, payload, 0o644)
 }
 
+// ensureDir creates a directory when absent and reports whether it made one.
 func ensureDir(fs afero.Fs, out io.Writer, path string) (bool, error) {
 	info, err := fs.Stat(path)
 	if err == nil {
@@ -218,6 +228,7 @@ func ensureDir(fs afero.Fs, out io.Writer, path string) (bool, error) {
 	return true, nil
 }
 
+// ensureGitkeep writes a .gitkeep into a directory that needs one to survive in git.
 func ensureGitkeep(fs afero.Fs, dir string) error {
 	path := filepath.Join(dir, ".gitkeep")
 	if _, err := fs.Stat(path); err == nil {
@@ -232,6 +243,7 @@ func ensureGitkeep(fs afero.Fs, dir string) error {
 	return file.Close()
 }
 
+// shouldCreateGitkeep reports whether a scaffolded directory should carry a .gitkeep.
 func shouldCreateGitkeep(dir string) bool {
 	switch dir {
 	case ".ocean", filepath.Join(".ocean", "results"), filepath.Join(".ocean", "hashes"):
@@ -241,6 +253,7 @@ func shouldCreateGitkeep(dir string) bool {
 	}
 }
 
+// ensureFile writes a file with the given contents when it is absent.
 func ensureFile(fs afero.Fs, out io.Writer, path string, contents string) error {
 	if _, err := fs.Stat(path); err == nil {
 		fmt.Fprintf(out, "already exists: %s\n", path)
@@ -254,6 +267,7 @@ func ensureFile(fs afero.Fs, out io.Writer, path string, contents string) error 
 	return afero.WriteFile(fs, path, []byte(contents), 0o644)
 }
 
+// ensureGitIgnore writes the workspace ignore file when it is absent.
 func ensureGitIgnore(fs afero.Fs) error {
 	path := ".gitignore"
 	entry := ".ocean"
@@ -282,6 +296,7 @@ func ensureGitIgnore(fs afero.Fs) error {
 	return afero.WriteFile(fs, path, []byte(normalized), 0o644)
 }
 
+// ReadWorkspaceConfig loads and normalizes the workspace config from the current workspace root.
 func ReadWorkspaceConfig(fs afero.Fs) (WorkspaceConfig, error) {
 	var config WorkspaceConfig
 	content, err := afero.ReadFile(fs, "ocean.workspace.json")
@@ -301,6 +316,7 @@ func ReadWorkspaceConfig(fs afero.Fs) (WorkspaceConfig, error) {
 	return normalized, nil
 }
 
+// ReadGitignorePatterns returns the ignore patterns declared at the workspace root.
 func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 	path := filepath.Join(root, ".gitignore")
 	payload, err := afero.ReadFile(fs, path)
@@ -323,14 +339,16 @@ func ReadGitignorePatterns(fs afero.Fs, root string) ([]string, error) {
 	return patterns, nil
 }
 
-// CollectRepoIgnorePatterns returns the workspace-root .gitignore patterns
-// plus the repo-local .gitignore patterns, in that order. This ensures that
-// repo-scoped ignores (e.g. `dist/`, `coverage/`) are honored when hashing a
-// repo directory — without which every rebuild produces a new dependency-tree
-// hash and defeats Ocean's skip cache. Patterns with leading `/` in the repo's
-// .gitignore are rooted at the repo directory, which matches the walk origin
-// in CalcDirHash. Nested .gitignore files below the repo root are not yet
-// consulted.
+/*
+CollectRepoIgnorePatterns returns the workspace-root .gitignore patterns
+plus the repo-local .gitignore patterns, in that order. This ensures that
+repo-scoped ignores (e.g. `dist/`, `coverage/`) are honored when hashing a
+repo directory — without which every rebuild produces a new dependency-tree
+hash and defeats Ocean's skip cache. Patterns with leading `/` in the repo's
+.gitignore are rooted at the repo directory, which matches the walk origin
+in CalcDirHash. Nested .gitignore files below the repo root are not yet
+consulted.
+*/
 func CollectRepoIgnorePatterns(fs afero.Fs, workspaceRoot string, repoPath string) ([]string, error) {
 	workspacePatterns, err := ReadGitignorePatterns(fs, workspaceRoot)
 	if err != nil {
@@ -352,6 +370,7 @@ func CollectRepoIgnorePatterns(fs afero.Fs, workspaceRoot string, repoPath strin
 	return merged, nil
 }
 
+// UpdateConfig reads the workspace config, applies a transformation, and writes the result back.
 func UpdateConfig(fs afero.Fs, update func(WorkspaceConfig) (WorkspaceConfig, error)) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -375,6 +394,7 @@ func UpdateConfig(fs afero.Fs, update func(WorkspaceConfig) (WorkspaceConfig, er
 	return WriteWorkspaceConfig(fs, updated)
 }
 
+// WriteWorkspaceConfig normalizes and persists the workspace config.
 func WriteWorkspaceConfig(fs afero.Fs, config WorkspaceConfig) error {
 	normalized := normalizeWorkspaceConfig(config)
 	if err := ValidateWorkspaceConfig(normalized); err != nil {
@@ -388,6 +408,7 @@ func WriteWorkspaceConfig(fs afero.Fs, config WorkspaceConfig) error {
 	return afero.WriteFile(fs, "ocean.workspace.json", payload, 0o644)
 }
 
+// normalizeWorkspaceConfig fills in every nil slice, map, and defaulted field so a config round-trips to stable JSON.
 func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 	if config.Apps == nil {
 		config.Apps = []WorkspaceApp{}
@@ -445,6 +466,17 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 				config.Apps[i].Libraries[j].Deps = []WorkspaceDep{}
 			}
 		}
+		if config.Apps[i].Projects == nil {
+			config.Apps[i].Projects = []WorkspaceProject{}
+		}
+		for j := range config.Apps[i].Projects {
+			if config.Apps[i].Projects[j].Scopes == nil {
+				config.Apps[i].Projects[j].Scopes = []string{}
+			}
+			if config.Apps[i].Projects[j].Deps == nil {
+				config.Apps[i].Projects[j].Deps = []WorkspaceDep{}
+			}
+		}
 		if config.Apps[i].Testing == nil {
 			config.Apps[i].Testing = []WorkspaceTest{}
 		}
@@ -476,6 +508,7 @@ func normalizeWorkspaceConfig(config WorkspaceConfig) WorkspaceConfig {
 	return config
 }
 
+// FindAppIndex returns the position of a registered app, or -1 when absent.
 func FindAppIndex(config WorkspaceConfig, appName string) int {
 	for i, app := range config.Apps {
 		if app.Name == appName {
@@ -485,6 +518,7 @@ func FindAppIndex(config WorkspaceConfig, appName string) int {
 	return -1
 }
 
+// FindServiceIndex returns the position of a service within an app, or -1 when absent.
 func FindServiceIndex(app WorkspaceApp, serviceName string) int {
 	for i, service := range app.Services {
 		if service.Name == serviceName {
@@ -494,6 +528,7 @@ func FindServiceIndex(app WorkspaceApp, serviceName string) int {
 	return -1
 }
 
+// FindAppLibraryIndex returns the position of a library within an app, or -1 when absent.
 func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
 	for i, lib := range app.Libraries {
 		if lib.Name == libName {
@@ -503,6 +538,17 @@ func FindAppLibraryIndex(app WorkspaceApp, libName string) int {
 	return -1
 }
 
+// FindAppProjectIndex returns the position of an app-scoped project, or -1 when absent.
+func FindAppProjectIndex(app WorkspaceApp, projectName string) int {
+	for i, project := range app.Projects {
+		if project.Name == projectName {
+			return i
+		}
+	}
+	return -1
+}
+
+// FindAppTestIndex returns the position of a testing repo within an app, or -1 when absent.
 func FindAppTestIndex(app WorkspaceApp, testName string) int {
 	for i, test := range app.Testing {
 		if test.Name == testName {
@@ -512,6 +558,7 @@ func FindAppTestIndex(app WorkspaceApp, testName string) int {
 	return -1
 }
 
+// FindGlobalLibraryIndex returns the position of a global library, or -1 when absent.
 func FindGlobalLibraryIndex(config WorkspaceConfig, libName string) int {
 	for i, lib := range config.Libraries {
 		if lib.Name == libName {
@@ -521,6 +568,7 @@ func FindGlobalLibraryIndex(config WorkspaceConfig, libName string) int {
 	return -1
 }
 
+// FindProjectIndex returns the position of a global project, or -1 when absent.
 func FindProjectIndex(config WorkspaceConfig, projectName string) int {
 	for i, project := range config.Projects {
 		if project.Name == projectName {
@@ -530,6 +578,7 @@ func FindProjectIndex(config WorkspaceConfig, projectName string) int {
 	return -1
 }
 
+// FindAppLibraryByName returns a library registered under an app and whether it exists.
 func FindAppLibraryByName(config WorkspaceConfig, appName string, name string) (WorkspaceLibrary, bool) {
 	appIndex := FindAppIndex(config, appName)
 	if appIndex == -1 {
@@ -543,6 +592,21 @@ func FindAppLibraryByName(config WorkspaceConfig, appName string, name string) (
 	return WorkspaceLibrary{}, false
 }
 
+// FindAppProjectByName returns an app-scoped project and whether it is registered.
+func FindAppProjectByName(config WorkspaceConfig, appName string, name string) (WorkspaceProject, bool) {
+	appIndex := FindAppIndex(config, appName)
+	if appIndex == -1 {
+		return WorkspaceProject{}, false
+	}
+	for _, project := range config.Apps[appIndex].Projects {
+		if project.Name == name {
+			return project, true
+		}
+	}
+	return WorkspaceProject{}, false
+}
+
+// FindGlobalLibraryByName returns a global library and whether it exists, erroring when the name is ambiguous.
 func FindGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibrary, bool, error) {
 	var match *WorkspaceLibrary
 	for i, lib := range config.Libraries {
@@ -560,6 +624,7 @@ func FindGlobalLibraryByName(config WorkspaceConfig, name string) (WorkspaceLibr
 	return *match, true, nil
 }
 
+// FindProjectByName returns a global project and whether it exists, erroring when the name is ambiguous.
 func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, bool, error) {
 	var match *WorkspaceProject
 	for i, project := range config.Projects {
@@ -577,6 +642,7 @@ func FindProjectByName(config WorkspaceConfig, name string) (WorkspaceProject, b
 	return *match, true, nil
 }
 
+// AddTestToWorkspace registers a testing repo under an app, creating the app entry when absent.
 func AddTestToWorkspace(fs afero.Fs, appName string, name string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
@@ -607,6 +673,7 @@ func AddTestToWorkspace(fs afero.Fs, appName string, name string) error {
 	return WriteWorkspaceConfig(fs, config)
 }
 
+// RemoveTestFromWorkspace unregisters a testing repo from its app, no-op when absent.
 func RemoveTestFromWorkspace(fs afero.Fs, appName string, name string) error {
 	return UpdateConfig(fs, func(config WorkspaceConfig) (WorkspaceConfig, error) {
 		appIndex := FindAppIndex(config, appName)
@@ -623,6 +690,7 @@ func RemoveTestFromWorkspace(fs afero.Fs, appName string, name string) error {
 	})
 }
 
+// FindRepoLanguage reports the language declared by a repo's config and whether the repo has one.
 func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
 	info, err := fs.Stat(repoPath)
 	if err != nil {
@@ -641,6 +709,7 @@ func FindRepoLanguage(fs afero.Fs, repoPath string) (bool, string, error) {
 	return true, config.Language, nil
 }
 
+// AppNamesWithLibraries returns the apps that register at least one library.
 func AppNamesWithLibraries(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -652,6 +721,7 @@ func AppNamesWithLibraries(config WorkspaceConfig) []string {
 	return names
 }
 
+// AppNamesWithServices returns the apps that register at least one service.
 func AppNamesWithServices(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -663,6 +733,19 @@ func AppNamesWithServices(config WorkspaceConfig) []string {
 	return names
 }
 
+// AppNamesWithProjects returns the apps that register at least one app-scoped project.
+func AppNamesWithProjects(config WorkspaceConfig) []string {
+	names := []string{}
+	for _, app := range config.Apps {
+		if len(app.Projects) == 0 {
+			continue
+		}
+		names = append(names, app.Name)
+	}
+	return names
+}
+
+// AppNamesWithTests returns the apps that register at least one testing repo.
 func AppNamesWithTests(config WorkspaceConfig) []string {
 	names := []string{}
 	for _, app := range config.Apps {
@@ -674,6 +757,7 @@ func AppNamesWithTests(config WorkspaceConfig) []string {
 	return names
 }
 
+// AppLibraryNames returns the names of every library registered under an app.
 func AppLibraryNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -688,6 +772,7 @@ func AppLibraryNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
+// ServiceNames returns the names of every service registered under an app.
 func ServiceNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -702,6 +787,7 @@ func ServiceNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
+// TestNames returns the names of every testing repo registered under an app.
 func TestNames(config WorkspaceConfig, appName string) []string {
 	for _, app := range config.Apps {
 		if app.Name != appName {
@@ -716,6 +802,22 @@ func TestNames(config WorkspaceConfig, appName string) []string {
 	return nil
 }
 
+// AppProjectNames returns the names of every project registered under an app.
+func AppProjectNames(config WorkspaceConfig, appName string) []string {
+	for _, app := range config.Apps {
+		if app.Name != appName {
+			continue
+		}
+		names := make([]string, 0, len(app.Projects))
+		for _, project := range app.Projects {
+			names = append(names, project.Name)
+		}
+		return names
+	}
+	return nil
+}
+
+// GlobalLibraryNames returns the names of every registered global library.
 func GlobalLibraryNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Libraries))
 	for _, lib := range config.Libraries {
@@ -724,6 +826,7 @@ func GlobalLibraryNames(config WorkspaceConfig) []string {
 	return names
 }
 
+// ProjectNames returns the names of every registered global project.
 func ProjectNames(config WorkspaceConfig) []string {
 	names := make([]string, 0, len(config.Projects))
 	for _, project := range config.Projects {
@@ -741,6 +844,7 @@ func TemplateNames(config WorkspaceConfig) []string {
 	return names
 }
 
+// ResolveTargetByName resolves a bare name to the one target that carries it, erroring when it is unknown or matches more than one repo.
 func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Target, error) {
 	var matches []Target
 
@@ -802,6 +906,16 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 				})
 			}
 		}
+		for _, project := range app.Projects {
+			if project.Name == name {
+				matches = append(matches, Target{
+					Kind: TargetAppProject,
+					App:  app.Name,
+					Name: name,
+					Path: filepath.Join(root, "repos", "apps", app.Name, "projects", name),
+				})
+			}
+		}
 		for _, test := range app.Testing {
 			if test.Name == name {
 				matches = append(matches, Target{
@@ -823,6 +937,7 @@ func ResolveTargetByName(config WorkspaceConfig, root string, name string) (Targ
 	return matches[0], nil
 }
 
+// ResolveTargetByNameInApp resolves a bare name to a target within one app.
 func ResolveTargetByNameInApp(config WorkspaceConfig, root string, appName string, name string) (Target, error) {
 	appIdx := FindAppIndex(config, appName)
 	if appIdx == -1 {
@@ -856,6 +971,16 @@ func ResolveTargetByNameInApp(config WorkspaceConfig, root string, appName strin
 			}, nil
 		}
 	}
+	for _, project := range app.Projects {
+		if project.Name == name {
+			return Target{
+				Kind: TargetAppProject,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "projects", name),
+			}, nil
+		}
+	}
 	for _, test := range app.Testing {
 		if test.Name == name {
 			return Target{
@@ -869,6 +994,7 @@ func ResolveTargetByNameInApp(config WorkspaceConfig, root string, appName strin
 	return Target{}, fmt.Errorf("target not found in app %s: %s", appName, name)
 }
 
+// ResolveTarget resolves the registered target whose directory contains the given working directory.
 func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -908,6 +1034,18 @@ func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 			}
 			return Target{
 				Kind: TargetAppLib,
+				App:  parts[2],
+				Name: parts[4],
+				Path: targetPath,
+			}, nil
+		}
+		if len(parts) >= 5 && parts[3] == "projects" {
+			targetPath := filepath.Join(absRoot, "repos", "apps", parts[2], "projects", parts[4])
+			if !DirExists(fs, targetPath) {
+				return Target{}, fmt.Errorf("project path does not exist: %s", targetPath)
+			}
+			return Target{
+				Kind: TargetAppProject,
 				App:  parts[2],
 				Name: parts[4],
 				Path: targetPath,
@@ -954,6 +1092,7 @@ func ResolveTarget(fs afero.Fs, root string, cwd string) (Target, error) {
 	return Target{}, fmt.Errorf("current directory is not a supported install target")
 }
 
+// ValidateTargetRegistration rejects a target that workspace config does not carry.
 func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 	switch target.Kind {
 	case TargetService:
@@ -971,6 +1110,14 @@ func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 		}
 		if FindAppLibraryIndex(config.Apps[appIndex], target.Name) == -1 {
 			return fmt.Errorf("library not registered in workspace: %s", target.Name)
+		}
+	case TargetAppProject:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		if FindAppProjectIndex(config.Apps[appIndex], target.Name) == -1 {
+			return fmt.Errorf("project not registered in workspace: %s", target.Name)
 		}
 	case TargetGlobalLib:
 		libIndex := FindGlobalLibraryIndex(config, target.Name)
@@ -1000,6 +1147,7 @@ func ValidateTargetRegistration(target Target, config WorkspaceConfig) error {
 	return nil
 }
 
+// ValidateWorkspaceConfig rejects a workspace config that violates the schema's structural rules.
 func ValidateWorkspaceConfig(config WorkspaceConfig) error {
 	var problems []string
 	if err := validatePorts(config.Ports); err != nil {
@@ -1086,6 +1234,7 @@ var (
 	reservedServiceFields   = []string{"name", "kind", "path", "scopes", "remote", "port", "image_name", "image_tag", "dockerfile", "container_file", "image_path", "app"}
 )
 
+// validateRepoVariableCollisions rejects a user-declared variable that would shadow a reserved one.
 func validateRepoVariableCollisions(user map[string]string, reserved []string) error {
 	if len(user) == 0 {
 		return nil
@@ -1102,6 +1251,7 @@ func validateRepoVariableCollisions(user map[string]string, reserved []string) e
 	return nil
 }
 
+// validatePorts rejects a port range or reservation that is malformed or out of bounds.
 func validatePorts(ports WorkspacePorts) error {
 	if ports.Allowed.Min <= 0 {
 		return fmt.Errorf("ports.allowed.min: required")
@@ -1128,6 +1278,7 @@ func validatePorts(ports WorkspacePorts) error {
 	return nil
 }
 
+// validateDeps rejects a dependency entry missing its library name or source.
 func validateDeps(deps []WorkspaceDep) error {
 	seen := map[string]struct{}{}
 	for _, dep := range deps {
@@ -1148,6 +1299,7 @@ func validateDeps(deps []WorkspaceDep) error {
 	return nil
 }
 
+// makeGlobalDeps builds dependency entries sourced from the global libraries.
 func makeGlobalDeps(deps ...string) []WorkspaceDep {
 	out := make([]WorkspaceDep, 0, len(deps))
 	for _, dep := range deps {
@@ -1162,6 +1314,7 @@ func makeGlobalDeps(deps ...string) []WorkspaceDep {
 	return out
 }
 
+// ReadRepoConfig loads a repo's ocean config from disk.
 func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
 	configPath := filepath.Join(root, "ocean.config.json")
 	payload, err := afero.ReadFile(fs, configPath)
@@ -1180,6 +1333,7 @@ func ReadRepoConfig(fs afero.Fs, root string) (RepoConfig, error) {
 	return config, nil
 }
 
+// WriteRepoConfig persists a repo's ocean config to disk.
 func WriteRepoConfig(fs afero.Fs, root string, config RepoConfig) error {
 	configPath := filepath.Join(root, "ocean.config.json")
 	payload, err := json.MarshalIndent(config, "", "    ")
@@ -1190,6 +1344,7 @@ func WriteRepoConfig(fs afero.Fs, root string, config RepoConfig) error {
 	return afero.WriteFile(fs, configPath, payload, 0o644)
 }
 
+// RepoCommand returns the shell command a repo declares for one task kind, honouring any group override.
 func RepoCommand(config RepoConfig, kind string) (string, error) {
 	switch kind {
 	case "build":
@@ -1236,6 +1391,7 @@ func RepoCommand(config RepoConfig, kind string) (string, error) {
 	}
 }
 
+// ReadRepoCommand loads a repo's config and returns the command it declares for one task kind.
 func ReadRepoCommand(fs afero.Fs, root string, kind string) (string, error) {
 	config, err := ReadRepoConfig(fs, root)
 	if err != nil {
@@ -1244,10 +1400,12 @@ func ReadRepoCommand(fs afero.Fs, root string, kind string) (string, error) {
 	return RepoCommand(config, kind)
 }
 
+// isTemplateName reports whether a value still carries an unsubstituted placeholder token.
 func isTemplateName(value string) bool {
 	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }
 
+// RunBuild runs a repo's build task, skipping it when the recorded hash shows the tree is unchanged.
 func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath string, root string) error {
 	buildCmd, err := readBuildCommand(targetPath)
 	if err != nil {
@@ -1297,6 +1455,7 @@ func RunBuild(cmd *cobra.Command, label string, targetPath string, hashPath stri
 	return WriteHashFile(afero.NewOsFs(), hashPath, postHash)
 }
 
+// RunCheck runs a repo's check task with any extra arguments, skipping it when the recorded hash shows the tree is unchanged.
 func RunCheck(cmd *cobra.Command, label string, targetPath string, hashPath string, passThrough []string, root string) error {
 	testCmd, err := readTestCommand(targetPath)
 	if err != nil {
@@ -1366,14 +1525,17 @@ func RunCheck(cmd *cobra.Command, label string, targetPath string, hashPath stri
 	return WriteHashFile(afero.NewOsFs(), hashPath, newHash)
 }
 
+// readBuildCommand returns the build command declared at a repo path.
 func readBuildCommand(targetPath string) (string, error) {
 	return ReadRepoCommand(afero.NewOsFs(), targetPath, "build")
 }
 
+// readTestCommand returns the test command declared at a repo path.
 func readTestCommand(targetPath string) (string, error) {
 	return ReadRepoCommand(afero.NewOsFs(), targetPath, "test")
 }
 
+// buildTestCommand appends shell-quoted pass-through arguments to a test command.
 func buildTestCommand(base string, passThrough []string) string {
 	if len(passThrough) == 0 {
 		return base
@@ -1385,6 +1547,7 @@ func buildTestCommand(base string, passThrough []string) string {
 	return base + " " + strings.Join(parts, " ")
 }
 
+// shellQuote returns a value safe to embed in a shell command.
 func shellQuote(value string) string {
 	if value == "" {
 		return "''"
@@ -1403,6 +1566,7 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
+// FindTargetScopes returns the scopes declared on one registered target.
 func FindTargetScopes(config WorkspaceConfig, target Target) []string {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1437,6 +1601,16 @@ func FindTargetScopes(config WorkspaceConfig, target Target) []string {
 			return nil
 		}
 		return config.Apps[appIdx].Libraries[libIdx].Scopes
+	case TargetAppProject:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return nil
+		}
+		projectIdx := FindAppProjectIndex(config.Apps[appIdx], target.Name)
+		if projectIdx == -1 {
+			return nil
+		}
+		return config.Apps[appIdx].Projects[projectIdx].Scopes
 	case TargetTest:
 		appIdx := FindAppIndex(config, target.App)
 		if appIdx == -1 {
@@ -1451,6 +1625,7 @@ func FindTargetScopes(config WorkspaceConfig, target Target) []string {
 	return nil
 }
 
+// HasCommonScope reports whether two scope lists share an entry.
 func HasCommonScope(a, b []string) bool {
 	set := make(map[string]struct{}, len(a))
 	for _, s := range a {
@@ -1464,6 +1639,7 @@ func HasCommonScope(a, b []string) bool {
 	return false
 }
 
+// AddScopeToWorkspaceTarget records a scope on one registered target, erroring when the target is unknown.
 func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1506,6 +1682,18 @@ func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope stri
 		if !containsString(config.Apps[appIdx].Libraries[libIdx].Scopes, scope) {
 			config.Apps[appIdx].Libraries[libIdx].Scopes = append(config.Apps[appIdx].Libraries[libIdx].Scopes, scope)
 		}
+	case TargetAppProject:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		projectIdx := FindAppProjectIndex(config.Apps[appIdx], target.Name)
+		if projectIdx == -1 {
+			return config, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		if !containsString(config.Apps[appIdx].Projects[projectIdx].Scopes, scope) {
+			config.Apps[appIdx].Projects[projectIdx].Scopes = append(config.Apps[appIdx].Projects[projectIdx].Scopes, scope)
+		}
 	case TargetTest:
 		appIdx := FindAppIndex(config, target.App)
 		if appIdx == -1 {
@@ -1524,6 +1712,7 @@ func AddScopeToWorkspaceTarget(config WorkspaceConfig, target Target, scope stri
 	return config, nil
 }
 
+// RemoveScopeFromWorkspaceTarget drops a scope from one registered target, erroring when the target is unknown.
 func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope string) (WorkspaceConfig, error) {
 	switch target.Kind {
 	case TargetGlobalLib:
@@ -1558,6 +1747,16 @@ func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope
 			return config, fmt.Errorf("library not registered in workspace: %s", target.Name)
 		}
 		config.Apps[appIdx].Libraries[libIdx].Scopes = removeString(config.Apps[appIdx].Libraries[libIdx].Scopes, scope)
+	case TargetAppProject:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		projectIdx := FindAppProjectIndex(config.Apps[appIdx], target.Name)
+		if projectIdx == -1 {
+			return config, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		config.Apps[appIdx].Projects[projectIdx].Scopes = removeString(config.Apps[appIdx].Projects[projectIdx].Scopes, scope)
 	case TargetTest:
 		appIdx := FindAppIndex(config, target.App)
 		if appIdx == -1 {
@@ -1574,6 +1773,7 @@ func RemoveScopeFromWorkspaceTarget(config WorkspaceConfig, target Target, scope
 	return config, nil
 }
 
+// FindDepsReliantOnScope returns the dependents that would lose visibility of a target if the given scope were removed.
 func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string) []string {
 
 	if target.Kind != TargetAppLib {
@@ -1641,6 +1841,7 @@ func FindDepsReliantOnScope(config WorkspaceConfig, target Target, scope string)
 	return warnings
 }
 
+// AddScope records a scope on a named target and persists the result.
 func AddScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -1671,6 +1872,7 @@ func AddScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName stri
 	return WriteRepoConfig(fs, target.Path, repoConfig)
 }
 
+// RemoveScope drops a scope from a named target, refusing when a dependent still relies on it.
 func RemoveScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -1702,6 +1904,7 @@ func RemoveScope(cmd *cobra.Command, fs afero.Fs, scopeName string, targetName s
 	return WriteRepoConfig(fs, target.Path, repoConfig)
 }
 
+// containsString reports whether a slice carries the given value.
 func containsString(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
@@ -1711,6 +1914,7 @@ func containsString(slice []string, s string) bool {
 	return false
 }
 
+// removeString returns the slice with the given value removed.
 func removeString(slice []string, s string) []string {
 	out := make([]string, 0, len(slice))
 	for _, v := range slice {

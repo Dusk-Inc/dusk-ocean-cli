@@ -43,8 +43,9 @@ initialized and a warning is printed.`,
 	},
 }
 
+// init registers the init-repo command's flags.
 func init() {
-	initRepoCmd.Flags().String("kind", "", "Repo kind (project, library, app, infra, docs)")
+	initRepoCmd.Flags().String("kind", "", "Repo kind (project, library, app, template, infra, docs)")
 	initRepoCmd.Flags().String("name", "", "Repo name (also the directory basename)")
 	initRepoCmd.Flags().String("app", "", "Parent app name (optional; app-scoped libraries inherit their app's git history)")
 	initRepoCmd.Flags().String("remote", "", "Override the recorded remote value; defaults to the derived \"<org>/<name>\"")

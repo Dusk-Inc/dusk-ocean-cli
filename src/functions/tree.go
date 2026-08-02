@@ -20,6 +20,7 @@ var templateDir string = "repos/templates"
 var libDir string = "repos/libs"
 var sandboxDir string = "repos/sandbox"
 
+// GetRoot returns the workspace root, walking up from the current directory until it finds the workspace config.
 func GetRoot() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -39,6 +40,7 @@ func GetRoot() (string, error) {
 	}
 }
 
+// getSubfolders lists the immediate subdirectories of a workspace-relative path as components.
 func getSubfolders(relativePath string) ([]Component, error) {
 	root, err := GetRoot()
 	if err != nil {
@@ -63,38 +65,47 @@ func getSubfolders(relativePath string) ([]Component, error) {
 	return results, nil
 }
 
+// GetApps lists the app directories under repos/apps.
 func GetApps() ([]Component, error) {
 	return getSubfolders(appsDir)
 }
 
+// GetAppServices lists one app's service directories.
 func GetAppServices(appName string) ([]Component, error) {
 	return getSubfolders(filepath.Join(appsDir, appName, "services"))
 }
 
+// GetAppClients lists one app's client directories.
 func GetAppClients(appName string) ([]Component, error) {
 	return getSubfolders(filepath.Join(appsDir, appName, "clients"))
 }
 
+// GetAppLibs lists one app's library directories.
 func GetAppLibs(appName string) ([]Component, error) {
 	return getSubfolders(filepath.Join(appsDir, appName, "libs"))
 }
 
+// GetAppTests lists one app's testing directories.
 func GetAppTests(appName string) ([]Component, error) {
 	return getSubfolders(filepath.Join(appsDir, appName, "testing"))
 }
 
+// GetProjects lists the project directories under repos/projects.
 func GetProjects() ([]Component, error) {
 	return getSubfolders(projectsDir)
 }
 
+// GetLibs lists the global library directories under repos/libs.
 func GetLibs() ([]Component, error) {
 	return getSubfolders(libDir)
 }
 
+// GetTemplates lists the template directories under repos/templates.
 func GetTemplates() ([]Component, error) {
 	return getSubfolders(templateDir)
 }
 
+// IsSandboxEmpty reports whether the sandbox directory holds nothing.
 func IsSandboxEmpty() (bool, error) {
 	root, err := GetRoot()
 	if err != nil {
@@ -107,6 +118,7 @@ func IsSandboxEmpty() (bool, error) {
 	return len(entries) == 0, nil
 }
 
+// DirExists reports whether a path exists and is a directory.
 func DirExists(fs afero.Fs, path string) bool {
 	info, err := fs.Stat(path)
 	if err != nil {
@@ -120,6 +132,7 @@ type ProfileEntry struct {
 	Label string
 }
 
+// ListApiTemplates returns the names of every template that scaffolds a service.
 func ListApiTemplates() ([]string, error) {
 	return ListTemplatesByType("service")
 }
@@ -129,23 +142,23 @@ type templateConfig struct {
 	Type     string `json:"type"`
 }
 
-// ListTemplatesByType returns the names of every template that scaffolds
-// any of the requested kinds. Workspace-registered templates are returned
-// first; any unregistered template directories under repos/templates/ that
-// classify themselves via ocean.config.json's `type` field are included
-// afterward, deduplicated against the registry, so the dev loop of "drop a
-// template folder, scaffold from it" still works.
-//
-// Service and library scaffolds invoke this with a single kind. Project
-// scaffolds invoke it with service+library+project so a project may seed
-// from any non-app template kind. Apps are intentionally not template-able
-// and are silently filtered out.
+/*
+ListTemplatesByType returns the names of every template that scaffolds any of
+the requested kinds. Workspace-registered templates are returned first; any
+unregistered template directories under repos/templates/ that classify
+themselves via ocean.config.json's `type` field are included afterward,
+deduplicated against the registry, so the dev loop of "drop a template folder,
+scaffold from it" still works.
+
+Service and library scaffolds invoke this with a single kind. Project scaffolds
+invoke it with service+library+project so a project may seed from any of those.
+App scaffolds invoke it with the app kind, where `type: "app"` classifies a
+composite whole-app template carrying its own nested services, libraries,
+projects, and tests.
+*/
 func ListTemplatesByType(kinds ...string) ([]string, error) {
 	wanted := map[string]struct{}{}
 	for _, kind := range kinds {
-		if kind == "app" {
-			continue
-		}
 		wanted[kind] = struct{}{}
 	}
 	if len(wanted) == 0 {

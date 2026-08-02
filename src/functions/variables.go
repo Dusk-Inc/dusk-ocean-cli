@@ -22,6 +22,7 @@ type VariableContext struct {
 
 var variablePattern = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^{}\s]+)\s*\}\}`)
 
+// Substitute expands every namespaced token in a template string against the given variable context.
 func Substitute(template string, ctx VariableContext) (string, error) {
 	var firstErr error
 	out := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
@@ -60,6 +61,7 @@ func Substitute(template string, ctx VariableContext) (string, error) {
 	return out, nil
 }
 
+// LoadEnvFile reads the workspace-root environment file into a map, reporting but not failing when it is absent.
 func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, error) {
 	path := filepath.Join(root, ".env")
 	f, err := fs.Open(path)
@@ -98,6 +100,7 @@ func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, er
 	return values, nil
 }
 
+// LoadWorkspaceVariables returns the workspace-level variables declared in config.
 func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	if config.Variables == nil {
 		return map[string]string{}
@@ -105,6 +108,7 @@ func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	return config.Variables
 }
 
+// BuildRepoVariables returns the reserved and user-declared variables that a repo's tasks may reference.
 func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName string) (map[string]string, error) {
 	switch kind {
 	case tokens.RepoKindProject:
@@ -172,6 +176,21 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 		}
 		return mergeRepoVariables(reserved, app.Variables, kind, app.Name)
 
+	case tokens.RepoKindTemplate:
+		idx := FindTemplateIndex(config, repoName)
+		if idx == -1 {
+			return nil, fmt.Errorf("template not registered in workspace: %s", repoName)
+		}
+		entry := config.Templates[idx]
+		reserved := map[string]string{
+			"name":   entry.Name,
+			"kind":   tokens.RepoKindTemplate,
+			"path":   filepath.Join("repos", tokens.RepoDirTemplates, entry.Name),
+			"scopes": "",
+			"remote": entry.Remote,
+		}
+		return mergeRepoVariables(reserved, entry.Variables, kind, entry.Name)
+
 	case tokens.RepoKindInfra:
 		idx := FindInfraIndex(config, repoName)
 		if idx == -1 {
@@ -234,6 +253,7 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 	return nil, fmt.Errorf("unknown repo kind: %s", kind)
 }
 
+// mergeRepoVariables overlays a repo's user-declared variables onto its reserved ones, rejecting any that would shadow a reserved key.
 func mergeRepoVariables(reserved map[string]string, user map[string]string, kind, repoName string) (map[string]string, error) {
 	for key := range user {
 		if _, exists := reserved[key]; exists {

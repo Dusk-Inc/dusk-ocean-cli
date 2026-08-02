@@ -13,6 +13,7 @@ import (
 const (
 	AppSubRepoKindService = "service"
 	AppSubRepoKindLibrary = "library"
+	AppSubRepoKindProject = "project"
 	AppSubRepoKindTest    = "test"
 )
 
@@ -28,9 +29,11 @@ var appSubRepoDirs = []struct {
 }{
 	{"services", AppSubRepoKindService},
 	{"libs", AppSubRepoKindLibrary},
+	{"projects", AppSubRepoKindProject},
 	{"testing", AppSubRepoKindTest},
 }
 
+// DiscoverAppSubRepos lists the services, libraries, projects, and tests an app directory holds, each identified by its own ocean.config.json.
 func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, error) {
 	appRoot := filepath.Join("repos", "apps", appName)
 	var found []DiscoveredAppSubRepo
@@ -71,6 +74,7 @@ func DiscoverAppSubRepos(fs afero.Fs, appName string) ([]DiscoveredAppSubRepo, e
 	return found, nil
 }
 
+// RegisterDiscoveredAppSubRepos registers every sub-repo an app directory holds that workspace config does not already carry, reporting each outcome and skipping rather than failing on a single error.
 func RegisterDiscoveredAppSubRepos(fs afero.Fs, out io.Writer, appName string) error {
 	discovered, err := DiscoverAppSubRepos(fs, appName)
 	if err != nil {
@@ -119,6 +123,17 @@ func RegisterDiscoveredAppSubRepos(fs afero.Fs, out io.Writer, appName string) e
 				continue
 			}
 			fmt.Fprintf(out, "discovered library %s/%s: registered\n", appName, sub.Name)
+
+		case AppSubRepoKindProject:
+			if FindAppProjectIndex(config.Apps[appIdx], sub.Name) != -1 {
+				fmt.Fprintf(out, "discovered project %s/%s: already registered, skipping\n", appName, sub.Name)
+				continue
+			}
+			if err := AddAppProjectToWorkspace(fs, appName, sub.Name); err != nil {
+				fmt.Fprintf(out, "discovered project %s/%s: failed to register: %v\n", appName, sub.Name, err)
+				continue
+			}
+			fmt.Fprintf(out, "discovered project %s/%s: registered\n", appName, sub.Name)
 
 		case AppSubRepoKindTest:
 			if FindAppTestIndex(config.Apps[appIdx], sub.Name) != -1 {

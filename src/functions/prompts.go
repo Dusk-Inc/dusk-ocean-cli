@@ -8,6 +8,7 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
+// PromptForApp asks the user to pick one of the workspace's registered apps.
 func PromptForApp() (string, error) {
 	apps, err := GetApps()
 	if err != nil {
@@ -23,6 +24,7 @@ func PromptForApp() (string, error) {
 	return SelectFromList("Select app", items)
 }
 
+// PromptForService asks the user to pick one of an app's registered services.
 func PromptForService(appName string) (string, error) {
 	services, err := GetAppServices(appName)
 	if err != nil {
@@ -38,6 +40,7 @@ func PromptForService(appName string) (string, error) {
 	return SelectFromList("Select service", items)
 }
 
+// PromptForAppLib asks the user to pick one of an app's registered libraries.
 func PromptForAppLib(appName string) (string, error) {
 	libs, err := GetAppLibs(appName)
 	if err != nil {
@@ -53,6 +56,7 @@ func PromptForAppLib(appName string) (string, error) {
 	return SelectFromList("Select library", items)
 }
 
+// PromptForTest asks the user to pick one of an app's registered testing repos.
 func PromptForTest(appName string) (string, error) {
 	tests, err := GetAppTests(appName)
 	if err != nil {
@@ -68,6 +72,7 @@ func PromptForTest(appName string) (string, error) {
 	return SelectFromList("Select test", items)
 }
 
+// PromptForLanguage asks the user to pick a language from those detected under the given path.
 func PromptForLanguage(rootPath string) (string, error) {
 	entries, err := os.ReadDir(rootPath)
 	if err != nil {
@@ -85,6 +90,7 @@ func PromptForLanguage(rootPath string) (string, error) {
 	return SelectFromList("Select language", languages)
 }
 
+// PromptForGlobalLib asks the user to pick one of the workspace's global libraries.
 func PromptForGlobalLib() (string, error) {
 	libs, err := GetLibs()
 	if err != nil {
@@ -100,6 +106,7 @@ func PromptForGlobalLib() (string, error) {
 	return SelectFromList("Select library", items)
 }
 
+// PromptForProject asks the user to pick one of the workspace's global projects.
 func PromptForProject() (string, error) {
 	projects, err := GetProjects()
 	if err != nil {
@@ -115,6 +122,7 @@ func PromptForProject() (string, error) {
 	return SelectFromList("Select project", items)
 }
 
+// PromptForTarget asks the user to pick any registered target, narrowing by kind first and offering only the kinds the workspace actually holds.
 func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 	options := []string{}
 	if len(config.Libraries) > 0 {
@@ -126,6 +134,10 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 	appLibApps := AppNamesWithLibraries(config)
 	if len(appLibApps) > 0 {
 		options = append(options, "app library")
+	}
+	appProjectApps := AppNamesWithProjects(config)
+	if len(appProjectApps) > 0 {
+		options = append(options, "app project")
 	}
 	serviceApps := AppNamesWithServices(config)
 	if len(serviceApps) > 0 {
@@ -189,6 +201,25 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 			Name: name,
 			Path: filepath.Join(root, "repos", "apps", appName, "libs", name),
 		}, nil
+	case "app project":
+		appName, err := SelectFromList("Select app", appProjectApps)
+		if err != nil {
+			return Target{}, err
+		}
+		projectNames := AppProjectNames(config, appName)
+		if len(projectNames) == 0 {
+			return Target{}, fmt.Errorf("no projects found for app: %s", appName)
+		}
+		name, err := SelectFromList("Select project", projectNames)
+		if err != nil {
+			return Target{}, err
+		}
+		return Target{
+			Kind: TargetAppProject,
+			App:  appName,
+			Name: name,
+			Path: filepath.Join(root, "repos", "apps", appName, "projects", name),
+		}, nil
 	case "project":
 		projectNames := ProjectNames(config)
 		name, err := SelectFromList("Select project", projectNames)
@@ -245,6 +276,7 @@ func PromptForTarget(config WorkspaceConfig, root string) (Target, error) {
 	}
 }
 
+// SelectFromList asks the user to pick one entry from a list under the given label.
 func SelectFromList(label string, items []string) (string, error) {
 	if len(items) == 0 {
 		return "", fmt.Errorf("no options available")

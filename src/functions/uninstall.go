@@ -26,6 +26,7 @@ type uninstallDependency struct {
 	path string
 }
 
+// RunUninstallPrompt walks the user through picking a target and one of its dependencies to remove.
 func RunUninstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -64,6 +65,7 @@ func RunUninstallPrompt(cmd *cobra.Command, fs afero.Fs) error {
 	return runUninstall(cmd, fs, target, dependency, UninstallOptions{})
 }
 
+// UnwireLocalDependency removes one library dependency from a target, running the library's uninstall task and dropping the workspace edge.
 func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, targetName string, appName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -109,6 +111,7 @@ func UnwireLocalDependency(cmd *cobra.Command, fs afero.Fs, payloadName string, 
 	return runUninstall(cmd, fs, target, dependency, UninstallOptions{})
 }
 
+// runUninstall executes a dependency's uninstall task in the target repo and records the removal.
 func runUninstall(cmd *cobra.Command, fs afero.Fs, target Target, dependency uninstallDependency, options UninstallOptions) error {
 	if err := RunUninstallForTargets(cmd, fs, dependency.path, dependency.name, []Target{target}, options); err != nil {
 		return err
@@ -118,6 +121,7 @@ func runUninstall(cmd *cobra.Command, fs afero.Fs, target Target, dependency uni
 	})
 }
 
+// collectTargetDeps returns the dependency list registered for one target.
 func collectTargetDeps(config WorkspaceConfig, target Target) ([]WorkspaceDep, error) {
 	switch target.Kind {
 	case TargetService:
@@ -152,6 +156,16 @@ func collectTargetDeps(config WorkspaceConfig, target Target) ([]WorkspaceDep, e
 			return nil, fmt.Errorf("project not registered in workspace: %s", target.Name)
 		}
 		return config.Projects[projectIndex].Deps, nil
+	case TargetAppProject:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return nil, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		projectIndex := FindAppProjectIndex(config.Apps[appIndex], target.Name)
+		if projectIndex == -1 {
+			return nil, fmt.Errorf("project not registered in workspace: %s", target.Name)
+		}
+		return config.Apps[appIndex].Projects[projectIndex].Deps, nil
 	case TargetTest:
 		appIndex := FindAppIndex(config, target.App)
 		if appIndex == -1 {
@@ -167,6 +181,7 @@ func collectTargetDeps(config WorkspaceConfig, target Target) ([]WorkspaceDep, e
 	}
 }
 
+// promptForUninstallDependency asks the user which of a target's dependencies to remove.
 func promptForUninstallDependency(config WorkspaceConfig, root string, depsList []WorkspaceDep) (uninstallDependency, error) {
 	options := make([]string, 0, len(depsList))
 	entries := make([]uninstallDependency, 0, len(depsList))
@@ -190,6 +205,7 @@ func promptForUninstallDependency(config WorkspaceConfig, root string, depsList 
 	return uninstallDependency{}, fmt.Errorf("selected dependency not found")
 }
 
+// resolveUninstallDependency resolves a registered dependency entry to the repo backing it.
 func resolveUninstallDependency(config WorkspaceConfig, root string, dep WorkspaceDep) (uninstallDependency, error) {
 	switch dep.From {
 	case "global":
@@ -234,6 +250,7 @@ func resolveUninstallDependency(config WorkspaceConfig, root string, dep Workspa
 	}
 }
 
+// formatUninstallDependencyLabel renders a dependency as the label the uninstall prompt shows.
 func formatUninstallDependencyLabel(dep uninstallDependency) string {
 	switch dep.kind {
 	case uninstallDependencyAppLib:
@@ -247,6 +264,7 @@ func formatUninstallDependencyLabel(dep uninstallDependency) string {
 	}
 }
 
+// removeTargetDependency drops one dependency edge from a target's entry in a config value.
 func removeTargetDependency(config WorkspaceConfig, target Target, dependency uninstallDependency) WorkspaceConfig {
 	switch target.Kind {
 	case TargetService:
@@ -285,6 +303,17 @@ func removeTargetDependency(config WorkspaceConfig, target Target, dependency un
 		}
 		depsList := config.Projects[projectIndex].Deps
 		config.Projects[projectIndex].Deps = filterTargetDeps(depsList, dependency.name, dependency.from)
+	case TargetAppProject:
+		appIndex := FindAppIndex(config, target.App)
+		if appIndex == -1 {
+			return config
+		}
+		projectIndex := FindAppProjectIndex(config.Apps[appIndex], target.Name)
+		if projectIndex == -1 {
+			return config
+		}
+		depsList := config.Apps[appIndex].Projects[projectIndex].Deps
+		config.Apps[appIndex].Projects[projectIndex].Deps = filterTargetDeps(depsList, dependency.name, dependency.from)
 	case TargetTest:
 		appIndex := FindAppIndex(config, target.App)
 		if appIndex == -1 {
@@ -300,6 +329,7 @@ func removeTargetDependency(config WorkspaceConfig, target Target, dependency un
 	return config
 }
 
+// filterTargetDeps returns the dependency list with the named entry from the given source removed.
 func filterTargetDeps(depsList []WorkspaceDep, name string, source string) []WorkspaceDep {
 	if len(depsList) == 0 {
 		return depsList

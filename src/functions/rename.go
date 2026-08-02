@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// RenameInWorkspaceConfig renames a registered target and rewrites every dependency edge that referenced it.
 func RenameInWorkspaceConfig(config WorkspaceConfig, target Target, oldName string, newName string) (WorkspaceConfig, error) {
 	switch target.Kind {
 	case TargetApp:
@@ -46,6 +47,17 @@ func RenameInWorkspaceConfig(config WorkspaceConfig, target Target, oldName stri
 		config.Apps[appIdx].Libraries[libIdx].Name = newName
 		config = renameDepsInConfig(config, oldName, target.App, newName, target.App)
 
+	case TargetAppProject:
+		appIdx := FindAppIndex(config, target.App)
+		if appIdx == -1 {
+			return config, fmt.Errorf("app not registered in workspace: %s", target.App)
+		}
+		projectIdx := FindAppProjectIndex(config.Apps[appIdx], oldName)
+		if projectIdx == -1 {
+			return config, fmt.Errorf("project not registered in workspace: %s", oldName)
+		}
+		config.Apps[appIdx].Projects[projectIdx].Name = newName
+
 	case TargetService:
 		appIdx := FindAppIndex(config, target.App)
 		if appIdx == -1 {
@@ -75,6 +87,7 @@ func RenameInWorkspaceConfig(config WorkspaceConfig, target Target, oldName stri
 	return config, nil
 }
 
+// renameDepsInConfig rewrites every dependency entry naming one library and source to the new pair.
 func renameDepsInConfig(config WorkspaceConfig, oldLib string, oldFrom string, newLib string, newFrom string) WorkspaceConfig {
 	for i := range config.Libraries {
 		config.Libraries[i].Deps = renameDepsInSlice(config.Libraries[i].Deps, oldLib, oldFrom, newLib, newFrom)
@@ -96,6 +109,7 @@ func renameDepsInConfig(config WorkspaceConfig, oldLib string, oldFrom string, n
 	return config
 }
 
+// renameDepSourceInConfig rewrites the source field of every dependency that pointed at a renamed app.
 func renameDepSourceInConfig(config WorkspaceConfig, oldFrom string, newFrom string) WorkspaceConfig {
 	for i := range config.Apps {
 		for j := range config.Apps[i].Libraries {
@@ -111,6 +125,7 @@ func renameDepSourceInConfig(config WorkspaceConfig, oldFrom string, newFrom str
 	return config
 }
 
+// renameDepSourceInSlice rewrites the source field of the dependencies in one slice.
 func renameDepSourceInSlice(deps []WorkspaceDep, oldFrom string, newFrom string) []WorkspaceDep {
 	for i, dep := range deps {
 		if dep.From == oldFrom {
@@ -120,6 +135,7 @@ func renameDepSourceInSlice(deps []WorkspaceDep, oldFrom string, newFrom string)
 	return deps
 }
 
+// renameDepsInSlice rewrites the library and source of the matching dependencies in one slice.
 func renameDepsInSlice(deps []WorkspaceDep, oldLib string, oldFrom string, newLib string, newFrom string) []WorkspaceDep {
 	for i, dep := range deps {
 		if dep.Lib == oldLib && dep.From == oldFrom {
@@ -130,6 +146,7 @@ func renameDepsInSlice(deps []WorkspaceDep, oldLib string, oldFrom string, newLi
 	return deps
 }
 
+// RenameHashFiles moves a target's build and check hash files to their new names so a rename does not force a rebuild.
 func RenameHashFiles(fs afero.Fs, root string, target Target, oldName string, newName string) error {
 	type hashPair struct {
 		oldPath string
@@ -158,8 +175,13 @@ func RenameHashFiles(fs afero.Fs, root string, target Target, oldName string, ne
 		}
 	case TargetProject:
 		pairs = []hashPair{
-			{MakeHashPath(root, "projects", oldName), MakeHashPath(root, "projects", newName)},
-			{MakeCheckHashPath(root, "projects", oldName), MakeCheckHashPath(root, "projects", newName)},
+			{MakeHashPath(root, "projects", "global", oldName), MakeHashPath(root, "projects", "global", newName)},
+			{MakeCheckHashPath(root, "projects", "global", oldName), MakeCheckHashPath(root, "projects", "global", newName)},
+		}
+	case TargetAppProject:
+		pairs = []hashPair{
+			{MakeHashPath(root, "projects", target.App, oldName), MakeHashPath(root, "projects", target.App, newName)},
+			{MakeCheckHashPath(root, "projects", target.App, oldName), MakeCheckHashPath(root, "projects", target.App, newName)},
 		}
 	case TargetTest:
 		pairs = []hashPair{
@@ -178,6 +200,7 @@ func RenameHashFiles(fs afero.Fs, root string, target Target, oldName string, ne
 	return nil
 }
 
+// renameFileIfExists moves one hash file to a new path, no-op when the source is absent.
 func renameFileIfExists(fs afero.Fs, oldPath string, newPath string) error {
 	content, found, err := ReadHashFile(fs, oldPath)
 	if err != nil {
@@ -192,15 +215,18 @@ func renameFileIfExists(fs afero.Fs, oldPath string, newPath string) error {
 	return fs.Remove(oldPath)
 }
 
+// renameAppHashDirs moves every per-app hash directory to the app's new name.
 func renameAppHashDirs(fs afero.Fs, root string, oldName string, newName string) error {
 	hashRoot := filepath.Join(root, ".ocean", "hashes")
 	dirs := []string{
 		filepath.Join(hashRoot, "build", "services"),
 		filepath.Join(hashRoot, "build", "libs"),
 		filepath.Join(hashRoot, "build", "tests"),
+		filepath.Join(hashRoot, "build", "projects"),
 		filepath.Join(hashRoot, "check", "services"),
 		filepath.Join(hashRoot, "check", "libs"),
 		filepath.Join(hashRoot, "check", "tests"),
+		filepath.Join(hashRoot, "check", "projects"),
 	}
 	for _, dir := range dirs {
 		oldPath := filepath.Join(dir, oldName)
@@ -215,6 +241,7 @@ func renameAppHashDirs(fs afero.Fs, root string, oldName string, newName string)
 	return nil
 }
 
+// ResolveTargetInApp resolves a name to a target within one app, erroring when it is unknown or matches more than one kind.
 func ResolveTargetInApp(config WorkspaceConfig, root string, appName string, name string) (Target, error) {
 	appIdx := FindAppIndex(config, appName)
 	if appIdx == -1 {
@@ -241,6 +268,16 @@ func ResolveTargetInApp(config WorkspaceConfig, root string, appName string, nam
 			})
 		}
 	}
+	for _, project := range config.Apps[appIdx].Projects {
+		if project.Name == name {
+			matches = append(matches, Target{
+				Kind: TargetAppProject,
+				App:  appName,
+				Name: name,
+				Path: filepath.Join(root, "repos", "apps", appName, "projects", name),
+			})
+		}
+	}
 	for _, test := range config.Apps[appIdx].Testing {
 		if test.Name == name {
 			matches = append(matches, Target{
@@ -260,6 +297,7 @@ func ResolveTargetInApp(config WorkspaceConfig, root string, appName string, nam
 	return matches[0], nil
 }
 
+// RenameRepo renames a repo on disk, in workspace config, and across its hash files and dependency edges.
 func RenameRepo(cmd *cobra.Command, fs afero.Fs, oldName string, newName string, appName ...string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {

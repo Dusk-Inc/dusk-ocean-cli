@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/afero"
 )
 
+// WireNewRepoVcs initializes git for a freshly scaffolded repo and creates its remote, resolving the workspace root first.
 func WireNewRepoVcs(fs afero.Fs, stdout io.Writer, stderr io.Writer, kind string, name string, app string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -18,10 +19,12 @@ func WireNewRepoVcs(fs afero.Fs, stdout io.Writer, stderr io.Writer, kind string
 	return WireNewRepoVcsAt(fs, root, stdout, stderr, kind, name, app)
 }
 
+// WireNewRepoVcsAt initializes git for a freshly scaffolded repo under an explicit workspace root and creates its remote.
 func WireNewRepoVcsAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, kind string, name string, app string) error {
 	return wireRepoVcsAt(fs, root, stdout, stderr, kind, name, app, true)
 }
 
+// wireRepoVcsAt runs the workspace's init and initial_commit tasks against a repo, then create_remote when asked, treating a failed remote as non-fatal.
 func wireRepoVcsAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, kind string, name string, app string, createRemote bool) error {
 	target, err := vcsTaskTarget(kind, name, app)
 	if err != nil {
@@ -41,6 +44,7 @@ func wireRepoVcsAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer,
 	return nil
 }
 
+// InitRepoVcs initializes git for an already-registered repo and records the resulting remote, resolving the workspace root first.
 func InitRepoVcs(fs afero.Fs, stdout io.Writer, stderr io.Writer, kind string, name string, app string, remoteOverride string, noRemote bool) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -49,6 +53,7 @@ func InitRepoVcs(fs afero.Fs, stdout io.Writer, stderr io.Writer, kind string, n
 	return InitRepoVcsAt(fs, root, stdout, stderr, kind, name, app, remoteOverride, noRemote)
 }
 
+// InitRepoVcsAt initializes git for an already-registered repo under an explicit workspace root, refusing a repo that is unregistered, missing, or already a git repository.
 func InitRepoVcsAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, kind string, name string, app string, remoteOverride string, noRemote bool) error {
 	if err := ValidateRepoKindFlags(kind, app); err != nil {
 		return err
@@ -98,6 +103,7 @@ func InitRepoVcsAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer,
 	return nil
 }
 
+// resolveRecordedRemote picks the remote value to write into workspace config, honouring an override and the no-remote sentinel.
 func resolveRecordedRemote(config WorkspaceConfig, name string, remoteOverride string, noRemote bool, stderr io.Writer) string {
 	if noRemote {
 		return tokens.RemoteNone
@@ -118,6 +124,7 @@ type vcsTarget struct {
 	app  string
 }
 
+// vcsTaskTarget resolves the repo a VCS task addresses, rejecting the app-scoped kinds that inherit their app's git history.
 func vcsTaskTarget(kind string, name string, app string) (vcsTarget, error) {
 	switch kind {
 	case tokens.RepoKindLibrary:
@@ -126,8 +133,12 @@ func vcsTaskTarget(kind string, name string, app string) (vcsTarget, error) {
 			return vcsTarget{}, fmt.Errorf("app-scoped libraries inherit their app's git history; VCS wiring is not applicable")
 		}
 		return vcsTarget{name: name, app: ""}, nil
+	case tokens.RepoKindProject:
+		if app != "" {
+			return vcsTarget{}, fmt.Errorf("app-scoped projects inherit their app's git history; VCS wiring is not applicable")
+		}
+		return vcsTarget{name: name, app: ""}, nil
 	case tokens.RepoKindApp,
-		tokens.RepoKindProject,
 		tokens.RepoKindTemplate,
 		tokens.RepoKindInfra,
 		tokens.RepoKindDocs:
@@ -138,6 +149,7 @@ func vcsTaskTarget(kind string, name string, app string) (vcsTarget, error) {
 	return vcsTarget{}, fmt.Errorf("unsupported kind for VCS wiring: %s", kind)
 }
 
+// runVcsTask runs one named workspace VCS task against a repo, reporting when no command is configured for it.
 func runVcsTask(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	config, err := ReadWorkspaceConfig(fs)
 	if err != nil {
