@@ -109,6 +109,70 @@ func TestRegisterRepo_Project(t *testing.T) {
 	}
 }
 
+func TestRegisterRepo_Test(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	if err := fs.MkdirAll("repos/apps/app-a/testing/e2e-a", 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTest, "e2e-a", "app-a", "git@github.com:dusk-inc/e2e-a.git", ""); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+	cfg, err := ReadWorkspaceConfig(fs)
+	if err != nil {
+		t.Fatalf("ReadWorkspaceConfig: %v", err)
+	}
+	if len(cfg.Apps) != 1 || cfg.Apps[0].Name != "app-a" {
+		t.Fatalf("app entry missing: %+v", cfg.Apps)
+	}
+	if len(cfg.Apps[0].Testing) != 1 || cfg.Apps[0].Testing[0].Name != "e2e-a" {
+		t.Fatalf("test not registered: %+v", cfg.Apps[0].Testing)
+	}
+	if cfg.Apps[0].Testing[0].Remote != "git@github.com:dusk-inc/e2e-a.git" {
+		t.Errorf("remote: got %q", cfg.Apps[0].Testing[0].Remote)
+	}
+	repoConfig, err := ReadRepoConfig(fs, "repos/apps/app-a/testing/e2e-a")
+	if err != nil {
+		t.Fatalf("expected starter ocean.config.json: %v", err)
+	}
+	if repoConfig.Type != "test" {
+		t.Errorf("expected starter type=test, got %q", repoConfig.Type)
+	}
+	if _, err := MakeTestNode(cfg, "app-a", "e2e-a"); err != nil {
+		t.Errorf("registered test should resolve to a graph node: %v", err)
+	}
+}
+
+func TestRegisterRepo_TestRejectsDuplicate(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	if err := fs.MkdirAll("repos/apps/app-a/testing/e2e-a", 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTest, "e2e-a", "app-a", "", ""); err != nil {
+		t.Fatalf("RegisterRepo: %v", err)
+	}
+	err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTest, "e2e-a", "app-a", "", "")
+	if err == nil {
+		t.Fatalf("expected duplicate registration to be rejected")
+	}
+	if !strings.Contains(err.Error(), "already registered") {
+		t.Errorf("got %v, want an already-registered error", err)
+	}
+}
+
+func TestRegisterRepo_TestRequiresApp(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	seedScratchWorkspace(t, fs)
+	err := RegisterRepo(fs, &bytes.Buffer{}, tokens.RepoKindTest, "e2e-a", "", "", "")
+	if err == nil {
+		t.Fatalf("expected an error when --app is omitted")
+	}
+	if !strings.Contains(err.Error(), "--app is required") {
+		t.Errorf("got %v, want an --app is required error", err)
+	}
+}
+
 func TestRegisterRepo_GlobalLibrary(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	seedScratchWorkspace(t, fs)

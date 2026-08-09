@@ -104,6 +104,12 @@ func IsRegisteredInWorkspace(config WorkspaceConfig, kind string, name string, a
 			return false
 		}
 		return FindServiceIndex(config.Apps[appIdx], name) != -1
+	case tokens.RepoKindTest:
+		appIdx := FindAppIndex(config, app)
+		if appIdx == -1 {
+			return false
+		}
+		return FindAppTestIndex(config.Apps[appIdx], name) != -1
 	case tokens.RepoKindTemplate:
 		return FindTemplateIndex(config, name) != -1
 	case tokens.RepoKindInfra:
@@ -148,6 +154,10 @@ func registerEntryInWorkspace(fs afero.Fs, kind string, name string, app string,
 		}
 		image := DefaultServiceImage(app, name)
 		if err := AddServiceToWorkspace(fs, app, name, port, image, "", ""); err != nil {
+			return err
+		}
+	case tokens.RepoKindTest:
+		if err := AddTestToWorkspace(fs, app, name); err != nil {
 			return err
 		}
 	case tokens.RepoKindTemplate:
@@ -227,6 +237,16 @@ func setRemoteOnRepo(config *WorkspaceConfig, kind string, name string, app stri
 			return
 		}
 		config.Apps[appIdx].Services[svcIdx].Remote = remote
+	case tokens.RepoKindTest:
+		appIdx := FindAppIndex(*config, app)
+		if appIdx == -1 {
+			return
+		}
+		testIdx := FindAppTestIndex(config.Apps[appIdx], name)
+		if testIdx == -1 {
+			return
+		}
+		config.Apps[appIdx].Testing[testIdx].Remote = remote
 	case tokens.RepoKindTemplate:
 		idx := FindTemplateIndex(*config, name)
 		if idx == -1 {

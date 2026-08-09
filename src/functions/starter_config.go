@@ -27,6 +27,7 @@ type starterConfigTask struct {
 	Run       string `json:"run"`
 }
 
+// WriteStarterRepoConfig writes a minimal ocean.config.json for a repo that carries none, refusing to overwrite an existing one.
 func WriteStarterRepoConfig(fs afero.Fs, repoPath string, name string, kind string) error {
 	configPath := filepath.Join(repoPath, "ocean.config.json")
 	if _, err := fs.Stat(configPath); err == nil {
@@ -51,6 +52,7 @@ func WriteStarterRepoConfig(fs afero.Fs, repoPath string, name string, kind stri
 	return afero.WriteFile(fs, configPath, payload, 0o644)
 }
 
+// starterConfigTypeFromKind maps a repo kind onto the type a starter config declares, empty for a kind that scaffolds none.
 func starterConfigTypeFromKind(kind string) string {
 	switch kind {
 	case tokens.RepoKindProject:
@@ -61,6 +63,8 @@ func starterConfigTypeFromKind(kind string) string {
 		return "app"
 	case tokens.RepoKindService:
 		return "service"
+	case tokens.RepoKindTest:
+		return "test"
 	case tokens.RepoKindInfra:
 		return "infra"
 	case tokens.RepoKindDocs:

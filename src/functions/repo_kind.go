@@ -30,6 +30,11 @@ func ResolveRepoPath(kind string, name string, app string) (string, error) {
 			return "", fmt.Errorf("--app is required when --kind is %s", kind)
 		}
 		return filepath.Join("repos", tokens.RepoDirApps, app, tokens.RepoDirServices, name), nil
+	case tokens.RepoKindTest:
+		if app == "" {
+			return "", fmt.Errorf("--app is required when --kind is %s", kind)
+		}
+		return filepath.Join("repos", tokens.RepoDirApps, app, tokens.RepoDirTesting, name), nil
 	case tokens.RepoKindTemplate:
 		return filepath.Join("repos", tokens.RepoDirTemplates, name), nil
 	case tokens.RepoKindInfra:
@@ -50,29 +55,29 @@ func ValidateRepoKindFlags(kind string, app string) error {
 		return nil
 	case tokens.RepoKindLibrary, tokens.RepoKindProject:
 		return nil
-	case tokens.RepoKindService:
+	case tokens.RepoKindService, tokens.RepoKindTest:
 		if app == "" {
 			return fmt.Errorf("--app is required when --kind is %s", kind)
 		}
 		return nil
 	}
-	return fmt.Errorf("unknown --kind: %s (expected one of: %s, %s, %s, %s, %s, %s, %s)",
+	return fmt.Errorf("unknown --kind: %s (expected one of: %s, %s, %s, %s, %s, %s, %s, %s)",
 		kind,
-		tokens.RepoKindProject, tokens.RepoKindLibrary, tokens.RepoKindApp, tokens.RepoKindService, tokens.RepoKindTemplate, tokens.RepoKindInfra, tokens.RepoKindDocs,
+		tokens.RepoKindProject, tokens.RepoKindLibrary, tokens.RepoKindApp, tokens.RepoKindService, tokens.RepoKindTest, tokens.RepoKindTemplate, tokens.RepoKindInfra, tokens.RepoKindDocs,
 	)
 }
 
 // ValidateTemplateKind rejects a --template-kind outside the set of kinds a template may scaffold.
 func ValidateTemplateKind(value string) error {
 	switch value {
-	case tokens.TemplateKindService, tokens.TemplateKindLibrary, tokens.TemplateKindProject, tokens.TemplateKindApp, tokens.TemplateKindInfra, tokens.TemplateKindDocs:
+	case tokens.TemplateKindService, tokens.TemplateKindLibrary, tokens.TemplateKindProject, tokens.TemplateKindApp, tokens.TemplateKindTest, tokens.TemplateKindInfra, tokens.TemplateKindDocs:
 		return nil
 	case "":
 		return fmt.Errorf("--template-kind is required when --kind is %s", tokens.RepoKindTemplate)
 	}
-	return fmt.Errorf("unknown --template-kind: %s (expected one of: %s, %s, %s, %s, %s, %s)",
+	return fmt.Errorf("unknown --template-kind: %s (expected one of: %s, %s, %s, %s, %s, %s, %s)",
 		value,
-		tokens.TemplateKindService, tokens.TemplateKindLibrary, tokens.TemplateKindProject, tokens.TemplateKindApp, tokens.TemplateKindInfra, tokens.TemplateKindDocs,
+		tokens.TemplateKindService, tokens.TemplateKindLibrary, tokens.TemplateKindProject, tokens.TemplateKindApp, tokens.TemplateKindTest, tokens.TemplateKindInfra, tokens.TemplateKindDocs,
 	)
 }
 

@@ -724,6 +724,7 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 			tokens.RepoKindLibrary,
 			tokens.RepoKindApp,
 			tokens.RepoKindService,
+			tokens.RepoKindTest,
 			tokens.RepoKindTemplate,
 			tokens.RepoKindInfra,
 			tokens.RepoKindDocs,
@@ -734,7 +735,7 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 		return "", "", "", err
 	}
 	switch kind {
-	case tokens.RepoKindService:
+	case tokens.RepoKindService, tokens.RepoKindTest:
 		app, err = functions.PromptForApp()
 		if err != nil {
 			return "", "", "", err
@@ -762,6 +763,8 @@ func promptForRepoKind() (kind string, app string, templateKind string, err erro
 				tokens.TemplateKindService,
 				tokens.TemplateKindLibrary,
 				tokens.TemplateKindProject,
+				tokens.TemplateKindApp,
+				tokens.TemplateKindTest,
 				tokens.TemplateKindInfra,
 				tokens.TemplateKindDocs,
 			},

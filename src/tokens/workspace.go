@@ -19,6 +19,7 @@ const (
 	RepoKindLibrary  = "library"
 	RepoKindApp      = "app"
 	RepoKindService  = "service"
+	RepoKindTest     = "test"
 	RepoKindTemplate = "template"
 	RepoKindInfra    = "infra"
 	RepoKindDocs     = "docs"
@@ -27,6 +28,7 @@ const (
 	TemplateKindLibrary = "library"
 	TemplateKindProject = "project"
 	TemplateKindApp     = "app"
+	TemplateKindTest    = "test"
 	TemplateKindInfra   = "infra"
 	TemplateKindDocs    = "docs"
 

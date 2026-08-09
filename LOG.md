@@ -1,5 +1,45 @@
 # dusk-ocean-cli LOG
 
+## Made the `test` unit kind registerable
+Every consumer of an app's `testing/` unit was already built — `WorkspaceTest` with its own
+`deps[]`, `MakeTestNode`, `FindAppTestIndex`, `AddTestToWorkspace`, scope add/remove, rename,
+uninstall, and `RegisterDiscoveredAppSubRepos`' `AppSubRepoKindTest` branch — but nothing could
+put an entry in the workspace to begin with, so `check test` / `build test` answered
+`test not registered in workspace` for a unit that was sitting on disk. Two separate dead ends:
+
+1. `register` had no `test` kind, and the only code path that registers a test — app
+   sub-repo discovery — runs solely on `add`/`adopt`/`register` of an **app**, all of which
+   refuse an app that is already registered. A test unit added to an existing app was therefore
+   unreachable, and the one in the workspace had been recorded by hand.
+2. `add test` calls `ListTemplatesByType("test")`, but `ValidateTemplateKind` rejected `test`, so
+   no test template could ever be registered. The command half-worked through
+   `ListTemplatesByType`'s on-disk fallback, with no dep propagation from the template.
+
+- **src/tokens/workspace.go** — added `RepoKindTest` and `TemplateKindTest`.
+- **src/functions/repo_kind.go** — `ResolveRepoPath` resolves `test` to
+  `repos/apps/<app>/testing/<name>` and requires `--app`; `ValidateRepoKindFlags` groups it with
+  `service` as app-required; `ValidateTemplateKind` accepts `test`. Both error messages widened.
+- **src/functions/register.go** — `IsRegisteredInWorkspace`, `registerEntryInWorkspace` (via
+  `AddTestToWorkspace`), and `setRemoteOnRepo` each gained a `test` branch. `adopt` shares all
+  three, so it gained the kind at the same time.
+- **src/functions/starter_config.go** — `starterConfigTypeFromKind` maps `test` to `type: "test"`,
+  so a unit registered without an `ocean.config.json` gets a correct starter.
+- **src/commands/register.go** — `--kind`, `--app`, and `--template-kind` help text, and the
+  `Long` description's list of allowed locations.
+- **src/commands/menu.go** — `promptForRepoKind` offers `test` and prompts for its parent app.
+  Its template-kind list was also missing `app`, which `ValidateTemplateKind` has always
+  accepted and `base-app` is registered under; added both.
+- **src/functions/{repo_kind,register,templates}_test.go** — path resolution and `--app` cases for
+  the new kind; `RegisterRepo` cases for the happy path (asserting the starter type, the remote,
+  and that the entry resolves through `MakeTestNode`), duplicate rejection, and missing `--app`;
+  `test` added to the accepted-template-kind set.
+
+Verified: `go build ./...`, `go vet ./...`, `go test ./...` clean. End to end,
+`register --kind test --name auth-e2e-ts --app plexus-auth` followed by two
+`add --payload <lib> --target auth-e2e-ts` calls produced a workspace entry matching the
+hand-written one it replaces, and `check test --name auth-e2e-ts --in plexus-auth` ran the suite
+green three times over.
+
 ## Extended `--group` overrides to `run`/`stop` for services and apps
 Feature #65 shipped deployment-mode task overrides but only the project lifecycle path
 (`run`/`stop`/`check project`) honored `--group`; `run`/`stop` for services and apps read the

@@ -63,12 +63,13 @@ func TestAddTemplateToWorkspace(t *testing.T) {
 }
 
 func TestValidateTemplateKind(t *testing.T) {
-	t.Run("domain__service_library_project_app_infra_docs__accepted", func(t *testing.T) {
+	t.Run("domain__service_library_project_app_test_infra_docs__accepted", func(t *testing.T) {
 		for _, kind := range []string{
 			tokens.TemplateKindService,
 			tokens.TemplateKindLibrary,
 			tokens.TemplateKindProject,
 			tokens.TemplateKindApp,
+			tokens.TemplateKindTest,
 			tokens.TemplateKindInfra,
 			tokens.TemplateKindDocs,
 		} {

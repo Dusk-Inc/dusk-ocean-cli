@@ -12,9 +12,9 @@ var registerCmd = &cobra.Command{
 	Short: "Register an already-on-disk repo into the workspace",
 	Long: `Register a repo that already exists at one of the allowed workspace
 locations (repos/projects/<name>, repos/libs/<name>, repos/apps/<name>,
-repos/apps/<app>/libs/<name>, or repos/apps/<app>/services/<name>) into
-ocean.workspace.json. Writes a starter ocean.config.json at the repo
-root if one does not already exist.`,
+repos/apps/<app>/libs/<name>, repos/apps/<app>/services/<name>, or
+repos/apps/<app>/testing/<name>) into ocean.workspace.json. Writes a
+starter ocean.config.json at the repo root if one does not already exist.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		kind, err := cmd.Flags().GetString("kind")
 		if err != nil {
@@ -40,10 +40,11 @@ root if one does not already exist.`,
 	},
 }
 
+// init declares the flags that name the repo to register and where it sits.
 func init() {
-	registerCmd.Flags().String("kind", "", "Repo kind (project, library, app, service, template)")
+	registerCmd.Flags().String("kind", "", "Repo kind (project, library, app, service, test, template, infra, docs)")
 	registerCmd.Flags().String("name", "", "Repo name (also the directory basename)")
-	registerCmd.Flags().String("app", "", "Parent app name (required for service; optional for library)")
+	registerCmd.Flags().String("app", "", "Parent app name (required for service and test; optional for library)")
 	registerCmd.Flags().String("remote", "", "Upstream git URL; defaults to the literal \"None\" sentinel if omitted")
-	registerCmd.Flags().String("template-kind", "", "When --kind=template, the kind it scaffolds (service, library, project)")
+	registerCmd.Flags().String("template-kind", "", "When --kind=template, the kind it scaffolds (service, library, project, app, test, infra, docs)")
 }
