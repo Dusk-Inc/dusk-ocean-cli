@@ -32,6 +32,8 @@ go.work.sum
 *.key
 *.crt
 secrets/
+.playwright-mcp
+.tmp
 
 # Editor & OS
 .idea/
