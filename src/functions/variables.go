@@ -22,6 +22,11 @@ type VariableContext struct {
 
 var variablePattern = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^{}\s]+)\s*\}\}`)
 
+// Substitute expands every `{{ namespace:name }}` token in template from the matching
+// namespace of ctx (env, var, ocean, or repo). An unknown namespace or a name absent from
+// its namespace is an error rather than an empty expansion, so a typo in a template surfaces
+// instead of silently producing a command with a hole in it. The first such error wins and
+// the remaining tokens are left untouched.
 func Substitute(template string, ctx VariableContext) (string, error) {
 	var firstErr error
 	out := variablePattern.ReplaceAllStringFunc(template, func(match string) string {
@@ -60,6 +65,9 @@ func Substitute(template string, ctx VariableContext) (string, error) {
 	return out, nil
 }
 
+// LoadEnvFile reads the workspace-root .env into the values backing the `env:` namespace.
+// A missing .env is not an error — it notes the absence on out and yields an empty namespace,
+// since a workspace whose templates reference no secrets need never create one.
 func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, error) {
 	path := filepath.Join(root, ".env")
 	f, err := fs.Open(path)
@@ -98,6 +106,8 @@ func LoadEnvFile(fs afero.Fs, root string, out io.Writer) (map[string]string, er
 	return values, nil
 }
 
+// LoadWorkspaceVariables returns the workspace-level values backing the `var:` namespace,
+// substituting an empty map when the config declares none so callers never handle a nil.
 func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	if config.Variables == nil {
 		return map[string]string{}
@@ -105,6 +115,10 @@ func LoadWorkspaceVariables(config WorkspaceConfig) map[string]string {
 	return config.Variables
 }
 
+// BuildRepoVariables returns the values backing the `repo:` namespace for one registered
+// repo, combining the fields the workspace reserves (name, kind, path, scopes, remote, and
+// app where the kind is app-scoped) with whatever variables that repo declares. It errors
+// when the kind is unknown or the repo is not registered in the workspace.
 func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName string) (map[string]string, error) {
 	switch kind {
 	case tokens.RepoKindProject:
@@ -172,6 +186,21 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 		}
 		return mergeRepoVariables(reserved, app.Variables, kind, app.Name)
 
+	case tokens.RepoKindTemplate:
+		idx := FindTemplateIndex(config, repoName)
+		if idx == -1 {
+			return nil, fmt.Errorf("template repo not registered in workspace: %s", repoName)
+		}
+		entry := config.Templates[idx]
+		reserved := map[string]string{
+			"name":   entry.Name,
+			"kind":   tokens.RepoKindTemplate,
+			"path":   filepath.Join("repos", tokens.RepoDirTemplates, entry.Name),
+			"scopes": "",
+			"remote": entry.Remote,
+		}
+		return mergeRepoVariables(reserved, entry.Variables, kind, entry.Name)
+
 	case tokens.RepoKindInfra:
 		idx := FindInfraIndex(config, repoName)
 		if idx == -1 {
@@ -234,6 +263,9 @@ func BuildRepoVariables(config WorkspaceConfig, kind string, appName, repoName s
 	return nil, fmt.Errorf("unknown repo kind: %s", kind)
 }
 
+// mergeRepoVariables layers a repo's declared variables over its reserved fields, refusing
+// any key that collides with one. A silent overwrite would let a repo redefine its own path
+// or remote and quietly retarget the tasks built from them, so a collision is an error.
 func mergeRepoVariables(reserved map[string]string, user map[string]string, kind, repoName string) (map[string]string, error) {
 	for key := range user {
 		if _, exists := reserved[key]; exists {

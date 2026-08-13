@@ -171,6 +171,19 @@ func TestResolveRepoKindByName_TopLevelProject(t *testing.T) {
 	}
 }
 
+func TestResolveRepoKindByName_TopLevelTemplate(t *testing.T) {
+	cfg := WorkspaceConfig{
+		Templates: []WorkspaceTemplate{{Name: "ts-lib"}},
+	}
+	kind, err := ResolveRepoKindByName(cfg, "", "ts-lib")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if kind != "template" {
+		t.Errorf("kind: got %q", kind)
+	}
+}
+
 func TestResolveRepoKindByName_AppScopedLibrary(t *testing.T) {
 	cfg := WorkspaceConfig{
 		Apps: []WorkspaceApp{

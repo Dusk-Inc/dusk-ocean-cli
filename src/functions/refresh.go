@@ -32,6 +32,10 @@ type RefreshReport struct {
 	Entries []RefreshNodeReport
 }
 
+// RunRefresh refreshes the whole workspace: it builds the dependency graph, sorts it so
+// every dependency precedes its dependents, and clones, installs, builds, and checks each
+// node in that order. Apps that declare no services, libraries, or tests contribute no
+// graph nodes, so they are passed separately as shells to be cloned by remote.
 func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
 	graph, index, err := BuildWorkspaceGraph(config)
 	if err != nil {
@@ -64,6 +68,12 @@ func RunRefresh(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceCo
 // via one of its components is not cloned twice. When cloneNonCode is set it also clones
 // the workspace's non-code repos (infra/docs) — a whole-workspace concern a scoped run
 // deliberately skips.
+//
+// It runs in two passes. The clone pass tolerates access failures, recording a per-node
+// status so an inaccessible repo is reported rather than aborting the whole refresh. The
+// missing-deps pass then skips any node whose local dependency is unavailable — itself not
+// OK, or absent on disk — and records what it was missing; the topological order is what
+// guarantees a dependency is classified before anything that needs it.
 func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, order []Node, appShells []string, cloneNonCode bool) error {
 	if len(order) == 0 && len(appShells) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "refresh skipped: no workspace repositories")
@@ -83,8 +93,6 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 	cloneStatusByDest := map[string]RefreshNodeStatus{}
 	cloned := map[string]struct{}{}
 
-	// Clone pass — tolerate access failures, recording a per-node status so an
-	// inaccessible repo is reported rather than aborting the whole refresh.
 	for _, key := range keys {
 		node := index[key]
 		dest, _, err := resolveNodeCloneTarget(root, config, node)
@@ -110,9 +118,6 @@ func runRefreshNodes(cmd *cobra.Command, fs afero.Fs, root string, config Worksp
 		}
 	}
 
-	// Missing-deps pass — a node whose local dependency is unavailable (itself
-	// not OK, or absent on disk) is skipped and its missing deps recorded. The
-	// topological order guarantees a dep is classified before its dependent.
 	for _, key := range keys {
 		if statusByKey[key] != RefreshStatusOK {
 			continue
@@ -229,6 +234,8 @@ func buildRefreshReport(order []string, index map[string]Node, statusByKey map[s
 	return report
 }
 
+// refreshNodeLabel returns the human-readable label for a node, qualified by its kind and
+// (for app-scoped kinds) its app, as the refresh report prints it.
 func refreshNodeLabel(node Node) string {
 	switch node.Kind {
 	case NodeService:
@@ -305,6 +312,9 @@ func buildNode(cmd *cobra.Command, root string, config WorkspaceConfig, node Nod
 	return nil
 }
 
+// RunInstall installs one repo by name, resolving it against the workspace config from the
+// discovered workspace root. Unlike RunRefresh it touches no dependency graph — it is the
+// single-target install, leaving the caller to decide whether dependencies matter.
 func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -322,6 +332,10 @@ func RunInstall(cmd *cobra.Command, fs afero.Fs, repoName string) error {
 	return runInstall(cmd, fs, label, target.Path)
 }
 
+// resolveNodeCloneTarget returns the directory a node's repo is cloned into and the name the
+// clone workspace-task is invoked with, erroring when the node names something the workspace
+// config does not register. The two differ for app-scoped kinds: several nodes share one app
+// repo, so dest is the app directory while taskTarget is the app itself.
 func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (dest string, taskTarget string, err error) {
 	switch node.Kind {
 	case NodeAppLib, NodeService, NodeAppTest:
@@ -346,20 +360,31 @@ func resolveNodeCloneTarget(root string, config WorkspaceConfig, node Node) (des
 	return "", "", fmt.Errorf("unsupported node kind: %v", node.Kind)
 }
 
+// cloneNonCodeReposIfMissing clones the registered repos that contribute no dependency-graph
+// nodes — templates, infrastructure, and docs. Neither the node-clone pass nor
+// cloneAppShellsIfMissing reaches them, so a kind omitted here is a kind refresh silently
+// never clones.
 func cloneNonCodeReposIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig) error {
+	for _, entry := range config.Templates {
+		cloneNonCodeRepoOrSkip(cmd, fs, root, tokens.RepoDirTemplates, entry.Name, entry.Remote)
+	}
 	for _, entry := range config.Infrastructure {
-		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirInfra, entry.Name)
-		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
-			return err
-		}
+		cloneNonCodeRepoOrSkip(cmd, fs, root, tokens.RepoDirInfra, entry.Name, entry.Remote)
 	}
 	for _, entry := range config.Docs {
-		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirDocs, entry.Name)
-		if err := cloneRepoIfMissing(cmd, fs, root, dest, entry.Name, entry.Remote); err != nil {
-			return err
-		}
+		cloneNonCodeRepoOrSkip(cmd, fs, root, tokens.RepoDirDocs, entry.Name, entry.Remote)
 	}
 	return nil
+}
+
+// cloneNonCodeRepoOrSkip clones one non-code repo into dir, downgrading a clone failure to a
+// skip notice the way attemptCloneForRefresh does for graph nodes. One unreachable or
+// malformed remote must not abort the refresh and strand every repo queued behind it.
+func cloneNonCodeRepoOrSkip(cmd *cobra.Command, fs afero.Fs, root string, dir string, name string, remote string) {
+	dest := filepath.Join(root, tokens.RepoDirRoot, dir, name)
+	if err := cloneRepoIfMissing(cmd, fs, root, dest, name, remote); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "skip %s: clone failed (%v)\n", dest, err)
+	}
 }
 
 // cloneAppShellsIfMissing clones each named app by its remote when the app directory is
@@ -399,6 +424,9 @@ func cloneRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, dest strin
 	return RunWorkspaceTaskAt(fs, root, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.WorkspaceTaskClone, name, "")
 }
 
+// cloneNodeRepoIfMissing clones the repo backing a graph node when its directory is absent.
+// It is the node-keyed counterpart to cloneRepoIfMissing, resolving the destination and task
+// target from the node rather than taking them from the caller.
 func cloneNodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config WorkspaceConfig, node Node) error {
 	dest, taskTarget, err := resolveNodeCloneTarget(root, config, node)
 	if err != nil {
@@ -411,6 +439,9 @@ func cloneNodeRepoIfMissing(cmd *cobra.Command, fs afero.Fs, root string, config
 	return RunWorkspaceTaskAt(fs, root, cmd.OutOrStdout(), cmd.ErrOrStderr(), tokens.WorkspaceTaskClone, taskTarget, "")
 }
 
+// runInstall runs a target's configured install command in its own directory, streaming
+// output through cmd. A target that configures no install command is skipped with a notice
+// rather than treated as an error, since not every repo has one.
 func runInstall(cmd *cobra.Command, fs afero.Fs, label string, targetPath string) error {
 	installCmd, err := ReadRepoCommand(fs, targetPath, "install")
 	if err != nil {

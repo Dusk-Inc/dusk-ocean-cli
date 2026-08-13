@@ -249,6 +249,31 @@ func TestBuildRepoVariables_AppKind(t *testing.T) {
 	}
 }
 
+func TestBuildRepoVariables_TemplateKind(t *testing.T) {
+	cfg := WorkspaceConfig{
+		Templates: []WorkspaceTemplate{
+			{Name: "ts-lib", Kind: "library", Remote: "https://github.com/Dusk-Inc/dusk-ts-lib-template"},
+		},
+	}
+	got, err := BuildRepoVariables(cfg, tokens.RepoKindTemplate, "", "ts-lib")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["path"] != "repos/templates/ts-lib" {
+		t.Errorf("path: got %q", got["path"])
+	}
+	if got["remote"] != "https://github.com/Dusk-Inc/dusk-ts-lib-template" {
+		t.Errorf("remote: got %q", got["remote"])
+	}
+}
+
+func TestBuildRepoVariables_TemplateNotRegistered(t *testing.T) {
+	cfg := WorkspaceConfig{}
+	if _, err := BuildRepoVariables(cfg, tokens.RepoKindTemplate, "", "ghost"); err == nil {
+		t.Fatal("expected error for unregistered template")
+	}
+}
+
 func TestBuildRepoVariables_UserVariablesMergeIn(t *testing.T) {
 	cfg := WorkspaceConfig{
 		Projects: []WorkspaceProject{
