@@ -17,6 +17,9 @@ var runShell = func(workdir string, command string, stdout io.Writer, stderr io.
 	return cmd.Run()
 }
 
+// RunWorkspaceTask runs a named workspace task against one target repo, discovering the
+// workspace root first. It is the entry point for a caller that has no root in hand;
+// RunWorkspaceTaskAt is the same work with the root already known.
 func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	root, err := EnsureWorkspaceRoot(fs)
 	if err != nil {
@@ -25,6 +28,11 @@ func RunWorkspaceTask(fs afero.Fs, stdout io.Writer, stderr io.Writer, taskName 
 	return RunWorkspaceTaskAt(fs, root, stdout, stderr, taskName, target, app)
 }
 
+// RunWorkspaceTaskAt runs a named workspace task against one target repo under an already
+// known root. It resolves the target's kind, expands the task template against the env,
+// workspace, and repo namespaces, and runs the result as a shell command from the workspace
+// root. An unresolved variable fails the task rather than running a partially expanded
+// command.
 func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Writer, taskName string, target string, app string) error {
 	if taskName == "" {
 		return fmt.Errorf("--name is required")
@@ -73,6 +81,10 @@ func RunWorkspaceTaskAt(fs afero.Fs, root string, stdout io.Writer, stderr io.Wr
 	return runShell(root, expanded, stdout, stderr)
 }
 
+// ResolveRepoKindByName returns the registered kind of the repo called name, searching within
+// app when one is given and across the workspace otherwise. A name matching more than one kind
+// is an error rather than a first-match win, since guessing would silently run the task
+// against the wrong repo.
 func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (string, error) {
 	if app != "" {
 		appIdx := FindAppIndex(config, app)
@@ -105,6 +117,9 @@ func ResolveRepoKindByName(config WorkspaceConfig, app string, name string) (str
 	}
 	if FindAppIndex(config, name) != -1 {
 		matches = append(matches, tokens.RepoKindApp)
+	}
+	if FindTemplateIndex(config, name) != -1 {
+		matches = append(matches, tokens.RepoKindTemplate)
 	}
 	if FindInfraIndex(config, name) != -1 {
 		matches = append(matches, tokens.RepoKindInfra)

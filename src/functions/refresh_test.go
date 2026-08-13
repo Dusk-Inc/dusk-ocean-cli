@@ -291,6 +291,123 @@ func TestCloneNonCodeReposIfMissing(t *testing.T) {
 		}
 	})
 
+	t.Run("domain__missing_template__runs_clone_task", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-lib", Kind: "library", Remote: "https://github.com/example/dusk-ts-lib-template"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(rec.command, "ts-lib") {
+			t.Errorf("expected clone command to reference ts-lib, got: %q", rec.command)
+		}
+		wantPath := filepath.Join("repos", tokens.RepoDirTemplates, "ts-lib")
+		if !strings.Contains(rec.command, wantPath) {
+			t.Errorf("expected clone destination %q, got: %q", wantPath, rec.command)
+		}
+	})
+
+	t.Run("domain__template_directory_exists__no_clone", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-lib", Kind: "library", Remote: "https://github.com/example/dusk-ts-lib-template"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		dest := filepath.Join(root, tokens.RepoDirRoot, tokens.RepoDirTemplates, "ts-lib")
+		if err := fs.MkdirAll(dest, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.command != "" {
+			t.Errorf("expected no clone, got: %q", rec.command)
+		}
+	})
+
+	t.Run("error__template_clone_fails__skipped_not_fatal", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Templates: []WorkspaceTemplate{
+				{Name: "base-app", Kind: "library", Remote: "Dusk-Inc/base-app"},
+			},
+			Docs: []WorkspaceDocs{
+				{Name: "handbook", Remote: "https://github.com/example/handbook"},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		withStubRunShell(t, fmt.Errorf("exit status 128"))
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("a failed clone must not abort the pass: %v", err)
+		}
+		if !strings.Contains(out.String(), "clone failed") {
+			t.Errorf("expected skip notice, got: %q", out.String())
+		}
+		if !strings.Contains(out.String(), "handbook") {
+			t.Errorf("expected pass to continue to handbook after the failure, got: %q", out.String())
+		}
+	})
+
+	t.Run("boundary__template_remote_none__skipped_with_message", func(t *testing.T) {
+		fs := afero.NewMemMapFs()
+		config := WorkspaceConfig{
+			Workspace: "test",
+			Tasks:     map[string]string{tokens.WorkspaceTaskClone: "git clone {{repo:remote}} {{repo:path}}"},
+			Ports:     WorkspacePorts{Allowed: WorkspacePortRange{Min: 3000, Max: 3999}},
+			Templates: []WorkspaceTemplate{
+				{Name: "ts-test", Kind: "library", Remote: tokens.RemoteNone},
+			},
+		}
+		if err := WriteWorkspaceConfig(fs, config); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		rec := withStubRunShell(t, nil)
+
+		var out bytes.Buffer
+		cmd := makeTestCmd(&out)
+		if err := cloneNonCodeReposIfMissing(cmd, fs, root, config); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.command != "" {
+			t.Errorf("expected no clone, got: %q", rec.command)
+		}
+		if !strings.Contains(out.String(), "no remote configured") {
+			t.Errorf("expected skip message, got: %q", out.String())
+		}
+	})
+
 	t.Run("boundary__no_remote__skipped_with_message", func(t *testing.T) {
 		fs := afero.NewMemMapFs()
 		config := WorkspaceConfig{
@@ -395,8 +512,8 @@ func seedRepo(t *testing.T, root string, relPath string, name string, kind strin
 // disk via the seed flags so each test can simulate access loss
 // independently.
 type refreshSeeds struct {
-	cloneAppDir bool
-	cloneLibDir bool
+	cloneAppDir  bool
+	cloneLibDir  bool
 	cloneProjDir bool
 }
 
